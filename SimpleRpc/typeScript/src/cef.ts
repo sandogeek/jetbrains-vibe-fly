@@ -138,12 +138,28 @@ export function createCefSimpleRpc(
           if (failureHandler === handler) {
             failureHandler = null
           }
+          for (const queryId of requestQueryIds.values()) {
+            try {
+              cancelQuery(queryId)
+            } catch {
+              // ignore
+            }
+          }
+          requestQueryIds.clear()
         }
       }
       return () => {
         if (failureHandler === handler) {
           failureHandler = null
         }
+        for (const queryId of requestQueryIds.values()) {
+          try {
+            cancelQuery(queryId)
+          } catch {
+            // ignore
+          }
+        }
+        requestQueryIds.clear()
       }
     },
   }

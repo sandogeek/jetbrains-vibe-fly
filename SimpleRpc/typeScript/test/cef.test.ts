@@ -112,6 +112,29 @@ describe("createCefSimpleRpc", () => {
     peer.close()
   })
 
+  it("cancels outstanding native queries when closed", async () => {
+    installWindowStub()
+    const cancelled: number[] = []
+    let nextQueryId = 200
+    const peer = createCefSimpleRpc({
+      query: () => nextQueryId++,
+      cancelQuery: (id) => {
+        cancelled.push(id)
+      },
+    })
+
+    const first = peer.call("X", 1)
+    const second = peer.call("X", 2)
+    peer.close()
+
+    await assert.rejects(() => first, /peer closed/)
+    await assert.rejects(() => second, /peer closed/)
+    assert.deepEqual(cancelled, [200, 201])
+
+    peer.close()
+    assert.deepEqual(cancelled, [200, 201])
+  })
+
   it("requires cancelQuery and numeric queryId", async () => {
     installWindowStub()
     assert.throws(
