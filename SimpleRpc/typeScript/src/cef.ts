@@ -58,15 +58,18 @@ export function createCefSimpleRpc(
         // send raw
       }
 
+      let querySettled = false
       const queryId = query({
         request: message,
         persistent: false,
         onSuccess: () => {
+          querySettled = true
           if (requestId != null) {
             requestQueryIds.delete(requestId)
           }
         },
         onFailure: (code, msg) => {
+          querySettled = true
           if (!requestId) return
           requestQueryIds.delete(requestId)
           failureHandler?.(
@@ -85,7 +88,7 @@ export function createCefSimpleRpc(
         )
       }
 
-      if (requestId != null) {
+      if (requestId != null && !querySettled) {
         requestQueryIds.set(requestId, queryId)
       }
 

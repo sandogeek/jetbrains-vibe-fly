@@ -156,4 +156,33 @@ describe("createCefSimpleRpc", () => {
     assert.equal(cancelled.length, 0)
     peer.close()
   })
+
+  it("does not restore requestQueryIds after synchronous onFailure", async () => {
+    const win = installWindowStub()
+    const cancelled: number[] = []
+    let requestId = ""
+    const peer = createCefSimpleRpc({
+      query: (req) => {
+        requestId = JSON.parse(req.request).id
+        req.onFailure(0, "synchronous native fail")
+        return 56
+      },
+      cancelQuery: (id) => {
+        cancelled.push(id)
+      },
+    })
+
+    await assert.rejects(
+      () => peer.call("X", 1, [], { timeoutMs: 10_000 }),
+      /synchronous native fail/,
+    )
+    win.dispatchEvent(
+      new TestCustomEvent(HOST_MESSAGE_EVENT, {
+        detail: JSON.stringify({ t: "cancel", id: requestId }),
+      }),
+    )
+
+    assert.deepEqual(cancelled, [])
+    peer.close()
+  })
 })
