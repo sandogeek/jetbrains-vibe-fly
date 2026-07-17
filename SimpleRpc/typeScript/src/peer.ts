@@ -70,12 +70,8 @@ export class SimpleRpcPeer {
     const timeoutMs =
       options.timeoutMs != null ? options.timeoutMs : DEFAULT_TIMEOUT_MS
     const requestId = this.nextRequestId()
-    let settleReject!: (err: Error) => void
-    let settleResolve!: (value: T) => void
 
     const promise = new Promise<T>((resolve, reject) => {
-      settleResolve = resolve
-      settleReject = reject
       // Already-aborted signal: reject without timer, cancel, or wire send.
       if (options.signal?.aborted) {
         reject(new Error("RPC cancelled"))
@@ -117,7 +113,7 @@ export class SimpleRpcPeer {
           id: requestId,
           s: service,
           i: methodId,
-          a: args ?? [],
+          a: args,
         })
       } catch (e) {
         this.settleReject(
@@ -132,10 +128,6 @@ export class SimpleRpcPeer {
       this.sendCancel(requestId)
       this.settleReject(requestId, new Error("RPC cancelled"))
     }
-
-    // silence unused locals in some TS configs
-    void settleResolve
-    void settleReject
 
     return promise
   }

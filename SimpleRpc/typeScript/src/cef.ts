@@ -93,6 +93,12 @@ export function createCefSimpleRpc(
       }
 
       if (parsed) {
+        // Cancel is intentionally dual-path: the wire `cancel` already went out
+        // as its own cefQuery above; also call cefQueryCancel on the original
+        // req's queryId. Kotlin handles both (completeOpenQueryAsCancelled +
+        // handleQueryCanceled) idempotently. Wire-only cancel still works when
+        // cefQueryCancel is unavailable; dual path matches docs ("cancel +
+        // cefQueryCancel") so native query teardown is not delayed.
         if (parsed.t === "cancel" && typeof parsed.id === "string") {
           const qid = requestQueryIds.get(parsed.id)
           if (qid != null) {
