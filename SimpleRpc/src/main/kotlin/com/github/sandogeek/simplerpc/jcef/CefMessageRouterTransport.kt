@@ -1,5 +1,6 @@
 package com.github.sandogeek.simplerpc.jcef
 
+import com.github.sandogeek.simplerpc.protocol.RpcMessage
 import com.github.sandogeek.simplerpc.transport.RpcTransport
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicReference
@@ -104,7 +105,8 @@ class CefMessageRouterTransport(
             return true
         }
         return try {
-            val requestId = extractRequestIdIfReq(request)
+            val parsed = parseWire(request)
+            val requestId = (parsed as? RpcMessage.Request)?.id
             val trackQuery = requestId != null && queryId >= 0
             if (trackQuery) {
                 openCallbacks[queryId] = QueryCallbacks(onSuccess, onFailure)
@@ -113,7 +115,7 @@ class CefMessageRouterTransport(
             } else {
                 // Wire cancel without cefQueryCancel: close the held native callback
                 // so the original TS→Kotlin req query does not leak.
-                val cancelRequestId = extractIdIfCancel(request)
+                val cancelRequestId = (parsed as? RpcMessage.Cancel)?.id
                 if (cancelRequestId != null) {
                     completeOpenQueryAsCancelled(cancelRequestId)
                 }
@@ -157,23 +159,29 @@ class CefMessageRouterTransport(
         if (requestId != null) {
             requestIdToQuery.remove(requestId)
             openCallbacks.remove(queryId)
-            incoming.get()?.invoke("""{"t":"cancel","id":"$requestId"}""")
+            incoming.get()?.invoke(RpcMessage.Cancel(requestId).toJson())
         } else {
             openCallbacks.remove(queryId)
         }
     }
 
     private fun tryCompleteQueryForOutbound(message: String) {
-        val kind = messageKind(message) ?: return
-        val requestId = extractId(message) ?: return
-        val queryId = requestIdToQuery.remove(requestId) ?: return
+        val msg = parseWire(message) ?: return
+        val queryId = requestIdToQuery.remove(msg.id) ?: return
         queryToRequestId.remove(queryId)
         val cb = openCallbacks.remove(queryId) ?: return
-        when (kind) {
-            "cancel" -> cb.onFailure(1, "cancelled")
+        when (msg) {
+            is RpcMessage.Cancel -> cb.onFailure(1, "cancelled")
             else -> cb.onSuccess.accept("")
         }
     }
+
+    private fun parseWire(raw: String): RpcMessage? =
+        try {
+            RpcMessage.parse(raw)
+        } catch (_: Exception) {
+            null
+        }
 
     /**
      * Completes a held CEF query for [requestId] after a wire cancel was received.
@@ -239,39 +247,6 @@ class CefMessageRouterTransport(
                 .replace("\u2029", "\\u2029")
             return "window.dispatchEvent(new CustomEvent(\"$HOST_MESSAGE_EVENT\"," +
                 "{detail:$encoded}));"
-        }
-
-        private fun messageKind(raw: String): String? {
-            return when {
-                raw.contains("\"t\":\"req\"") || raw.contains("\"t\": \"req\"") -> "req"
-                raw.contains("\"t\":\"ok\"") || raw.contains("\"t\": \"ok\"") -> "ok"
-                raw.contains("\"t\":\"err\"") || raw.contains("\"t\": \"err\"") -> "err"
-                raw.contains("\"t\":\"cancel\"") || raw.contains("\"t\": \"cancel\"") -> "cancel"
-                else -> null
-            }
-        }
-
-        private fun extractRequestIdIfReq(raw: String): String? {
-            if (messageKind(raw) != "req") return null
-            return extractId(raw)
-        }
-
-        private fun extractIdIfCancel(raw: String): String? {
-            if (messageKind(raw) != "cancel") return null
-            return extractId(raw)
-        }
-
-        private fun extractId(raw: String): String? {
-            val key = "\"id\""
-            val idx = raw.indexOf(key)
-            if (idx < 0) return null
-            val colon = raw.indexOf(':', idx + key.length)
-            if (colon < 0) return null
-            val startQuote = raw.indexOf('"', colon + 1)
-            if (startQuote < 0) return null
-            val endQuote = raw.indexOf('"', startQuote + 1)
-            if (endQuote < 0) return null
-            return raw.substring(startQuote + 1, endQuote)
         }
     }
 }
