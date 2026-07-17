@@ -76,6 +76,12 @@ export class SimpleRpcPeer {
     const promise = new Promise<T>((resolve, reject) => {
       settleResolve = resolve
       settleReject = reject
+      // Already-aborted signal: reject without timer, cancel, or wire send.
+      if (options.signal?.aborted) {
+        reject(new Error("RPC cancelled"))
+        return
+      }
+
       const entry: PendingEntry = {
         resolve: (v) => resolve(v as T),
         reject,
@@ -96,11 +102,6 @@ export class SimpleRpcPeer {
       }
 
       if (options.signal) {
-        if (options.signal.aborted) {
-          this.sendCancel(requestId)
-          this.settleReject(requestId, new Error("RPC cancelled"))
-          return
-        }
         const onAbort = () => {
           if (!this.pending.has(requestId)) return
           this.sendCancel(requestId)

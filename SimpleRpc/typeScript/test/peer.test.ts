@@ -188,6 +188,25 @@ describe("SimpleRpcPeer", () => {
     server.close()
   })
 
+  it("pre-aborted AbortSignal rejects without wire traffic", async () => {
+    const sent: string[] = []
+    const transport = {
+      send(message: string) {
+        sent.push(message)
+      },
+      subscribe() {
+        return () => {}
+      },
+    }
+    const client = new SimpleRpcPeer(transport)
+    const ac = new AbortController()
+    ac.abort()
+    const p = client.call("Any", 1, [], { signal: ac.signal, timeoutMs: 10_000 })
+    await assert.rejects(() => p, /cancelled/)
+    assert.equal(sent.length, 0)
+    client.close()
+  })
+
   it("duplicate service registration throws", () => {
     const { a } = loopbackPair()
     const peer = new SimpleRpcPeer(a)
