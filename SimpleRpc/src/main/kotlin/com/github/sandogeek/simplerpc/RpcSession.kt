@@ -15,11 +15,13 @@ import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 
 /**
@@ -205,7 +207,9 @@ class RpcSession(
             }
             is RpcMessage.Request -> {
                 if (closed.get()) return
-                val job = scope.launch {
+                // LAZY: register before start so a fast completion cannot race past put
+                // and leave a finished Job permanently in inboundJobs.
+                val job = scope.launch(start = CoroutineStart.LAZY) {
                     try {
                         val result = dispatcher.dispatch(message)
                         if (!isActive) return@launch
@@ -223,10 +227,14 @@ class RpcSession(
                             ).toJson(),
                         )
                     } finally {
-                        inboundJobs.remove(message.id)
+                        inboundJobs.remove(message.id, coroutineContext.job)
                     }
                 }
-                inboundJobs[message.id] = job
+                if (inboundJobs.putIfAbsent(message.id, job) != null) {
+                    job.cancel()
+                    return
+                }
+                job.start()
             }
         }
     }
