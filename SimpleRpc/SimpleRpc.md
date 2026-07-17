@@ -2,16 +2,23 @@
 
 JCEF WebView（TypeScript）与 Kotlin/JVM 之间的双向 RPC 桥。用于 IntelliJ 插件内：界面跑在 JCEF，业务在 Kotlin，双方通过接口约定互相调用。
 
-传输层基于 **CefMessageRouter**（TS → Kotlin）与 **executeJavaScript**（Kotlin → TS）。
+传输层基于 **CefMessageRouter**（TS → Kotlin）与 **executeJavaScript + DOM CustomEvent**（Kotlin → TS）。
 
 > 与 Node 侧 ClineSdk 的通讯走 gRPC；**界面 ↔ Kotlin** 走本模块。
 
+## 破坏性变更（ESM 契约）
+
+- **不再**提供 `window.SimpleRpc`、内嵌 `JS_BRIDGE_SOURCE` 或 `window.__simpleRpcOnHostMessage`。
+- 前端必须显式 `import` `@sandogeek/simple-rpc`，调用 `createCefSimpleRpc`，并用生成代码创建代理 / 注册服务。
+- Kotlin → 页面通过固定事件名 `simplerpc:host-message` 的 `CustomEvent` 投递；**初始化前到达的 host 事件不缓存**。
+- 插件侧只负责配置 `CefMessageRouter` 与创建 Kotlin `RpcSession`，不再注入桥接脚本。
+
 ## 目标
 
-- 用 Kotlin `interface` 描述 RPC 契约，两端类型对齐
+- 用 Kotlin `interface` 描述 RPC 契约，并通过 `TypeScriptGenerator` 生成 TypeScript 契约
 - 仅 `@RpcFun` 方法进入 RPC 契约，且必须是 `suspend`；接口内可保留常规方法
 - 运行时校验契约，避免漏 `@RpcFun` / 非 suspend / 重复 id 进入注册或代理
-- 通过 `RpcSession` 完成注册、代理与请求分发
+- 通过 `RpcSession`（Kotlin）与 `SimpleRpcPeer`（TS）完成注册、代理与请求分发
 
 ## 方向
 
@@ -27,9 +34,10 @@ JCEF WebView（TypeScript）与 Kotlin/JVM 之间的双向 RPC 桥。用于 Inte
 1. 目标类型必须是 **interface**
 2. 必须标注 `@TsCallKotlin` 或 `@KotlinCallTs`
 3. **RPC 方法**必须标注 `@RpcFun(id)`，且必须是 `suspend`；id 在同一接口内不可重复
-4. 未标注 `@RpcFun` 的方法视为常规方法，不参与 RPC（可为非 suspend）
-5. 忽略 `equals` / `hashCode` / `toString` 以及 synthetic、bridge、static 方法
-6. 接口至少声明一个 `@RpcFun` 方法
+4. 同名重载生成 TS 时必须配置唯一 `@RpcFun(tsName = "...")`（线协议仍只用数字 id）
+5. 未标注 `@RpcFun` 的方法视为常规方法，不参与 RPC（可为非 suspend）
+6. 忽略 `equals` / `hashCode` / `toString` 以及 synthetic、bridge、static 方法
+7. 接口至少声明一个 `@RpcFun` 方法
 
 不满足时 `SimpleRpc.requireSuspendMethods` 抛出 `IllegalArgumentException`。
 
@@ -38,31 +46,33 @@ JCEF WebView（TypeScript）与 Kotlin/JVM 之间的双向 RPC 桥。用于 Inte
 ```
 SimpleRpc/
 ├── SimpleRpc.md
+├── plan.md
 ├── build.gradle.kts
+├── typeScript/                 # @sandogeek/simple-rpc ESM 包
+│   ├── package.json
+│   └── src/
 └── src/
     ├── main/kotlin/com/github/sandogeek/simplerpc/
     │   ├── SimpleRpc.kt
     │   ├── RpcSession.kt
     │   ├── annotation/
-    │   │   ├── KotlinCallTs.kt
-    │   │   ├── TsCallKotlin.kt
-    │   │   └── RpcFun.kt
+    │   ├── codegen/            # TypeScriptGenerator
     │   ├── transport/
-    │   │   └── RpcTransport.kt
-    │   ├── protocol/              # 线协议 JSON
+    │   ├── protocol/
     │   ├── jcef/
-    │   │   └── CefMessageRouterTransport.kt
     │   └── internal/
     └── test/kotlin/...
 ```
 
-依赖：`kotlin-stdlib`、`kotlinx-coroutines-core`、`kotlinx-serialization-json`。JVM 21。
+依赖：`kotlin-stdlib`、`kotlin-reflect`、`kotlinx-coroutines-core`、`kotlinx-serialization-json`。JVM 21。
 
 本模块**不**依赖 IntelliJ / JCEF API，便于单测；插件侧把 `CefMessageRouter` 接到 `CefMessageRouterTransport`。
 
+TS 包构建仅产出 ESM JavaScript、类型声明和 source map，不向 Kotlin JAR 打包 JS。
+
 ## 线协议
 
-JSON 信封：
+JSON 信封（不变）：
 
 ```json
 // 请求（按方法 id）
@@ -74,7 +84,7 @@ JSON 信封：
 // 失败响应
 {"t":"err","id":"<uuid>","e":"error message"}
 
-// 取消（调用方超时 / Job 取消 / Promise.cancel / cefQueryCancel）
+// 取消
 {"t":"cancel","id":"<uuid>"}
 ```
 
@@ -101,15 +111,11 @@ interface HostApi {
     @RpcFun(2)
     suspend fun logFromWeb(message: String)
 
-    // 同名方法：不同 id
-    @RpcFun(3)
+    @RpcFun(id = 3, tsName = "echoString")
     suspend fun echo(value: String): String
 
-    @RpcFun(4)
+    @RpcFun(id = 4, tsName = "echoInt")
     suspend fun echo(value: Int): Int
-
-    // 常规方法：不参与 RPC
-    fun localHelper(): String = "local"
 }
 
 @KotlinCallTs
@@ -122,7 +128,26 @@ interface WebApi {
 }
 ```
 
-### 2. 插件侧接线 CefMessageRouter
+### 2. 生成 TypeScript 契约
+
+```kotlin
+import com.github.sandogeek.simplerpc.codegen.TypeScriptGenerator
+import com.github.sandogeek.simplerpc.codegen.TypeScriptGenerationOptions
+import java.nio.file.Path
+
+TypeScriptGenerator.generateTo(
+    Path.of("web/src/generated/rpc.ts"),
+    listOf(HostApi::class.java, WebApi::class.java),
+    TypeScriptGenerationOptions(runtimeModule = "@sandogeek/simple-rpc"),
+)
+```
+
+生成内容（示意）：
+
+- `@TsCallKotlin` → `HostApi`、`HostApiDescriptor`、`createHostApiProxy(peer)`
+- `@KotlinCallTs` → `WebApiService`、`WebApiDescriptor`、`registerWebApiService(peer, impl)`
+
+### 3. 插件侧接线 CefMessageRouter
 
 ```kotlin
 import com.github.sandogeek.simplerpc.SimpleRpc
@@ -146,9 +171,9 @@ val session = SimpleRpc.open(transport)
 session.registerImplementation(object : HostApi {
     override suspend fun getAppVersion() = "0.0.1"
     override suspend fun logFromWeb(message: String) { /* ... */ }
+    override suspend fun echo(value: String) = value
+    override suspend fun echo(value: Int) = value
 })
-// 或 session.register(HostApi::class.java, impl) / session.register<HostApi>(impl)
-// registerImplementation 要求恰好一个 @TsCallKotlin 接口；多个时抛错，须用显式 register
 val webApi = session.proxy<WebApi>()
 
 val config = CefMessageRouterConfig(
@@ -180,32 +205,41 @@ router.addHandler(object : CefMessageRouterHandlerAdapter() {
     }
 }, true)
 browser.jbCefClient.cefClient.addMessageRouter(router)
-
-// 注入 JS 桥（或把 JS_BRIDGE_SOURCE 打进前端 bundle）
-browser.cefBrowser.executeJavaScript(
-    CefMessageRouterTransport.JS_BRIDGE_SOURCE,
-    browser.cefBrowser.url,
-    0,
-)
+// 不再注入 JS 桥；前端 ESM 自行 createCefSimpleRpc
 ```
 
-### 3. TypeScript 侧
-
-页面加载后需具备 `window.cefQuery`（由 CefMessageRouter 注入）以及 `JS_BRIDGE_SOURCE` 中的 `window.SimpleRpc`。
+### 4. TypeScript 侧
 
 ```ts
-// TS → Kotlin（@TsCallKotlin）：按 methodId（@RpcFun）调用
-// 默认 30s 超时；opts: { timeoutMs, signal?: AbortSignal }；Promise 带 .cancel()
-const version = await window.SimpleRpc.call('HostApi', 1, []);
-const p = window.SimpleRpc.call('HostApi', 2, ['hi'], { timeoutMs: 5000 });
-p.cancel(); // 发送 cancel + cefQueryCancel
+import {
+  createCefSimpleRpc,
+} from "@sandogeek/simple-rpc"
+import {
+  createHostApiProxy,
+  registerWebApiService,
+} from "./generated/rpc"
 
-// Kotlin → TS（@KotlinCallTs）：按 methodId 注册实现
-window.SimpleRpc.register('WebApi', 2, async (name) => `hello ${name}`);
-window.SimpleRpc.register('WebApi', 1, async () => {});
+const rpc = createCefSimpleRpc({
+  query: window.cefQuery,
+  cancelQuery: window.cefQueryCancel,
+})
+
+const hostApi = createHostApiProxy(rpc)
+const version = await hostApi.getAppVersion()
+const p = hostApi.logFromWeb("hi", { timeoutMs: 5000 })
+p.cancel()
+
+registerWebApiService(rpc, {
+  async greet(name) {
+    return `hello ${name}`
+  },
+  async notifyReady() {},
+})
 ```
 
-### 4. 校验（可选，注册/代理时也会校验）
+页面须在 Kotlin 发起调用前完成 `createCefSimpleRpc()`；`Long` 映射为 TS `number`，调用方负责限制在 JS 安全整数范围。
+
+## 校验（可选，注册/代理时也会校验）
 
 ```kotlin
 SimpleRpc.requireSuspendMethods<HostApi>()
@@ -213,19 +247,21 @@ SimpleRpc.requireSuspendMethods<HostApi>()
 
 ## 设计原则
 
-- **接口即契约**：`@RpcFun` 标记 RPC 入口与方法 id；未标注方法可为常规逻辑
+- **接口即契约**：`@RpcFun` 标记 RPC 入口与方法 id；生成器产出 TS 代理/服务类型
 - **RPC 全 suspend**：跨 WebView 边界天然异步
 - **先校验后接线**：proxy / 注册入口统一调用 `requireSuspendMethods`
 - **契约与传输分离**：核心只依赖 `RpcTransport`；JCEF 适配在 `jcef` 包
-- **CefMessageRouter 职责**：TS→Kotlin 走 `cefQuery`；Kotlin→TS 走 `executeJavaScript` 调用 `__simpleRpcOnHostMessage`
+- **CefMessageRouter 职责**：TS→Kotlin 走 `cefQuery`；Kotlin→TS 走 `CustomEvent(simplerpc:host-message)`
 
 ## 测试
 
 ```bash
+# Kotlin（需 JDK 21）
 ./gradlew :SimpleRpc:test
-```
 
-覆盖：suspend 校验、双向 round-trip、远端错误传播、超时 / Job 取消、JS 桥脚本常量。
+# TypeScript ESM 包
+cd SimpleRpc/typeScript && npm ci && npm test && npm run build
+```
 
 ## 超时与取消
 
@@ -233,21 +269,21 @@ SimpleRpc.requireSuspendMethods<HostApi>()
 |------|------|
 | 出站超时 | Kotlin 默认 30s → `RpcTimeoutException`，并向对端发 `cancel` |
 | 调用方 `Job` 取消 | 清本地 pending，发 `cancel`；对端取消 inbound Job |
-| 入站 `cancel` | 取消正在执行的 `scope.launch` 分发，不回 `ok`/`err` |
-| TS `call` 超时 / `.cancel()` / `AbortSignal` | 发 `cancel` + `cefQueryCancel` |
+| 入站 `cancel` | 取消正在执行的分发，不回 `ok`/`err` |
+| TS `call` 超时 / `.cancel()` / `AbortSignal` | 发 `cancel` + 必需的 `cefQueryCancel`（关闭 native query） |
 | CEF `onQueryCanceled` | 映射 queryId → requestId，注入 `cancel` 取消 Kotlin Job |
-| 桥未注入 / 响应丢失 | 出站侧靠超时兜底，不再永久挂起 |
+| 仅 wire `cancel`（无 cefQueryCancel） | Kotlin 在 `handleQuery` 中关闭对应 open callback，避免 query 泄漏 |
+| 页面未初始化 / 响应丢失 | 出站侧靠超时兜底 |
 
-`CefMessageRouterTransport.handleQuery(queryId, …)` 在收到 `req` 时保持 query 打开，直到对应 `ok`/`err`/`cancel` 写出，使 `cefQueryCancel` 能传到 Kotlin。
+`createCefSimpleRpc` 要求 `cancelQuery` 与 `query` 返回数字 `queryId`。  
+`CefMessageRouterTransport.handleQuery(queryId, …)` 在收到 `req` 时保持 query 打开，直到对应 `ok`/`err`/`cancel` 写出；收到 wire `cancel` 时也会主动 `onFailure(1, "cancelled")` 关闭原 callback。
 
 ## 序列化类型
 
-反射层使用 `java.lang.reflect.Type`（`genericParameterTypes` / Continuation 上的返回类型），经 `serializer(type)` 反序列化，因此 `List<Foo>`、`Map<String, Bar>`、`Pair<..>` 等泛型集合可保留元素类型。
+反射层使用 `java.lang.reflect.Type` + Kotlin reflection（参数名 / nullability），DTO 经 kotlinx-serialization `SerialDescriptor` 生成 TS 类型。
 
-DTO 仍需 `@Serializable`（或可被 kotlinx-serialization 解析）。密封类等更复杂结构按 kotlinx-serialization 规则声明。
+支持：基础类型、集合、`Map<String, T>`、`Pair`、`@Serializable` DTO、`@SerialName`、枚举。
 
-入站 JSON 解析失败会写 `System.err`；若能取出 `id`，会对本地 pending 调用失败，或回一条 `err`。
+严格失败：多态、上下文 serializer、未具体化泛型、非字符串 Map key、声明重名等（错误信息含完整类型路径）。
 
-## 规划中
-
-- TypeScript 类型生成
+DTO 仍需 `@Serializable`。`Long` → TS `number`。

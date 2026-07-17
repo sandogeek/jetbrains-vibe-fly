@@ -532,17 +532,20 @@ class RpcSessionTest {
     }
 
     @Test
-    fun deliverToJs_encodesAsJsonStringLiteral() {
+    fun deliverToJs_dispatchesHostMessageCustomEvent() {
         val payload = """{"t":"req","id":"a'b\"c\n"}"""
         val script = CefMessageRouterTransport.deliverToJs(payload)
         val expectedArg = kotlinx.serialization.json.JsonPrimitive(payload).toString()
             .replace("\u2028", "\\u2028")
             .replace("\u2029", "\\u2029")
         assertEquals(
-            "window.__simpleRpcOnHostMessage && window.__simpleRpcOnHostMessage($expectedArg);",
+            "window.dispatchEvent(new CustomEvent(\"${CefMessageRouterTransport.HOST_MESSAGE_EVENT}\"," +
+                "{detail:$expectedArg}));",
             script,
         )
         assertFalse(script.contains("'$payload'"))
+        assertFalse(script.contains("__simpleRpcOnHostMessage"))
+        assertFalse(script.contains("window.SimpleRpc"))
     }
 
     @Test
@@ -567,20 +570,6 @@ class RpcSessionTest {
         // Explicit register still works when ambiguous.
         session.register(HostApi::class.java, impl)
         session.close()
-    }
-
-    @Test
-    fun jsBridgeSource_containsQueryHook() {
-        val src = CefMessageRouterTransport.JS_BRIDGE_SOURCE
-        assertTrue(src.contains("cefQuery"))
-        assertTrue(src.contains("SimpleRpc"))
-        assertTrue(src.contains("__simpleRpcOnHostMessage"))
-        assertTrue(src.contains("cancel"))
-        assertTrue(src.contains("DEFAULT_TIMEOUT_MS"))
-        assertTrue(src.contains("cefQueryCancel"))
-        assertTrue(src.contains("nextRequestId"))
-        assertTrue(src.contains("'j:'"))
-        assertFalse(src.contains("function uuid"))
     }
 
     @Test
@@ -666,6 +655,64 @@ class RpcSessionTest {
         transport.handleQueryCanceled(7L)
         awaitUntil(timeoutMs = 2000) { cancelled.get() }
         assertTrue(cancelled.get())
+
+        session.close()
+    }
+
+    @Test
+    fun handleQuery_wireCancel_closesHeldCallback() {
+        val transport = CefMessageRouterTransport { }
+        val session = SimpleRpc.open(transport)
+        val started = CompletableDeferred<Unit>()
+        val cancelled = AtomicBoolean(false)
+        val failures = AtomicInteger(0)
+
+        session.registerImplementation(object : HostApi {
+            override suspend fun getVersion(): String {
+                started.complete(Unit)
+                try {
+                    delay(10_000)
+                    return "nope"
+                } catch (e: CancellationException) {
+                    cancelled.set(true)
+                    throw e
+                }
+            }
+
+            override suspend fun add(a: Int, b: Int) = a + b
+            override suspend fun log(message: String) {}
+        })
+
+        val req = RpcMessage.Request(
+            id = "wire-cancel",
+            service = "HostApi",
+            methodId = 1,
+            args = emptyList(),
+        ).toJson()
+
+        transport.handleQuery(
+            queryId = 99L,
+            request = req,
+            onSuccess = { },
+            onFailure = { code, msg ->
+                if (code == 1 && msg == "cancelled") {
+                    failures.incrementAndGet()
+                }
+            },
+        )
+        runBlocking { withTimeout(2000) { started.await() } }
+
+        // Wire-only cancel (no cefQueryCancel / onQueryCanceled): must still close callback.
+        val cancelAccepted = transport.handleQuery(
+            queryId = 100L,
+            request = """{"t":"cancel","id":"wire-cancel"}""",
+            onSuccess = { },
+            onFailure = { _, _ -> },
+        )
+        assertTrue(cancelAccepted)
+        awaitUntil(timeoutMs = 2000) { cancelled.get() && failures.get() > 0 }
+        assertTrue(cancelled.get())
+        assertEquals(1, failures.get())
 
         session.close()
     }

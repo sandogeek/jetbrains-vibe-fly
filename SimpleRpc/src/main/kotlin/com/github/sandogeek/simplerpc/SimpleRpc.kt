@@ -15,7 +15,9 @@ import kotlinx.coroutines.SupervisorJob
  * [com.github.sandogeek.simplerpc.annotation.TsCallKotlin] expose RPC methods via
  * [com.github.sandogeek.simplerpc.annotation.RpcFun] (`suspend` only); other methods may be ordinary.
  *
- * Transport is typically [CefMessageRouterTransport] wired to `CefMessageRouter` + `executeJavaScript`.
+ * Transport is typically [CefMessageRouterTransport] wired to `CefMessageRouter` +
+ * `executeJavaScript` (host messages as DOM CustomEvent). TypeScript uses the
+ * `@sandogeek/simple-rpc` ESM package (`createCefSimpleRpc`).
  */
 object SimpleRpc {
 

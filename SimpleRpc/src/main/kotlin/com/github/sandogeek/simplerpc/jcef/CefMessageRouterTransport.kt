@@ -44,7 +44,9 @@ import kotlinx.serialization.json.JsonPrimitive
  * browser.jbCefClient.cefClient.addMessageRouter(router)
  * ```
  *
- * TypeScript side: load [JS_BRIDGE_SOURCE] before app code, then use `window.SimpleRpc`.
+ * TypeScript side: import `@sandogeek/simple-rpc` and call `createCefSimpleRpc`
+ * with `window.cefQuery` / `window.cefQueryCancel`. The page must initialize
+ * before Kotlin sends host messages; early events are not buffered.
  *
  * CEF query callbacks stay open until the RPC response is sent (or cancel/failure),
  * so [handleQueryCanceled] can abort the matching inbound request.
@@ -108,6 +110,13 @@ class CefMessageRouterTransport(
                 openCallbacks[queryId] = QueryCallbacks(onSuccess, onFailure)
                 queryToRequestId[queryId] = requestId
                 requestIdToQuery[requestId] = queryId
+            } else {
+                // Wire cancel without cefQueryCancel: close the held native callback
+                // so the original TS→Kotlin req query does not leak.
+                val cancelRequestId = extractIdIfCancel(request)
+                if (cancelRequestId != null) {
+                    completeOpenQueryAsCancelled(cancelRequestId)
+                }
             }
             handler(request)
             if (!trackQuery) {
@@ -166,6 +175,21 @@ class CefMessageRouterTransport(
         }
     }
 
+    /**
+     * Completes a held CEF query for [requestId] after a wire cancel was received.
+     * Prefer [handleQueryCanceled] when the page used cefQueryCancel; this path
+     * covers wire-only cancel so the native query does not stay open.
+     */
+    private fun completeOpenQueryAsCancelled(requestId: String) {
+        val openQueryId = requestIdToQuery.remove(requestId) ?: return
+        queryToRequestId.remove(openQueryId)
+        val cb = openCallbacks.remove(openQueryId) ?: return
+        try {
+            cb.onFailure(1, "cancelled")
+        } catch (_: Exception) {
+        }
+    }
+
     private fun clearQuery(queryId: Long) {
         val requestId = queryToRequestId.remove(queryId)
         if (requestId != null) {
@@ -195,22 +219,26 @@ class CefMessageRouterTransport(
         /** Cancel function name for CefMessageRouterConfig. */
         const val JS_CANCEL_FUNCTION = "cefQueryCancel"
 
-        /** Global used by Kotlin executeJavaScript to push messages into the page. */
-        const val JS_INBOUND_FUNCTION = "__simpleRpcOnHostMessage"
+        /**
+         * Fixed DOM CustomEvent type used to push host → page RPC messages.
+         * The ESM transport subscribes with `window.addEventListener(HOST_MESSAGE_EVENT, ...)`.
+         */
+        const val HOST_MESSAGE_EVENT = "simplerpc:host-message"
 
         /**
-         * Builds a script that delivers [json] to the page-side bridge.
+         * Builds a script that dispatches [json] as a [HOST_MESSAGE_EVENT] CustomEvent.
          *
          * Encodes [json] as a JSON string literal (JSON.stringify semantics) so the full
          * standard escape table is used instead of a hand-maintained replace list.
          * U+2028/U+2029 are extra-escaped because they are JS line terminators.
-         * The page bridge [JSON.parse]s the string argument.
+         * The page transport reads `event.detail` (already a string wire envelope).
          */
         fun deliverToJs(json: String): String {
             val encoded = JsonPrimitive(json).toString()
                 .replace("\u2028", "\\u2028")
                 .replace("\u2029", "\\u2029")
-            return "window.$JS_INBOUND_FUNCTION && window.$JS_INBOUND_FUNCTION($encoded);"
+            return "window.dispatchEvent(new CustomEvent(\"$HOST_MESSAGE_EVENT\"," +
+                "{detail:$encoded}));"
         }
 
         private fun messageKind(raw: String): String? {
@@ -228,6 +256,11 @@ class CefMessageRouterTransport(
             return extractId(raw)
         }
 
+        private fun extractIdIfCancel(raw: String): String? {
+            if (messageKind(raw) != "cancel") return null
+            return extractId(raw)
+        }
+
         private fun extractId(raw: String): String? {
             val key = "\"id\""
             val idx = raw.indexOf(key)
@@ -240,192 +273,5 @@ class CefMessageRouterTransport(
             if (endQuote < 0) return null
             return raw.substring(startQuote + 1, endQuote)
         }
-
-        /**
-         * Minimal TypeScript/JavaScript bridge to inject into the WebView (or bundle).
-         * Depends on CEF injecting [JS_QUERY_FUNCTION] via CefMessageRouter.
-         *
-         * Supports request timeout (default 30s), AbortSignal / cancel(), and peer cancel of inbound work.
-         */
-        val JS_BRIDGE_SOURCE: String = """
-            (function () {
-              if (window.SimpleRpc) return;
-              var pending = {};
-              var handlers = {};
-              var inflight = {};
-              var DEFAULT_TIMEOUT_MS = 30000;
-              var requestSequence = 0;
-              var requestIdPrefix =
-                'j:' + Date.now().toString(36) + ':' +
-                Math.random().toString(36).slice(2) + ':';
-
-              function parse(msg) {
-                return typeof msg === 'string' ? JSON.parse(msg) : msg;
-              }
-
-              function send(obj) {
-                var json = JSON.stringify(obj);
-                if (typeof window.$JS_QUERY_FUNCTION !== 'function') {
-                  throw new Error('CefMessageRouter not ready ($JS_QUERY_FUNCTION missing)');
-                }
-                var requestId = obj && obj.id;
-                var queryId = window.$JS_QUERY_FUNCTION({
-                  request: json,
-                  persistent: false,
-                  onSuccess: function () {},
-                  onFailure: function (code, msg) {
-                    if (obj.t !== 'req') return;
-                    var p = pending[requestId];
-                    if (p) {
-                      delete pending[requestId];
-                      if (p.timer) clearTimeout(p.timer);
-                      p.reject(new Error(msg || ('query failed ' + code)));
-                    }
-                  }
-                });
-                if (requestId && obj.t === 'req' && queryId != null) {
-                  var p = pending[requestId];
-                  if (p) p.queryId = queryId;
-                }
-                return queryId;
-              }
-
-              function sendCancel(requestId) {
-                try {
-                  send({ t: 'cancel', id: requestId });
-                } catch (e) {}
-                var p = pending[requestId];
-                if (p && p.queryId != null && typeof window.$JS_CANCEL_FUNCTION === 'function') {
-                  try { window.$JS_CANCEL_FUNCTION(p.queryId); } catch (e) {}
-                }
-              }
-
-              function settleReject(requestId, err) {
-                var p = pending[requestId];
-                if (!p) return;
-                delete pending[requestId];
-                if (p.timer) clearTimeout(p.timer);
-                p.reject(err);
-              }
-
-              window.$JS_INBOUND_FUNCTION = function (raw) {
-                var msg = parse(raw);
-                if (msg.t === 'ok') {
-                  var p = pending[msg.id];
-                  if (!p) return;
-                  delete pending[msg.id];
-                  if (p.timer) clearTimeout(p.timer);
-                  p.resolve(msg.r);
-                  return;
-                }
-                if (msg.t === 'err') {
-                  var pErr = pending[msg.id];
-                  if (!pErr) return;
-                  delete pending[msg.id];
-                  if (pErr.timer) clearTimeout(pErr.timer);
-                  pErr.reject(new Error(msg.e || 'RPC failed'));
-                  return;
-                }
-                if (msg.t === 'cancel') {
-                  // Caller-side cancel for a request we are handling (inflight only).
-                  var c = inflight[msg.id];
-                  if (c && c.abort) c.abort();
-                  delete inflight[msg.id];
-                  return;
-                }
-                if (msg.t === 'req') {
-                  var key = msg.s + '#' + msg.i;
-                  var fn = handlers[key];
-                  var aborted = false;
-                  var controller = {
-                    aborted: false,
-                    abort: function () {
-                      this.aborted = true;
-                      aborted = true;
-                    }
-                  };
-                  inflight[msg.id] = controller;
-                  Promise.resolve()
-                    .then(function () {
-                      if (aborted) throw new Error('RPC cancelled');
-                      if (msg.i == null || msg.i === undefined) {
-                        throw new Error('Missing method id for ' + msg.s);
-                      }
-                      if (!fn) throw new Error('Unknown method ' + key);
-                      return fn.apply(null, msg.a || []);
-                    })
-                    .then(function (result) {
-                      delete inflight[msg.id];
-                      if (aborted) return;
-                      send({ t: 'ok', id: msg.id, r: result === undefined ? null : result });
-                    })
-                    .catch(function (err) {
-                      delete inflight[msg.id];
-                      if (aborted) return;
-                      send({ t: 'err', id: msg.id, e: (err && err.message) || String(err) });
-                    });
-                }
-              };
-
-              function nextRequestId() {
-                requestSequence += 1;
-                return requestIdPrefix + requestSequence.toString(36);
-              }
-
-              window.SimpleRpc = {
-                /**
-                 * Register a TS implementation method for Kotlin → TS calls.
-                 * methodId maps to wire field `i` (@RpcFun id).
-                 */
-                register: function (service, methodId, fn) {
-                  handlers[service + '#' + methodId] = fn;
-                },
-                /**
-                 * Call a Kotlin @TsCallKotlin method by methodId (wire field `i`).
-                 * opts: { timeoutMs?: number, signal?: AbortSignal }
-                 * Returns a Promise with .cancel() to abort the in-flight call.
-                 */
-                call: function (service, methodId, args, opts) {
-                  opts = opts || {};
-                  var timeoutMs = opts.timeoutMs != null ? opts.timeoutMs : DEFAULT_TIMEOUT_MS;
-                  var requestId = nextRequestId();
-                  var promise = new Promise(function (resolve, reject) {
-                    var entry = { resolve: resolve, reject: reject, timer: null, queryId: null };
-                    pending[requestId] = entry;
-                    if (timeoutMs > 0 && isFinite(timeoutMs)) {
-                      entry.timer = setTimeout(function () {
-                        if (!pending[requestId]) return;
-                        sendCancel(requestId);
-                        settleReject(requestId, new Error('RPC timed out after ' + timeoutMs + 'ms'));
-                      }, timeoutMs);
-                    }
-                    if (opts.signal) {
-                      if (opts.signal.aborted) {
-                        sendCancel(requestId);
-                        settleReject(requestId, new Error('RPC cancelled'));
-                        return;
-                      }
-                      opts.signal.addEventListener('abort', function () {
-                        if (!pending[requestId]) return;
-                        sendCancel(requestId);
-                        settleReject(requestId, new Error('RPC cancelled'));
-                      });
-                    }
-                    try {
-                      send({ t: 'req', id: requestId, s: service, i: methodId, a: args || [] });
-                    } catch (e) {
-                      settleReject(requestId, e);
-                    }
-                  });
-                  promise.cancel = function () {
-                    if (!pending[requestId]) return;
-                    sendCancel(requestId);
-                    settleReject(requestId, new Error('RPC cancelled'));
-                  };
-                  return promise;
-                }
-              };
-            })();
-        """.trimIndent()
     }
 }

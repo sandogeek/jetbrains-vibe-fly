@@ -8,8 +8,13 @@ package com.github.sandogeek.simplerpc.annotation
  * Ids must be unique within the service interface.
  *
  * @param id Method id serialized as request field `i`.
+ * @param tsName Optional TypeScript method name. Required and unique when the
+ *   interface has same-name overloads (the wire still uses [id]).
  */
 @MustBeDocumented
 @Retention(AnnotationRetention.RUNTIME)
 @Target(AnnotationTarget.FUNCTION)
-annotation class RpcFun(val id: Int)
+annotation class RpcFun(
+    val id: Int,
+    val tsName: String = "",
+)

@@ -17,6 +17,7 @@ java {
 // Root sets kotlin.stdlib.default.dependency=false for the IntelliJ plugin; SimpleRpc needs stdlib.
 dependencies {
     implementation(kotlin("stdlib"))
+    implementation(kotlin("reflect"))
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
 
