@@ -216,7 +216,8 @@ class CefMessageRouterTransport(
         private fun messageKind(raw: String): String? {
             return when {
                 raw.contains("\"t\":\"req\"") || raw.contains("\"t\": \"req\"") -> "req"
-                raw.contains("\"t\":\"res\"") || raw.contains("\"t\": \"res\"") -> "res"
+                raw.contains("\"t\":\"ok\"") || raw.contains("\"t\": \"ok\"") -> "ok"
+                raw.contains("\"t\":\"err\"") || raw.contains("\"t\": \"err\"") -> "err"
                 raw.contains("\"t\":\"cancel\"") || raw.contains("\"t\": \"cancel\"") -> "cancel"
                 else -> null
             }
@@ -305,13 +306,20 @@ class CefMessageRouterTransport(
 
               window.$JS_INBOUND_FUNCTION = function (raw) {
                 var msg = parse(raw);
-                if (msg.t === 'res') {
+                if (msg.t === 'ok') {
                   var p = pending[msg.id];
                   if (!p) return;
                   delete pending[msg.id];
                   if (p.timer) clearTimeout(p.timer);
-                  if (msg.ok) p.resolve(msg.r);
-                  else p.reject(new Error(msg.e || 'RPC failed'));
+                  p.resolve(msg.r);
+                  return;
+                }
+                if (msg.t === 'err') {
+                  var pErr = pending[msg.id];
+                  if (!pErr) return;
+                  delete pending[msg.id];
+                  if (pErr.timer) clearTimeout(pErr.timer);
+                  pErr.reject(new Error(msg.e || 'RPC failed'));
                   return;
                 }
                 if (msg.t === 'cancel') {
@@ -345,12 +353,12 @@ class CefMessageRouterTransport(
                     .then(function (result) {
                       delete inflight[msg.id];
                       if (aborted) return;
-                      send({ t: 'res', id: msg.id, ok: true, r: result === undefined ? null : result });
+                      send({ t: 'ok', id: msg.id, r: result === undefined ? null : result });
                     })
                     .catch(function (err) {
                       delete inflight[msg.id];
                       if (aborted) return;
-                      send({ t: 'res', id: msg.id, ok: false, e: (err && err.message) || String(err) });
+                      send({ t: 'err', id: msg.id, e: (err && err.message) || String(err) });
                     });
                 }
               };

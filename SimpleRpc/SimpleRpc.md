@@ -69,10 +69,10 @@ JSON 信封：
 {"t":"req","id":"<uuid>","s":"HostApi","i":1,"a":[]}
 
 // 成功响应
-{"t":"res","id":"<uuid>","ok":true,"r":"1.0.0"}
+{"t":"ok","id":"<uuid>","r":"1.0.0"}
 
 // 失败响应
-{"t":"res","id":"<uuid>","ok":false,"e":"error message"}
+{"t":"err","id":"<uuid>","e":"error message"}
 
 // 取消（调用方超时 / Job 取消 / Promise.cancel / cefQueryCancel）
 {"t":"cancel","id":"<uuid>"}
@@ -80,12 +80,13 @@ JSON 信封：
 
 | 字段 | 含义 |
 |------|------|
-| `t` | `req` / `res` / `cancel` |
+| `t` | `req` / `ok` / `err` / `cancel` |
 | `id` | 请求关联 id |
 | `s` | service（注解 `value` 或 simple name） |
 | `i` | 方法 id（`@RpcFun`），分发唯一键 |
 | `a` | 参数数组（JSON） |
-| `r` / `e` | 结果 / 错误信息 |
+| `r` | 成功结果（仅 `t=ok`） |
+| `e` | 错误信息（仅 `t=err`） |
 
 ## 用法
 
@@ -232,12 +233,12 @@ SimpleRpc.requireSuspendMethods<HostApi>()
 |------|------|
 | 出站超时 | Kotlin 默认 30s → `RpcTimeoutException`，并向对端发 `cancel` |
 | 调用方 `Job` 取消 | 清本地 pending，发 `cancel`；对端取消 inbound Job |
-| 入站 `cancel` | 取消正在执行的 `scope.launch` 分发，不回 `res` |
+| 入站 `cancel` | 取消正在执行的 `scope.launch` 分发，不回 `ok`/`err` |
 | TS `call` 超时 / `.cancel()` / `AbortSignal` | 发 `cancel` + `cefQueryCancel` |
 | CEF `onQueryCanceled` | 映射 queryId → requestId，注入 `cancel` 取消 Kotlin Job |
 | 桥未注入 / 响应丢失 | 出站侧靠超时兜底，不再永久挂起 |
 
-`CefMessageRouterTransport.handleQuery(queryId, …)` 在收到 `req` 时保持 query 打开，直到对应 `res`/`cancel` 写出，使 `cefQueryCancel` 能传到 Kotlin。
+`CefMessageRouterTransport.handleQuery(queryId, …)` 在收到 `req` 时保持 query 打开，直到对应 `ok`/`err`/`cancel` 写出，使 `cefQueryCancel` 能传到 Kotlin。
 
 ## 序列化类型
 
@@ -245,7 +246,7 @@ SimpleRpc.requireSuspendMethods<HostApi>()
 
 DTO 仍需 `@Serializable`（或可被 kotlinx-serialization 解析）。密封类等更复杂结构按 kotlinx-serialization 规则声明。
 
-入站 JSON 解析失败会写 `System.err`；若能取出 `id`，会对本地 pending 调用失败，或回一条失败 `res`。
+入站 JSON 解析失败会写 `System.err`；若能取出 `id`，会对本地 pending 调用失败，或回一条 `err`。
 
 ## 规划中
 

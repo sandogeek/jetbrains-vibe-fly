@@ -24,21 +24,21 @@ class RpcMessageWireTest {
 
     @Test
     fun responseSuccessOmitsError() {
-        val raw = RpcMessage.Response("1", ok = true, result = JsonPrimitive("v")).toJson()
-        assertTrue(raw.contains("\"ok\":true"))
+        val raw = RpcMessage.Response.Success("1", result = JsonPrimitive("v")).toJson()
+        assertTrue(raw.contains("\"t\":\"ok\""))
         assertTrue(raw.contains("\"r\":\"v\""))
         assertTrue(!raw.contains("\"e\""))
-        val parsed = RpcMessage.parse(raw) as RpcMessage.Response
-        assertEquals(true, parsed.ok)
+        val parsed = RpcMessage.parse(raw) as RpcMessage.Response.Success
         assertEquals("v", (parsed.result as JsonPrimitive).content)
     }
 
     @Test
     fun responseUnitResultEmitsNullR() {
-        val raw = RpcMessage.Response("1", ok = true, result = JsonNull).toJson()
+        val raw = RpcMessage.Response.Success("1", result = JsonNull).toJson()
+        assertTrue(raw.contains("\"t\":\"ok\""))
         assertTrue(raw.contains("\"r\":null"))
         assertTrue(!raw.contains("\"e\""))
-        val parsed = RpcMessage.parse(raw) as RpcMessage.Response
+        val parsed = RpcMessage.parse(raw) as RpcMessage.Response.Success
         assertEquals(JsonNull, parsed.result)
     }
 
@@ -52,11 +52,11 @@ class RpcMessageWireTest {
 
     @Test
     fun responseFailureKeepsError() {
-        val raw = RpcMessage.Response("1", ok = false, error = "boom").toJson()
-        assertTrue(raw.contains("\"ok\":false"))
+        val raw = RpcMessage.Response.Failure("1", error = "boom").toJson()
+        assertTrue(raw.contains("\"t\":\"err\""))
         assertTrue(raw.contains("\"e\":\"boom\""))
-        val parsed = RpcMessage.parse(raw) as RpcMessage.Response
-        assertEquals(false, parsed.ok)
+        assertTrue(!raw.contains("\"r\""))
+        val parsed = RpcMessage.parse(raw) as RpcMessage.Response.Failure
         assertEquals("boom", parsed.error)
     }
 
@@ -68,12 +68,12 @@ class RpcMessageWireTest {
     }
 
     @Test
-    fun parseLegacyWire() {
+    fun parseWireShapes() {
         val req = RpcMessage.parse("""{"t":"req","id":"i","s":"S","i":1,"a":[]}""") as RpcMessage.Request
         assertEquals("S", req.service)
-        val res = RpcMessage.parse("""{"t":"res","id":"i","ok":true,"r":null}""") as RpcMessage.Response
+        val res = RpcMessage.parse("""{"t":"ok","id":"i","r":null}""") as RpcMessage.Response.Success
         assertEquals(JsonNull, res.result)
-        val err = RpcMessage.parse("""{"t":"res","id":"i","ok":false,"e":"x"}""") as RpcMessage.Response
+        val err = RpcMessage.parse("""{"t":"err","id":"i","e":"x"}""") as RpcMessage.Response.Failure
         assertEquals("x", err.error)
     }
 }

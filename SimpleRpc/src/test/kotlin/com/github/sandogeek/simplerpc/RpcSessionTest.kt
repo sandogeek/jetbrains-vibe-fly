@@ -113,8 +113,8 @@ class RpcSessionTest {
         )
         awaitUntil { received.isNotEmpty() }
         assertEquals(1, received.size)
-        assertTrue(received[0].ok)
-        assertEquals("1.0.0", received[0].result.jsonPrimitive.content)
+        val first = received[0] as RpcMessage.Response.Success
+        assertEquals("1.0.0", first.result.jsonPrimitive.content)
 
         loop.endpointB().sendToRemote(
             RpcMessage.Request(
@@ -125,7 +125,8 @@ class RpcSessionTest {
             ).toJson(),
         )
         awaitUntil { received.size >= 2 }
-        assertEquals(5, received[1].result.jsonPrimitive.int)
+        val second = received[1] as RpcMessage.Response.Success
+        assertEquals(5, second.result.jsonPrimitive.int)
 
         kotlinSession.close()
     }
@@ -175,7 +176,10 @@ class RpcSessionTest {
             ).toJson(),
         )
         awaitUntil { received.isNotEmpty() }
-        assertEquals("s:hi", received[0].result.jsonPrimitive.content)
+        assertEquals(
+            "s:hi",
+            (received[0] as RpcMessage.Response.Success).result.jsonPrimitive.content,
+        )
 
         loop.endpointB().sendToRemote(
             RpcMessage.Request(
@@ -186,7 +190,10 @@ class RpcSessionTest {
             ).toJson(),
         )
         awaitUntil { received.size >= 2 }
-        assertEquals(42, received[1].result.jsonPrimitive.int)
+        assertEquals(
+            42,
+            (received[1] as RpcMessage.Response.Success).result.jsonPrimitive.int,
+        )
 
         kotlinSession.close()
     }
@@ -457,7 +464,7 @@ class RpcSessionTest {
             if (msg is RpcMessage.Request) {
                 // Valid id but invalid envelope shape for full parse on A.
                 loop.endpointB().sendToRemote(
-                    """{"t":"res","id":"${msg.id}","ok":true,"r":}""",
+                    """{"t":"ok","id":"${msg.id}","r":}""",
                 )
             }
         }
@@ -557,10 +564,8 @@ class RpcSessionTest {
         // deliverToJs encodes the wire JSON as a JSON string literal, so quotes are escaped.
         assertTrue(
             scripts.any {
-                it.contains("\\\"ok\\\":true") ||
-                    it.contains("\\\"ok\\\": true") ||
-                    it.contains("\"ok\":true") ||
-                    it.contains("\"ok\": true")
+                it.contains("\\\"t\\\":\\\"ok\\\"") ||
+                    it.contains("\"t\":\"ok\"")
             },
         )
 

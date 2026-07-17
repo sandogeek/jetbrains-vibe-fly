@@ -35,24 +35,27 @@ internal class PendingCall(
     fun complete(response: RpcMessage.Response): Boolean {
         if (!completed.compareAndSet(false, true)) return false
         timeoutJob?.cancel()
-        if (response.ok) {
-            try {
-                val value = when {
-                    JsonCodec.isUnitType(returnType) -> Unit
-                    else -> JsonCodec.fromJsonElement(response.result, returnType)
+        when (response) {
+            is RpcMessage.Response.Success -> {
+                try {
+                    val value = when {
+                        JsonCodec.isUnitType(returnType) -> Unit
+                        else -> JsonCodec.fromJsonElement(response.result, returnType)
+                    }
+                    continuation.resume(value)
+                } catch (e: Exception) {
+                    continuation.resumeWithException(
+                        RpcRemoteException(
+                            "Failed to decode RPC result: ${e.message ?: e::class.java.name}",
+                        ),
+                    )
                 }
-                continuation.resume(value)
-            } catch (e: Exception) {
+            }
+            is RpcMessage.Response.Failure -> {
                 continuation.resumeWithException(
-                    RpcRemoteException(
-                        "Failed to decode RPC result: ${e.message ?: e::class.java.name}",
-                    ),
+                    RpcRemoteException(response.error.ifEmpty { "RPC failed" }),
                 )
             }
-        } else {
-            continuation.resumeWithException(
-                RpcRemoteException(response.error ?: "RPC failed"),
-            )
         }
         return true
     }

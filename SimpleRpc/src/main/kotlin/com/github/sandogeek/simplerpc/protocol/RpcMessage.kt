@@ -12,7 +12,8 @@ import kotlinx.serialization.json.JsonNull
  * Wire envelope for SimpleRpc over CefMessageRouter / executeJavaScript.
  *
  * Request:  {"t":"req","id":"...","s":"Service","i":1,"a":[...]}
- * Response: {"t":"res","id":"...","ok":true,"r":...} | {"t":"res","id":"...","ok":false,"e":"..."}
+ * Success:  {"t":"ok","id":"...","r":...}
+ * Failure:  {"t":"err","id":"...","e":"..."}
  * Cancel:   {"t":"cancel","id":"..."}
  *
  * Method identity is the numeric [Request.methodId] (`i` from [@RpcFun]).
@@ -32,14 +33,23 @@ internal sealed class RpcMessage {
         @SerialName("a") val args: List<JsonElement> = emptyList(),
     ) : RpcMessage()
 
+    /** Outbound/inbound RPC outcome; Success and Failure are mutually exclusive. */
     @Serializable
-    @SerialName("res")
-    data class Response(
-        override val id: String,
-        val ok: Boolean,
-        @SerialName("r") val result: JsonElement = JsonNull,
-        @SerialName("e") val error: String? = null,
-    ) : RpcMessage()
+    sealed class Response : RpcMessage() {
+        @Serializable
+        @SerialName("ok")
+        data class Success(
+            override val id: String,
+            @SerialName("r") val result: JsonElement = JsonNull,
+        ) : Response()
+
+        @Serializable
+        @SerialName("err")
+        data class Failure(
+            override val id: String,
+            @SerialName("e") val error: String,
+        ) : Response()
+    }
 
     /** Peer cancelled an in-flight request identified by [id]. */
     @Serializable
@@ -61,4 +71,3 @@ internal sealed class RpcMessage {
         fun parse(raw: String): RpcMessage = json.decodeFromString(serializer(), raw)
     }
 }
-

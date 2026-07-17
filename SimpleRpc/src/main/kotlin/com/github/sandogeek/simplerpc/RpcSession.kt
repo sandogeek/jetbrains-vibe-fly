@@ -148,9 +148,8 @@ class RpcSession(
                     // Best-effort: peer may be waiting on a request we cannot fully parse.
                     try {
                         transport.sendToRemote(
-                            RpcMessage.Response(
+                            RpcMessage.Response.Failure(
                                 requestId,
-                                ok = false,
                                 error = "Failed to parse RPC message: ${e.message ?: e::class.java.name}",
                             ).toJson(),
                         )
@@ -181,16 +180,15 @@ class RpcSession(
                         val result = dispatcher.dispatch(message)
                         if (!isActive) return@launch
                         transport.sendToRemote(
-                            RpcMessage.Response(message.id, ok = true, result = result).toJson(),
+                            RpcMessage.Response.Success(message.id, result = result).toJson(),
                         )
                     } catch (_: CancellationException) {
                         // Peer cancelled or session closed; do not send a response.
                     } catch (e: Throwable) {
                         if (!isActive) return@launch
                         transport.sendToRemote(
-                            RpcMessage.Response(
+                            RpcMessage.Response.Failure(
                                 message.id,
-                                ok = false,
                                 error = e.message ?: e::class.java.name,
                             ).toJson(),
                         )
