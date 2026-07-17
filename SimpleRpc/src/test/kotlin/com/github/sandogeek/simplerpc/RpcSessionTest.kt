@@ -151,6 +151,57 @@ class RpcSessionTest {
     }
 
     @Test
+    fun outboundRequestIds_areMonotonicPerSessionAndNamespacedAcrossSessions() = runBlocking {
+        val firstLoop = LoopbackTransport()
+        val firstSession = SimpleRpc.open(firstLoop.endpointA())
+        val firstSessionRequests = CopyOnWriteArrayList<RpcMessage.Request>()
+        firstLoop.endpointB().setIncomingHandler { raw ->
+            val request = RpcMessage.parse(raw) as? RpcMessage.Request ?: return@setIncomingHandler
+            firstSessionRequests.add(request)
+            firstLoop.endpointB().sendToRemote(
+                RpcMessage.Response.Success(
+                    request.id,
+                    result = JsonPrimitive(
+                        when (request.service) {
+                            "WebApi" -> "hello"
+                            "EchoTsApi" -> "echo"
+                            else -> error("Unexpected service ${request.service}")
+                        },
+                    ),
+                ).toJson(),
+            )
+        }
+
+        assertEquals("hello", firstSession.proxy(WebApi::class.java).greet("world"))
+        assertEquals("echo", firstSession.proxy(EchoTsApi::class.java).echo("value"))
+
+        val secondLoop = LoopbackTransport()
+        val secondSession = SimpleRpc.open(secondLoop.endpointA())
+        val secondSessionRequests = CopyOnWriteArrayList<RpcMessage.Request>()
+        secondLoop.endpointB().setIncomingHandler { raw ->
+            val request = RpcMessage.parse(raw) as? RpcMessage.Request ?: return@setIncomingHandler
+            secondSessionRequests.add(request)
+            secondLoop.endpointB().sendToRemote(
+                RpcMessage.Response.Success(request.id, JsonPrimitive("hello again")).toJson(),
+            )
+        }
+
+        assertEquals("hello again", secondSession.proxy(WebApi::class.java).greet("again"))
+
+        val firstId = firstSessionRequests[0].id.split(':')
+        val secondId = firstSessionRequests[1].id.split(':')
+        val otherSessionId = secondSessionRequests[0].id.split(':')
+        assertEquals(listOf("k", firstId[1], "1"), firstId)
+        assertEquals(listOf("k", firstId[1], "2"), secondId)
+        assertEquals("k", otherSessionId[0])
+        assertEquals("1", otherSessionId[2])
+        assertTrue(firstId[1] != otherSessionId[1])
+
+        firstSession.close()
+        secondSession.close()
+    }
+
+    @Test
     fun sameNameMethods_dispatchByMethodId() {
         val loop = LoopbackTransport()
         val kotlinSession = SimpleRpc.open(loop.endpointA())
@@ -527,6 +578,9 @@ class RpcSessionTest {
         assertTrue(src.contains("cancel"))
         assertTrue(src.contains("DEFAULT_TIMEOUT_MS"))
         assertTrue(src.contains("cefQueryCancel"))
+        assertTrue(src.contains("nextRequestId"))
+        assertTrue(src.contains("'j:'"))
+        assertFalse(src.contains("function uuid"))
     }
 
     @Test

@@ -8,6 +8,8 @@ import com.github.sandogeek.simplerpc.internal.RpcDispatcher
 import com.github.sandogeek.simplerpc.protocol.RpcMessage
 import com.github.sandogeek.simplerpc.transport.RpcTransport
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ThreadLocalRandom
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
@@ -36,6 +38,9 @@ class RpcSession(
     private val pending = ConcurrentHashMap<String, PendingCall>()
     private val proxyCache = ConcurrentHashMap<Class<*>, Any>()
     private val inboundJobs = ConcurrentHashMap<String, Job>()
+    private val requestSequence = AtomicLong()
+    private val requestIdPrefix =
+        "k:${java.lang.Long.toUnsignedString(ThreadLocalRandom.current().nextLong(), 36)}:"
 
     init {
         transport.setIncomingHandler { raw -> onIncoming(raw) }
@@ -100,6 +105,7 @@ class RpcSession(
                 pending,
                 scope,
                 requestTimeout,
+                ::nextRequestId,
             )
         } as T
     }
@@ -124,6 +130,11 @@ class RpcSession(
 
     private fun sendCancel(requestId: String) {
         transport.sendToRemote(RpcMessage.Cancel(requestId).toJson())
+    }
+
+    private fun nextRequestId(): String {
+        val sequence = requestSequence.incrementAndGet()
+        return requestIdPrefix + java.lang.Long.toUnsignedString(sequence, 36)
     }
 
     private fun onIncoming(raw: String) {

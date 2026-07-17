@@ -9,7 +9,6 @@ import java.lang.reflect.InvocationHandler
 import java.lang.reflect.Method
 import java.lang.reflect.Proxy
 import java.lang.reflect.Type
-import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.Continuation
@@ -90,6 +89,7 @@ internal object KotlinCallTsProxy {
         pending: ConcurrentHashMap<String, PendingCall>,
         scope: CoroutineScope,
         requestTimeout: Duration,
+        nextRequestId: () -> String,
     ): T {
         RpcSuspendRequirement.check(iface)
         val service = ServiceName.of(iface)
@@ -100,6 +100,7 @@ internal object KotlinCallTsProxy {
             pending,
             scope,
             requestTimeout,
+            nextRequestId,
         )
         @Suppress("UNCHECKED_CAST")
         return Proxy.newProxyInstance(
@@ -117,6 +118,7 @@ internal class TypedProxyHandler(
     private val pending: ConcurrentHashMap<String, PendingCall>,
     private val scope: CoroutineScope,
     private val requestTimeout: Duration,
+    private val nextRequestId: () -> String,
 ) : InvocationHandler {
 
     override fun invoke(proxy: Any, method: Method, args: Array<out Any>?): Any? {
@@ -135,7 +137,7 @@ internal class TypedProxyHandler(
         val cont = params.last() as Continuation<Any?>
         val rpcArgs = params.dropLast(1)
         val paramTypes = SuspendInvoker.rpcParameterTypes(method)
-        val id = UUID.randomUUID().toString()
+        val id = nextRequestId()
         val jsonArgs = rpcArgs.mapIndexed { i, arg ->
             JsonCodec.toJsonElement(arg, paramTypes[i])
         }
@@ -153,7 +155,9 @@ internal class TypedProxyHandler(
         val block: suspend () -> Any? = {
             suspendCancellableCoroutine { cancellable ->
                 val call = PendingCall(cancellable, returnType)
-                pending[id] = call
+                check(pending.putIfAbsent(id, call) == null) {
+                    "Duplicate RPC request id: $id"
+                }
 
                 if (requestTimeout.isPositive() && requestTimeout.isFinite()) {
                     call.timeoutJob = scope.launch {

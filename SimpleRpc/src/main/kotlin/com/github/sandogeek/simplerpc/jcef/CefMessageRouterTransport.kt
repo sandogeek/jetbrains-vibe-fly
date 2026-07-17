@@ -254,6 +254,10 @@ class CefMessageRouterTransport(
               var handlers = {};
               var inflight = {};
               var DEFAULT_TIMEOUT_MS = 30000;
+              var requestSequence = 0;
+              var requestIdPrefix =
+                'j:' + Date.now().toString(36) + ':' +
+                Math.random().toString(36).slice(2) + ':';
 
               function parse(msg) {
                 return typeof msg === 'string' ? JSON.parse(msg) : msg;
@@ -363,12 +367,9 @@ class CefMessageRouterTransport(
                 }
               };
 
-              function uuid() {
-                return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
-                  var r = Math.random() * 16 | 0;
-                  var v = c === 'x' ? r : (r & 0x3 | 0x8);
-                  return v.toString(16);
-                });
+              function nextRequestId() {
+                requestSequence += 1;
+                return requestIdPrefix + requestSequence.toString(36);
               }
 
               window.SimpleRpc = {
@@ -387,7 +388,7 @@ class CefMessageRouterTransport(
                 call: function (service, methodId, args, opts) {
                   opts = opts || {};
                   var timeoutMs = opts.timeoutMs != null ? opts.timeoutMs : DEFAULT_TIMEOUT_MS;
-                  var requestId = uuid();
+                  var requestId = nextRequestId();
                   var promise = new Promise(function (resolve, reject) {
                     var entry = { resolve: resolve, reject: reject, timer: null, queryId: null };
                     pending[requestId] = entry;
