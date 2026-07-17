@@ -1,13 +1,17 @@
 package com.github.sandogeek.simplerpc.internal
 
 import com.github.sandogeek.simplerpc.annotation.KotlinCallTs
+import com.github.sandogeek.simplerpc.annotation.RpcFun
 import com.github.sandogeek.simplerpc.annotation.TsCallKotlin
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
 import kotlin.coroutines.Continuation
 
 /**
- * Enforces that every method on a SimpleRpc-annotated interface is `suspend`.
+ * Validates SimpleRpc interface contracts:
+ * - only [@RpcFun] methods are RPC entry points (must be `suspend`);
+ * - ordinary methods without [@RpcFun] are allowed;
+ * - [@RpcFun] ids must be unique within the interface.
  */
 internal object RpcSuspendRequirement {
 
@@ -22,24 +26,48 @@ internal object RpcSuspendRequirement {
             "Interface ${iface.name} must be annotated with @KotlinCallTs or @TsCallKotlin"
         }
 
-        val nonSuspend = iface.declaredMethods
+        val rpcMethods = iface.declaredMethods
             .asSequence()
             .filter { isRpcCandidate(it) }
+            .toList()
+
+        require(rpcMethods.isNotEmpty()) {
+            "RPC interface ${iface.name} must declare at least one @RpcFun method"
+        }
+
+        val nonSuspend = rpcMethods
+            .asSequence()
             .filterNot { isSuspendMethod(it) }
             .map { it.name }
             .distinct()
             .toList()
 
         require(nonSuspend.isEmpty()) {
-            "RPC interface ${iface.name} methods must be suspend; non-suspend: ${nonSuspend.joinToString()}"
+            "RPC methods on ${iface.name} must be suspend; non-suspend: ${nonSuspend.joinToString()}"
+        }
+
+        checkRpcFunIds(iface, rpcMethods)
+    }
+
+    private fun checkRpcFunIds(iface: Class<*>, rpcMethods: List<Method>) {
+        val byId = LinkedHashMap<Int, Method>()
+        for (method in rpcMethods) {
+            val rpcFun = method.getAnnotation(RpcFun::class.java)!!
+            val prev = byId.put(rpcFun.id, method)
+            require(prev == null) {
+                "RPC interface ${iface.name} has duplicate @RpcFun(id=${rpcFun.id}) " +
+                    "on ${prev!!.name} and ${method.name}"
+            }
         }
     }
 
-    private fun isRpcCandidate(method: Method): Boolean {
+    /** True when [method] is an RPC entry point (has [@RpcFun], not synthetic/bridge/static). */
+    fun isRpcCandidate(method: Method): Boolean {
         if (method.isSynthetic || method.isBridge) return false
         if (Modifier.isStatic(method.modifiers)) return false
         if (method.declaringClass == Any::class.java) return false
-        return method.name !in IGNORED_NAMES
+        if (method.name in IGNORED_NAMES) return false
+        return method.isAnnotationPresent(RpcFun::class.java)
     }
 
     private fun isSuspendMethod(method: Method): Boolean {
