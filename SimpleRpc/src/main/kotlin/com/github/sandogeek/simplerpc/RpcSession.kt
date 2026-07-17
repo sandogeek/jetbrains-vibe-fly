@@ -177,10 +177,7 @@ class RpcSession(
                 call.complete(message)
             }
             is RpcMessage.Cancel -> {
-                // Peer cancelled a request we made (unusual) or is aborting; fail local waiters.
-                pending.remove(message.id)?.fail(
-                    CancellationException("RPC cancelled by peer"),
-                )
+                // Caller-side cancel for a request we are dispatching.
                 // Transport delivers messages in order per session, so the inbound Job
                 // is already registered by the time its cancel arrives.
                 inboundJobs.remove(message.id)?.cancel()

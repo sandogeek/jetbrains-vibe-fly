@@ -245,7 +245,7 @@ class CefMessageRouterTransport(
          * Minimal TypeScript/JavaScript bridge to inject into the WebView (or bundle).
          * Depends on CEF injecting [JS_QUERY_FUNCTION] via CefMessageRouter.
          *
-         * Supports request timeout (default 30s), AbortSignal / cancel(), and peer cancel.
+         * Supports request timeout (default 30s), AbortSignal / cancel(), and peer cancel of inbound work.
          */
         val JS_BRIDGE_SOURCE: String = """
             (function () {
@@ -327,10 +327,10 @@ class CefMessageRouterTransport(
                   return;
                 }
                 if (msg.t === 'cancel') {
+                  // Caller-side cancel for a request we are handling (inflight only).
                   var c = inflight[msg.id];
                   if (c && c.abort) c.abort();
                   delete inflight[msg.id];
-                  settleReject(msg.id, new Error('RPC cancelled'));
                   return;
                 }
                 if (msg.t === 'req') {
