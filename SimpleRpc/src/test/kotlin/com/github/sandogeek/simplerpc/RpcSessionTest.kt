@@ -385,6 +385,51 @@ class RpcSessionTest {
     }
 
     @Test
+    fun close_thenProxyCall_failsImmediately() = runBlocking {
+        val transport = object : com.github.sandogeek.simplerpc.transport.RpcTransport {
+            override fun sendToRemote(message: String) {
+                // Drop requests: never respond.
+            }
+
+            override fun setIncomingHandler(handler: ((message: String) -> Unit)?) {}
+        }
+        val session = SimpleRpc.open(
+            transport,
+            requestTimeout = Duration.INFINITE,
+        )
+        val web = session.proxy(WebApi::class.java)
+        session.close()
+        assertTrue(session.isClosed)
+
+        try {
+            session.proxy(WebApi::class.java)
+            fail("expected closed on proxy()")
+        } catch (e: RpcRemoteException) {
+            assertEquals("RpcSession closed", e.message)
+        }
+
+        try {
+            session.register(HostApi::class.java, object : HostApi {
+                override suspend fun getVersion() = "x"
+                override suspend fun add(a: Int, b: Int) = a + b
+                override suspend fun log(message: String) {}
+            })
+            fail("expected closed on register()")
+        } catch (e: RpcRemoteException) {
+            assertEquals("RpcSession closed", e.message)
+        }
+
+        try {
+            withTimeout(1_000) {
+                web.greet("x")
+            }
+            fail("expected closed on proxy call")
+        } catch (e: RpcRemoteException) {
+            assertEquals("RpcSession closed", e.message)
+        }
+    }
+
+    @Test
     fun timeout_sendCancelFailure_stillFailsCall() = runBlocking {
         val transport = object : com.github.sandogeek.simplerpc.transport.RpcTransport {
             override fun sendToRemote(message: String) {

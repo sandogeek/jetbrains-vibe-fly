@@ -90,6 +90,7 @@ internal object KotlinCallTsProxy {
         scope: CoroutineScope,
         requestTimeout: Duration,
         nextRequestId: () -> String,
+        ensureOpen: () -> Unit = {},
     ): T {
         RpcSuspendRequirement.check(iface)
         val service = ServiceName.of(iface)
@@ -101,6 +102,7 @@ internal object KotlinCallTsProxy {
             scope,
             requestTimeout,
             nextRequestId,
+            ensureOpen,
         )
         @Suppress("UNCHECKED_CAST")
         return Proxy.newProxyInstance(
@@ -119,6 +121,7 @@ internal class TypedProxyHandler(
     private val scope: CoroutineScope,
     private val requestTimeout: Duration,
     private val nextRequestId: () -> String,
+    private val ensureOpen: () -> Unit,
 ) : InvocationHandler {
 
     override fun invoke(proxy: Any, method: Method, args: Array<out Any>?): Any? {
@@ -132,6 +135,7 @@ internal class TypedProxyHandler(
                 "Not an RPC method (missing @RpcFun): ${method.name}",
             )
         }
+        ensureOpen()
         val params = args ?: emptyArray()
         @Suppress("UNCHECKED_CAST")
         val cont = params.last() as Continuation<Any?>
@@ -154,6 +158,13 @@ internal class TypedProxyHandler(
         // (raw Continuation from the dynamic proxy is not cancellable until resumed).
         val block: suspend () -> Any? = {
             suspendCancellableCoroutine { cancellable ->
+                try {
+                    ensureOpen()
+                } catch (e: Exception) {
+                    cancellable.resumeWithException(e)
+                    return@suspendCancellableCoroutine
+                }
+
                 val call = PendingCall(cancellable, returnType)
                 check(pending.putIfAbsent(id, call) == null) {
                     "Duplicate RPC request id: $id"

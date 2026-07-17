@@ -9,6 +9,7 @@ import com.github.sandogeek.simplerpc.protocol.RpcMessage
 import com.github.sandogeek.simplerpc.transport.RpcTransport
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ThreadLocalRandom
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Duration
@@ -28,6 +29,7 @@ import kotlinx.coroutines.launch
  * - Obtain proxies for `@KotlinCallTs` interfaces via [proxy].
  * - Outbound calls fail with [RpcTimeoutException] after [requestTimeout] (default 30s).
  * - Local [Job] cancellation sends a wire cancel; peer cancel aborts inbound dispatch.
+ * - After [close], [register], [proxy], and proxy method calls fail immediately.
  */
 class RpcSession(
     private val transport: RpcTransport,
@@ -39,6 +41,7 @@ class RpcSession(
     private val proxyCache = ConcurrentHashMap<Class<*>, Any>()
     private val inboundJobs = ConcurrentHashMap<String, Job>()
     private val requestSequence = AtomicLong()
+    private val closed = AtomicBoolean(false)
     private val requestIdPrefix =
         "k:${java.lang.Long.toUnsignedString(ThreadLocalRandom.current().nextLong(), 36)}:"
 
@@ -46,11 +49,15 @@ class RpcSession(
         transport.setIncomingHandler { raw -> onIncoming(raw) }
     }
 
+    val isClosed: Boolean
+        get() = closed.get()
+
     /**
      * Registers a Kotlin implementation for a `@TsCallKotlin` interface.
      * TypeScript can then invoke its methods through the bridge.
      */
     fun <T : Any> register(iface: Class<T>, impl: T) {
+        ensureOpen()
         require(iface.isAnnotationPresent(TsCallKotlin::class.java)) {
             "Interface ${iface.name} must be annotated with @TsCallKotlin to register an implementation"
         }
@@ -63,6 +70,7 @@ class RpcSession(
      * interface class when the implementation type is ambiguous.
      */
     fun registerImplementation(impl: Any) {
+        ensureOpen()
         val ifaces = impl.javaClass.interfaces.filter {
             it.isAnnotationPresent(TsCallKotlin::class.java)
         }
@@ -85,6 +93,7 @@ class RpcSession(
     inline fun <reified T : Any> register(impl: T) = register(T::class.java, impl)
 
     fun unregister(iface: Class<*>) {
+        ensureOpen()
         dispatcher.unregister(iface)
     }
 
@@ -93,6 +102,7 @@ class RpcSession(
      * and suspend until a response arrives, the call times out, or the caller Job is cancelled.
      */
     fun <T : Any> proxy(iface: Class<T>): T {
+        ensureOpen()
         require(iface.isAnnotationPresent(KotlinCallTs::class.java)) {
             "Interface ${iface.name} must be annotated with @KotlinCallTs to create a proxy"
         }
@@ -106,6 +116,7 @@ class RpcSession(
                 scope,
                 requestTimeout,
                 ::nextRequestId,
+                ::ensureOpen,
             )
         } as T
     }
@@ -113,6 +124,7 @@ class RpcSession(
     inline fun <reified T : Any> proxy(): T = proxy(T::class.java)
 
     fun close() {
+        if (!closed.compareAndSet(false, true)) return
         transport.setIncomingHandler(null)
         inboundJobs.values.forEach { it.cancel() }
         inboundJobs.clear()
@@ -124,11 +136,19 @@ class RpcSession(
         scope.cancel()
     }
 
+    private fun ensureOpen() {
+        if (closed.get()) {
+            throw RpcRemoteException("RpcSession closed")
+        }
+    }
+
     private fun sendRequest(request: RpcMessage.Request) {
+        ensureOpen()
         transport.sendToRemote(request.toJson())
     }
 
     private fun sendCancel(requestId: String) {
+        if (closed.get()) return
         transport.sendToRemote(RpcMessage.Cancel(requestId).toJson())
     }
 
@@ -138,6 +158,7 @@ class RpcSession(
     }
 
     private fun onIncoming(raw: String) {
+        if (closed.get()) return
         val message = try {
             RpcMessage.parse(raw)
         } catch (e: Exception) {
@@ -183,6 +204,7 @@ class RpcSession(
                 inboundJobs.remove(message.id)?.cancel()
             }
             is RpcMessage.Request -> {
+                if (closed.get()) return
                 val job = scope.launch {
                     try {
                         val result = dispatcher.dispatch(message)
