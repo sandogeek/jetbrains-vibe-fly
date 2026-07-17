@@ -163,24 +163,38 @@ internal class TypedProxyHandler(
                     call.timeoutJob = scope.launch {
                         delay(requestTimeout)
                         val removed = pending.remove(id) ?: return@launch
-                        sendCancel(id)
-                        removed.fail(
-                            RpcTimeoutException(
-                                "RPC timed out after $requestTimeout ($service#$methodId)",
-                                requestId = id,
-                            ),
-                        )
+                        try {
+                            sendCancel(id)
+                        } catch (_: Exception) {
+                            // Best-effort: cancel notify must not prevent local fail.
+                        } finally {
+                            removed.fail(
+                                RpcTimeoutException(
+                                    "RPC timed out after $requestTimeout ($service#$methodId)",
+                                    requestId = id,
+                                ),
+                            )
+                        }
                     }
                 }
 
                 cancellable.invokeOnCancellation {
                     val removed = pending.remove(id)
                     if (removed != null && removed.abandon()) {
-                        sendCancel(id)
+                        try {
+                            sendCancel(id)
+                        } catch (_: Exception) {
+                            // Best-effort remote cancel.
+                        }
                     }
                 }
 
-                send(request)
+                try {
+                    send(request)
+                } catch (e: Exception) {
+                    // Avoid leaking pending under Duration.INFINITE (no timeout job).
+                    pending.remove(id)?.fail(e)
+                }
             }
         }
         block.startCoroutine(cont)

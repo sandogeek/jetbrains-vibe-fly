@@ -9,6 +9,7 @@ import com.github.sandogeek.simplerpc.transport.LoopbackTransport
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -356,6 +357,58 @@ class RpcSessionTest {
         assertEquals(1, cancels.size)
 
         kotlinSession.close()
+    }
+
+    @Test
+    fun sendFailure_failsPendingAndDoesNotHang() = runBlocking {
+        val transport = object : com.github.sandogeek.simplerpc.transport.RpcTransport {
+            override fun sendToRemote(message: String) {
+                throw IllegalStateException("transport down")
+            }
+
+            override fun setIncomingHandler(handler: ((message: String) -> Unit)?) {}
+        }
+        val session = SimpleRpc.open(
+            transport,
+            requestTimeout = Duration.INFINITE,
+        )
+        val web = session.proxy(WebApi::class.java)
+        try {
+            withTimeout(1_000) {
+                web.greet("x")
+            }
+            fail("expected send failure")
+        } catch (e: IllegalStateException) {
+            assertTrue(e.message!!.contains("transport down"))
+        }
+        session.close()
+    }
+
+    @Test
+    fun timeout_sendCancelFailure_stillFailsCall() = runBlocking {
+        val transport = object : com.github.sandogeek.simplerpc.transport.RpcTransport {
+            override fun sendToRemote(message: String) {
+                val msg = RpcMessage.parse(message)
+                if (msg is RpcMessage.Cancel) {
+                    throw IllegalStateException("cancel send failed")
+                }
+                // Drop requests: never respond.
+            }
+
+            override fun setIncomingHandler(handler: ((message: String) -> Unit)?) {}
+        }
+        val session = SimpleRpc.open(
+            transport,
+            requestTimeout = 50.milliseconds,
+        )
+        val web = session.proxy(WebApi::class.java)
+        try {
+            web.greet("x")
+            fail("expected RpcTimeoutException")
+        } catch (e: RpcTimeoutException) {
+            assertTrue(e.message!!.contains("timed out"))
+        }
+        session.close()
     }
 
     @Test
