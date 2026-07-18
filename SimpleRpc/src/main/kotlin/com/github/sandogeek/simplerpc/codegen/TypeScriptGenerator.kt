@@ -241,7 +241,7 @@ object TypeScriptGenerator {
                                 )
                                 val optMark = if (optional) "?" else ""
                                 append("  ")
-                                append(fieldName)
+                                append(tsPropertyKey(fieldName))
                                 append(optMark)
                                 append(": ")
                                 append(fieldType)
@@ -337,7 +337,7 @@ object TypeScriptGenerator {
                                     )
                                     val optMark = if (optional) "?" else ""
                                     append("  ")
-                                    append(fieldName)
+                                    append(tsPropertyKey(fieldName))
                                     append(optMark)
                                     append(": ")
                                     append(fieldType)
@@ -415,9 +415,12 @@ object TypeScriptGenerator {
                     "Parameter count mismatch (kotlin=${kParams.size}, java=${javaParamTypes.size})",
                 )
             }
+            val usedParamNames = LinkedHashSet<String>()
             val params = kParams.mapIndexed { index, kp ->
-                val name = kp.name ?: "arg$index"
-                val path = "${iface.simpleName}.${method.name}.$name"
+                val rawName = kp.name ?: "arg$index"
+                val name = uniqueSafeTsIdentifier(rawName, usedParamNames, "arg$index")
+                usedParamNames.add(name)
+                val path = "${iface.simpleName}.${method.name}.$rawName"
                 // Prefer Java generic Type for collections; KType for nullability.
                 val fromJava = typeCtx.resolve(javaParamTypes[index], path)
                 val nullable = kp.type.isMarkedNullable
@@ -536,7 +539,7 @@ object TypeScriptGenerator {
             val opts = "$optsName?: RpcCallOptions"
             val allParams = if (params.isEmpty()) opts else "$params, $opts"
             val ret = if (m.returnIsUnit) "void" else m.returnTs
-            sb.appendLine("  ${m.tsName}($allParams): CancelablePromise<$ret>;")
+            sb.appendLine("  ${tsPropertyKey(m.tsName)}($allParams): CancelablePromise<$ret>;")
         }
         sb.appendLine("}")
         sb.appendLine()
@@ -544,7 +547,7 @@ object TypeScriptGenerator {
         sb.appendLine("  service: \"${escapeTsString(model.serviceName)}\",")
         sb.appendLine("  methods: {")
         for (m in model.methods) {
-            sb.appendLine("    ${m.tsName}: { id: ${m.id}, arity: ${m.params.size} },")
+            sb.appendLine("    ${tsPropertyKey(m.tsName)}: { id: ${m.id}, arity: ${m.params.size} },")
         }
         sb.appendLine("  },")
         sb.appendLine("} as const;")
@@ -564,7 +567,7 @@ object TypeScriptGenerator {
             val ctx = "$ctxName?: RpcCallContext"
             val allParams = if (params.isEmpty()) ctx else "$params, $ctx"
             val ret = if (m.returnIsUnit) "void | Promise<void>" else "${m.returnTs} | Promise<${m.returnTs}>"
-            sb.appendLine("  ${m.tsName}($allParams): $ret;")
+            sb.appendLine("  ${tsPropertyKey(m.tsName)}($allParams): $ret;")
         }
         sb.appendLine("}")
         sb.appendLine()
@@ -572,7 +575,7 @@ object TypeScriptGenerator {
         sb.appendLine("  service: \"${escapeTsString(model.serviceName)}\",")
         sb.appendLine("  methods: {")
         for (m in model.methods) {
-            sb.appendLine("    ${m.tsName}: { id: ${m.id}, arity: ${m.params.size} },")
+            sb.appendLine("    ${tsPropertyKey(m.tsName)}: { id: ${m.id}, arity: ${m.params.size} },")
         }
         sb.appendLine("  },")
         sb.appendLine("} as const;")
@@ -625,6 +628,78 @@ object TypeScriptGenerator {
         }
         return "$preferred$i"
     }
+
+    /** True when [name] is a valid TypeScript IdentifierName (ASCII subset). */
+    private fun isValidTsIdentifier(name: String): Boolean {
+        if (name.isEmpty()) return false
+        if (name in TS_RESERVED_WORDS) return false
+        val first = name[0]
+        if (!(first == '_' || first == '$' || first.isLetter())) return false
+        for (i in 1 until name.length) {
+            val c = name[i]
+            if (!(c == '_' || c == '$' || c.isLetterOrDigit())) return false
+        }
+        return true
+    }
+
+    /**
+     * Emit a property/method key: bare identifier when valid, otherwise a quoted string.
+     * Preserves wire/JSON keys such as `@SerialName("user-name")` and `@RpcFun(tsName=...)`.
+     */
+    private fun tsPropertyKey(name: String): String =
+        if (isValidTsIdentifier(name)) name else "\"${escapeTsString(name)}\""
+
+    /**
+     * Produce a unique, valid TypeScript parameter identifier from [raw].
+     * Illegal characters become `_`; reserved words and empty results get a safe fallback.
+     */
+    private fun uniqueSafeTsIdentifier(
+        raw: String,
+        taken: Set<String>,
+        fallback: String,
+    ): String {
+        val base = sanitizeTsIdentifier(raw).ifEmpty { sanitizeTsIdentifier(fallback) }
+            .ifEmpty { "arg" }
+        if (base !in taken) return base
+        var i = 2
+        while ("$base$i" in taken) {
+            i++
+        }
+        return "$base$i"
+    }
+
+    private fun sanitizeTsIdentifier(raw: String): String {
+        if (isValidTsIdentifier(raw)) return raw
+        val sb = StringBuilder(raw.length)
+        for (c in raw) {
+            when {
+                c == '_' || c == '$' || c.isLetterOrDigit() -> sb.append(c)
+                else -> sb.append('_')
+            }
+        }
+        var result = sb.toString()
+        if (result.isEmpty()) return ""
+        val first = result[0]
+        if (!(first == '_' || first == '$' || first.isLetter())) {
+            result = "_$result"
+        }
+        if (result in TS_RESERVED_WORDS) {
+            result = "_$result"
+        }
+        return result
+    }
+
+    private val TS_RESERVED_WORDS: Set<String> = setOf(
+        "break", "case", "catch", "class", "const", "continue", "debugger", "default",
+        "delete", "do", "else", "enum", "export", "extends", "false", "finally", "for",
+        "function", "if", "import", "in", "instanceof", "new", "null", "return", "super",
+        "switch", "this", "throw", "true", "try", "typeof", "var", "void", "while", "with",
+        "as", "implements", "interface", "let", "package", "private", "protected",
+        "public", "static", "yield", "any", "boolean", "constructor", "declare", "get",
+        "module", "require", "number", "set", "string", "symbol", "type", "from", "of",
+        "async", "await", "namespace", "keyof", "readonly", "unique", "infer", "is",
+        "asserts", "abstract", "override",
+    )
 
     private fun escapeTsString(value: String): String =
         value.replace("\\", "\\\\").replace("\"", "\\\"")

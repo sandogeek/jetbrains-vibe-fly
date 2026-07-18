@@ -145,7 +145,7 @@ class TypeScriptGeneratorTest {
         assertTrue(src.contains("export interface Foo"))
         assertTrue(src.contains("name: string"))
         assertTrue(src.contains("n: number"))
-        assertTrue(src.contains("display_name"))
+        assertTrue(src.contains("display_name?: string | null") || src.contains("display_name: string | null"))
         assertTrue(src.contains("export type Color = \"RED\" | \"GREEN\""))
         assertTrue(src.contains("listFoos(options?: RpcCallOptions): CancelablePromise<Array<Foo>>"))
         assertTrue(
@@ -285,7 +285,58 @@ class TypeScriptGeneratorTest {
             NamedHost::class.java,
             OptionsParamApi::class.java,
             ContextParamApi::class.java,
+            IllegalIdentApi::class.java,
+            IllegalIdentWebApi::class.java,
         )
         TypeScriptCompileSupport.assertCompiles(src, "all-fixtures")
+    }
+
+    @Serializable
+    data class KebabDto(
+        @SerialName("user-name") val userName: String,
+        @SerialName("1st") val first: Int,
+    )
+
+    @TsCallKotlin
+    interface IllegalIdentApi {
+        @RpcFun(id = 1, tsName = "get-user")
+        suspend fun getUser(value: KebabDto): KebabDto
+
+        @RpcFun(id = 2, tsName = "do")
+        suspend fun doAction(`class`: String, `user-name`: Int): String
+    }
+
+    @KotlinCallTs
+    interface IllegalIdentWebApi {
+        @RpcFun(id = 1, tsName = "on-ready")
+        suspend fun onReady(`default`: String)
+    }
+
+    @Test
+    fun illegalIdentifiersQuotedOrRenamed() {
+        val src = TypeScriptGenerator.generate(
+            IllegalIdentApi::class.java,
+            IllegalIdentWebApi::class.java,
+        )
+        assertTrue("DTO field user-name must be quoted:\n$src", src.contains("\"user-name\": string"))
+        assertTrue("DTO field 1st must be quoted:\n$src", src.contains("\"1st\": number"))
+        assertTrue("method get-user must be quoted:\n$src", src.contains("\"get-user\""))
+        assertTrue("method do must be quoted:\n$src", src.contains("\"do\""))
+        assertTrue("descriptor key on-ready must be quoted:\n$src", src.contains("\"on-ready\""))
+        assertTrue(
+            "reserved param class must be renamed:\n$src",
+            src.contains("_class: string") || src.contains("class_: string"),
+        )
+        assertTrue(
+            "illegal param user-name must be sanitized:\n$src",
+            src.contains("user_name: number"),
+        )
+        assertTrue(
+            "reserved param default must be renamed:\n$src",
+            src.contains("_default: string") || src.contains("default_: string"),
+        )
+        assertFalse("raw class param must not appear:\n$src", src.contains("(class: string"))
+        assertFalse("raw user-name param must not appear:\n$src", src.contains("user-name: number"))
+        TypeScriptCompileSupport.assertCompiles(src, "IllegalIdent")
     }
 }
