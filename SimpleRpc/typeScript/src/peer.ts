@@ -16,6 +16,12 @@ export type SimpleRpcUnsubscribe = () => void
 export type SimpleRpcTransport = {
   send(message: string): void
   subscribe(handler: (message: string) => void): SimpleRpcUnsubscribe
+  /**
+   * Optional. Called once when the underlying pipe ends (e.g. stdio EOF).
+   * [SimpleRpcPeer] uses this to close and reject pending calls immediately.
+   * Return an unsubscribe function, or nothing if unsupported.
+   */
+  onClose?: (handler: () => void) => SimpleRpcUnsubscribe | void
 }
 
 type PendingEntry = {
@@ -35,6 +41,10 @@ type HandlerEntry = {
 /**
  * Bidirectional RPC peer: req/ok/err/cancel lifecycle, timeouts, AbortSignal,
  * service registration, and close.
+ *
+ * When the transport supports [SimpleRpcTransport.onClose] (stdio EOF, etc.),
+ * the peer closes automatically and pending calls reject immediately — including
+ * requests with `timeoutMs: 0` / no timeout.
  */
 export class SimpleRpcPeer {
   private readonly transport: SimpleRpcTransport
@@ -43,6 +53,7 @@ export class SimpleRpcPeer {
   private readonly inflight = new Map<string, AbortController>()
   private readonly registeredServices = new Set<string>()
   private unsubscribe: SimpleRpcUnsubscribe | null = null
+  private unsubscribeClose: SimpleRpcUnsubscribe | null = null
   private closed = false
   private requestSequence = 0
   private readonly requestIdPrefix: string
@@ -52,6 +63,10 @@ export class SimpleRpcPeer {
     this.requestIdPrefix =
       "j:" + Date.now().toString(36) + ":" + Math.random().toString(36).slice(2) + ":"
     this.unsubscribe = this.transport.subscribe((raw) => this.onIncoming(raw))
+    if (typeof this.transport.onClose === "function") {
+      const unsub = this.transport.onClose(() => this.close())
+      this.unsubscribeClose = typeof unsub === "function" ? unsub : null
+    }
   }
 
   /**
@@ -231,6 +246,10 @@ export class SimpleRpcPeer {
   close(): void {
     if (this.closed) return
     this.closed = true
+    if (this.unsubscribeClose) {
+      this.unsubscribeClose()
+      this.unsubscribeClose = null
+    }
     if (this.unsubscribe) {
       this.unsubscribe()
       this.unsubscribe = null

@@ -1,7 +1,7 @@
 {
   "name": "@sandogeek/simple-rpc",
   "version": "0.0.1",
-  "description": "ESM TypeScript peer for SimpleRpc (JCEF WebView ↔ Kotlin)",
+  "description": "ESM TypeScript peer for SimpleRpc (JCEF WebView / Node stdio ↔ Kotlin)",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

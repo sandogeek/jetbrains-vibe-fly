@@ -1,10 +1,14 @@
 # SimpleRpc
 
-JCEF WebView（TypeScript）与 Kotlin/JVM 之间的双向 RPC 桥。用于 IntelliJ 插件内：界面跑在 JCEF，业务在 Kotlin，双方通过接口约定互相调用。
+Kotlin/JVM 与 TypeScript 之间的双向 RPC 桥。契约、生成器、取消/超时语义与传输层分离。
 
-传输层基于 **CefMessageRouter**（TS → Kotlin）与 **executeJavaScript + DOM CustomEvent**（Kotlin → TS）。
+| 场景 | Kotlin transport | TypeScript |
+|------|------------------|------------|
+| JCEF WebView ↔ 插件 | `CefMessageRouterTransport` | `createCefSimpleRpc` |
+| Node 子进程 ↔ 插件 | `StdioRpcTransport` | `createStdioSimpleRpc` |
 
-> 与 Node 侧 ClineSdk 的通讯走 gRPC；**界面 ↔ Kotlin** 走本模块。
+JCEF：CefMessageRouter（TS → Kotlin）+ executeJavaScript / DOM CustomEvent（Kotlin → TS）。  
+stdio：子进程 `stdin`/`stdout` 上 **Content-Length** 分帧 UTF-8 JSON；`stdout` 仅承载协议，日志写 `stderr`。
 
 ## 破坏性变更（ESM 契约）
 
@@ -57,18 +61,53 @@ SimpleRpc/
     │   ├── RpcSession.kt
     │   ├── annotation/
     │   ├── codegen/            # TypeScriptGenerator
-    │   ├── transport/
-    │   ├── protocol/
-    │   ├── jcef/
-    │   └── internal/
+│   ├── transport/
+│   ├── protocol/
+│   ├── jcef/               # CefMessageRouterTransport
+│   ├── stdio/              # StdioRpcTransport + Content-Length framing
+│   └── internal/
     └── test/kotlin/...
 ```
 
 依赖：`kotlin-stdlib`、`kotlin-reflect`、`kotlinx-coroutines-core`、`kotlinx-serialization-json`。JVM 21。
 
-本模块**不**依赖 IntelliJ / JCEF API，便于单测；插件侧把 `CefMessageRouter` 接到 `CefMessageRouterTransport`。
+本模块**不**依赖 IntelliJ / JCEF API，便于单测；插件侧把 `CefMessageRouter` 接到 `CefMessageRouterTransport`，或把子进程 stdio 接到 `StdioRpcTransport`。
 
 TS 包构建仅产出 ESM JavaScript、类型声明和 source map，不向 Kotlin JAR 打包 JS。
+
+## stdio 分帧
+
+```
+Content-Length: <utf8-byte-count>\r\n
+\r\n
+<utf-8 json body>
+```
+
+不依赖换行分割消息体。示例：
+
+```kotlin
+val process = ProcessBuilder("node", "agent.js")
+    .redirectError(ProcessBuilder.Redirect.INHERIT)
+    .start()
+val transport = StdioRpcTransport(
+    input = process.inputStream,
+    output = process.outputStream,
+    onClosed = { process.destroy() }, // 可选：额外清理
+)
+// stdin/stdout EOF 时 transport 关闭，RpcSession 自动 close 并立即失败挂起请求
+val session = SimpleRpc.open(transport)
+```
+
+```ts
+import { createStdioSimpleRpc } from "@sandogeek/simple-rpc"
+
+// Node 作为子进程时：
+// input EOF 时 peer 自动 close，未完成的 call（含 timeoutMs: 0）立即 reject
+const rpc = createStdioSimpleRpc({
+  input: process.stdin,
+  output: process.stdout,
+})
+```
 
 ## 线协议
 

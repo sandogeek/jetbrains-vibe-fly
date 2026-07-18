@@ -31,6 +31,8 @@ import kotlinx.coroutines.launch
  * - Obtain proxies for `@KotlinCallTs` interfaces via [proxy].
  * - Outbound calls fail with [RpcTimeoutException] after [requestTimeout] (default 30s).
  * - Local [Job] cancellation sends a wire cancel; peer cancel aborts inbound dispatch.
+ * - Transport disconnect ([RpcTransport.setCloseHandler]) closes the session and fails
+ *   pending calls immediately (important for stdio EOF with infinite timeout).
  * - After [close], [register], [proxy], and proxy method calls fail immediately.
  */
 class RpcSession(
@@ -49,6 +51,7 @@ class RpcSession(
 
     init {
         transport.setIncomingHandler { raw -> onIncoming(raw) }
+        transport.setCloseHandler { close() }
     }
 
     val isClosed: Boolean
@@ -127,6 +130,7 @@ class RpcSession(
 
     fun close() {
         if (!closed.compareAndSet(false, true)) return
+        transport.setCloseHandler(null)
         transport.setIncomingHandler(null)
         inboundJobs.values.forEach { it.cancel() }
         inboundJobs.clear()

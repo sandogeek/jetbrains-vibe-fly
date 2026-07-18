@@ -9,15 +9,16 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 
 /**
- * Entry point for SimpleRpc — bidirectional bridge between JCEF WebView and Kotlin.
+ * Entry point for SimpleRpc — bidirectional RPC over a pluggable [RpcTransport].
  *
  * Interfaces marked with [com.github.sandogeek.simplerpc.annotation.KotlinCallTs] or
  * [com.github.sandogeek.simplerpc.annotation.TsCallKotlin] expose RPC methods via
  * [com.github.sandogeek.simplerpc.annotation.RpcFun] (`suspend` only); other methods may be ordinary.
  *
- * Transport is typically [CefMessageRouterTransport] wired to `CefMessageRouter` +
- * `executeJavaScript` (host messages as DOM CustomEvent). TypeScript uses the
- * `@sandogeek/simple-rpc` ESM package (`createCefSimpleRpc`).
+ * Transports:
+ * - [CefMessageRouterTransport] — JCEF WebView (`createCefSimpleRpc` on TS)
+ * - [com.github.sandogeek.simplerpc.stdio.StdioRpcTransport] — process stdio with
+ *   Content-Length framing (`createStdioSimpleRpc` on Node)
  */
 object SimpleRpc {
 
