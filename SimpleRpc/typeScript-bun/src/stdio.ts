@@ -1,6 +1,9 @@
 import type { Readable, Writable } from "node:stream"
+import {
+  SimpleRpcPeer,
+  type SimpleRpcTransport,
+} from "@sandogeek/simple-rpc"
 import { ContentLengthDecoder, encodeFrame } from "./framing.js"
-import { SimpleRpcPeer, type SimpleRpcTransport } from "./peer.js"
 
 export type CreateStdioSimpleRpcOptions = {
   /**
@@ -30,7 +33,7 @@ export type CreateStdioSimpleRpcOptions = {
  * Protocol JSON must be the only data on the RPC streams. Write logs to stderr.
  *
  * ```ts
- * import { createStdioSimpleRpc } from "@sandogeek/simple-rpc"
+ * import { createStdioSimpleRpc } from "@sandogeek/simple-rpc-bun"
  *
  * const rpc = createStdioSimpleRpc({
  *   input: process.stdin,

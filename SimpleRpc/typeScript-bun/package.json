@@ -1,7 +1,7 @@
 {
-  "name": "@sandogeek/simple-rpc",
+  "name": "@sandogeek/simple-rpc-bun",
   "version": "0.0.1",
-  "description": "ESM TypeScript peer for SimpleRpc (browser / JCEF WebView ↔ Kotlin)",
+  "description": "Bun/Node stdio transport and Content-Length framing for SimpleRpc",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -20,8 +20,16 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "prepublishOnly": "npm run build"
   },
+  "dependencies": {
+    "@sandogeek/simple-rpc": "file:../typeScript"
+  },
   "devDependencies": {
+    "@types/node": "^22.13.10",
     "typescript": "^5.8.2"
+  },
+  "engines": {
+    "node": ">=18",
+    "bun": ">=1.0"
   },
   "license": "UNLICENSED",
   "private": true

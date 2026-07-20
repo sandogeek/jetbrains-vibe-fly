@@ -4,8 +4,8 @@ Kotlin/JVM 与 TypeScript 之间的双向 RPC 桥。契约、生成器、取消/
 
 | 场景 | Kotlin transport | TypeScript |
 |------|------------------|------------|
-| JCEF WebView ↔ 插件 | `CefMessageRouterTransport` | `createCefSimpleRpc` |
-| Node 子进程 ↔ 插件 | `StdioRpcTransport` | `createStdioSimpleRpc` |
+| JCEF WebView ↔ 插件 | `CefMessageRouterTransport` | `@sandogeek/simple-rpc` → `createCefSimpleRpc` |
+| Node/Bun 子进程 ↔ 插件 | `StdioRpcTransport` | `@sandogeek/simple-rpc-bun` → `createStdioSimpleRpc` |
 
 JCEF：CefMessageRouter（TS → Kotlin）+ executeJavaScript / DOM CustomEvent（Kotlin → TS）。  
 stdio：子进程 `stdin`/`stdout` 上 **Content-Length** 分帧 UTF-8 JSON；`stdout` 仅承载协议，日志写 `stderr`。
@@ -52,7 +52,10 @@ SimpleRpc/
 ├── SimpleRpc.md
 ├── plan.md
 ├── build.gradle.kts
-├── typeScript/                 # @sandogeek/simple-rpc ESM 包
+├── typeScript/                 # @sandogeek/simple-rpc（浏览器 / JCEF，无 Node 依赖）
+│   ├── package.json
+│   └── src/
+├── typeScript-bun/             # @sandogeek/simple-rpc-bun（stdio + Content-Length framing）
 │   ├── package.json
 │   └── src/
 └── src/
@@ -99,7 +102,7 @@ val session = SimpleRpc.open(transport)
 ```
 
 ```ts
-import { createStdioSimpleRpc } from "@sandogeek/simple-rpc"
+import { createStdioSimpleRpc } from "@sandogeek/simple-rpc-bun"
 
 // Node 作为子进程时：
 // input EOF 时 peer 自动 close，未完成的 call（含 timeoutMs: 0）立即 reject
@@ -298,8 +301,11 @@ SimpleRpc.requireSuspendMethods<HostApi>()
 # Kotlin（需 JDK 21）
 ./gradlew :SimpleRpc:test
 
-# TypeScript ESM 包
+# TypeScript（浏览器 / JCEF 核心）
 cd SimpleRpc/typeScript && npm ci && npm test && npm run build
+
+# TypeScript（Bun/Node stdio）
+cd SimpleRpc/typeScript-bun && npm ci && npm test && npm run build
 ```
 
 ## 超时与取消

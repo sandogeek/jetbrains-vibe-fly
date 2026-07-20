@@ -31,7 +31,8 @@ import java.util.concurrent.atomic.AtomicReference
  * process.destroy()
  * ```
  *
- * TypeScript side: `createStdioSimpleRpc({ input: process.stdin, output: process.stdout })`
+ * TypeScript side (`@sandogeek/simple-rpc-bun`):
+ * `createStdioSimpleRpc({ input: process.stdin, output: process.stdout })`
  * (or PassThrough streams in tests). Peer closes automatically on input EOF.
  *
  * Messages are delivered to the incoming handler serially and in arrival order
