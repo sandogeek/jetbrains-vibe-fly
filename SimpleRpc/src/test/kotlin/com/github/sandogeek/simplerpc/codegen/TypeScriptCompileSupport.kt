@@ -22,7 +22,7 @@ internal object TypeScriptCompileSupport {
             Files.isDirectory(typeScriptRoot),
         )
         assumeTrue(
-            "tsc not found at $tsc — run npm install in SimpleRpc/typeScript",
+            "tsc not found at $tsc — run bun install in SimpleRpc/typeScript",
             Files.isRegularFile(tsc),
         )
 
@@ -55,7 +55,7 @@ internal object TypeScriptCompileSupport {
 
             val process = ProcessBuilder(
                 listOf(
-                    resolveNode(),
+                    resolveJsRuntime(),
                     tsc.toAbsolutePath().toString(),
                     "-p",
                     tsconfig.toAbsolutePath().toString(),
@@ -93,19 +93,24 @@ internal object TypeScriptCompileSupport {
             } + if (source.endsWith("\n")) "\n" else ""
     }
 
-    private fun resolveNode(): String {
+    /** Prefer bun; fall back to node for running the local tsc binary. */
+    private fun resolveJsRuntime(): String {
+        findExecutable("bun")?.let { return it }
+        findExecutable("node")?.let { return it }
+        error("bun or node executable not found on PATH")
+    }
+
+    private fun findExecutable(name: String): String? {
         val fromPath = System.getenv("PATH")
             ?.split(System.getProperty("path.separator"))
-            ?.map { Path.of(it, "node") }
+            ?.map { Path.of(it, name) }
             ?.firstOrNull { Files.isExecutable(it) }
         if (fromPath != null) return fromPath.toString()
-        val common = listOf(
-            "/usr/local/bin/node",
-            "/opt/homebrew/bin/node",
-            "/usr/bin/node",
-        ).map { Path.of(it) }.firstOrNull { Files.isExecutable(it) }
-        require(common != null) { "node executable not found on PATH" }
-        return common.toString()
+        return listOf(
+            "/opt/homebrew/bin/$name",
+            "/usr/local/bin/$name",
+            "/usr/bin/$name",
+        ).map { Path.of(it) }.firstOrNull { Files.isExecutable(it) }?.toString()
     }
 
     private fun resolveTypeScriptRoot(): Path {

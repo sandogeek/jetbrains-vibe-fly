@@ -302,10 +302,10 @@ SimpleRpc.requireSuspendMethods<HostApi>()
 ./gradlew :SimpleRpc:test
 
 # TypeScript（浏览器 / JCEF 核心）
-cd SimpleRpc/typeScript && npm ci && npm test && npm run build
+cd SimpleRpc/typeScript && bun install --frozen-lockfile && bun test && bun run build
 
 # TypeScript（Bun/Node stdio）
-cd SimpleRpc/typeScript-bun && npm ci && npm test && npm run build
+cd SimpleRpc/typeScript-bun && bun install --frozen-lockfile && bun test && bun run build
 ```
 
 ## 超时与取消

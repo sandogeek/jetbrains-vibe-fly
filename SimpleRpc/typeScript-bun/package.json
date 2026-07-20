@@ -18,7 +18,7 @@
     "build": "tsc -p tsconfig.json",
     "test": "bun test ./test",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "bun run build"
   },
   "dependencies": {
     "@sandogeek/simple-rpc": "file:../typeScript"
