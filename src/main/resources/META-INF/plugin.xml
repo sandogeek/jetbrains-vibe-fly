@@ -13,7 +13,7 @@
     <resource-bundle>messages.MyBundle</resource-bundle>
 
     <extensions defaultExtensionNs="com.intellij">
-        <toolWindow factoryClass="com.github.sandogeek.jetbrainsvibefly.toolWindow.MyToolWindowFactory" id="MyToolWindow"/>
+        <toolWindow factoryClass="com.github.sandogeek.jetbrainsvibefly.toolWindow.MyToolWindowFactory" id="Vibe Fly"/>
         <postStartupActivity implementation="com.github.sandogeek.jetbrainsvibefly.startup.MyProjectActivity" />
     </extensions>
 </idea-plugin>
