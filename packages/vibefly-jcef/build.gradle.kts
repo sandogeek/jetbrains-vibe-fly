@@ -49,6 +49,7 @@ if (!uiDevMode) {
     }
 } else {
     logger.lifecycle(
-        "vibefly.ui.dev enabled: skip :vibefly-jcef:buildVibeflyUi (use: cd packages/vibefly-ui && bun run dev)",
+        "vibefly.ui.dev enabled: skip :vibefly-jcef:buildVibeflyUi " +
+            "(:plugin:runIde will ensure bun run dev if needed)",
     )
 }
