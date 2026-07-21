@@ -41,8 +41,8 @@ classpath scheme（`http://vibefly/`）无法代理 WebSocket，HMR 需让 JCEF 
 
 1. 终端：`cd packages/vibefly-ui && bun run dev`
 2. 启动插件沙箱（任选其一）：
-   - `./gradlew runIde -Pvibefly.ui.dev=true`
-   - 或自定义：`./gradlew runIde -Pvibefly.ui.dev.url=http://127.0.0.1:5173/`
+   - `./gradlew :plugin:runIde -Pvibefly.ui.dev=true`
+   - 或自定义：`./gradlew :plugin:runIde -Pvibefly.ui.dev.url=http://127.0.0.1:5173/`
 
 对应 JVM 属性：
 
