@@ -21,6 +21,11 @@ dependencies {
 }
 
 // vibefly-ui (Vite) → src/main/resources/web for ClasspathResourceHandler
+// Dev (-Pvibefly.ui.dev=true / -Pvibefly.ui.dev.url=...): JCEF loads Vite; skip bun run build
+val uiDevMode =
+    findProperty("vibefly.ui.dev")?.toString() == "true" ||
+        !findProperty("vibefly.ui.dev.url")?.toString()?.trim().isNullOrEmpty()
+
 val uiRoot = rootProject.layout.projectDirectory.dir("packages/vibefly-ui")
 val webOut = layout.projectDirectory.dir("src/main/resources/web")
 
@@ -37,6 +42,13 @@ val buildVibeflyUi by tasks.registering(BuildVibeflyUiTask::class) {
     outputDir.set(webOut)
 }
 
-tasks.named("processResources") {
-    dependsOn(buildVibeflyUi)
+// Dev: JCEF loads Vite — do not wire bun run build into processResources
+if (!uiDevMode) {
+    tasks.named("processResources") {
+        dependsOn(buildVibeflyUi)
+    }
+} else {
+    logger.lifecycle(
+        "vibefly.ui.dev enabled: skip :vibefly-jcef:buildVibeflyUi (use: cd packages/vibefly-ui && bun run dev)",
+    )
 }

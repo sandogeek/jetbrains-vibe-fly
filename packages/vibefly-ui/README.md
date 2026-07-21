@@ -63,7 +63,8 @@ classpath scheme（`http://vibefly/`）无法代理 WebSocket，HMR 需让 JCEF 
 | 开发 URL | `http://127.0.0.1:5173/`（Vite HMR） |
 | 资源服务 | `ClasspathResourceHandler`（classpath `web/**`） |
 
-Gradle 在 `:vibefly-jcef:processResources` 前会执行 `buildVibeflyUi`（`bun run build`）。若尚未 `bun install`，该任务会跳过构建并打日志。
+Gradle 在 `:vibefly-jcef:processResources` 前会执行 `buildVibeflyUi`（`bun run build`）。若尚未 `bun install`，该任务会跳过构建并打日志。  
+使用 `-Pvibefly.ui.dev=true` 或 `-Pvibefly.ui.dev.url=...` 时不跑 `buildVibeflyUi`（JCEF 直连 Vite）。
 
 ## 约定
 

@@ -33,6 +33,7 @@ changelog {
 
 // Vite HMR: ./gradlew :plugin:runIde -Pvibefly.ui.dev=true  (also start: cd packages/vibefly-ui && bun run dev)
 // Optional: -Pvibefly.ui.dev.url=http://127.0.0.1:5173/
+// Dev also skips :vibefly-jcef:buildVibeflyUi (no bun run build).
 tasks.named<RunIdeTask>("runIde") {
     val dev = findProperty("vibefly.ui.dev")?.toString()
     if (dev == "true") {
