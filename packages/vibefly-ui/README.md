@@ -39,13 +39,15 @@ bun run preview
 
 classpath scheme（`http://vibefly/`）无法代理 WebSocket，HMR 需让 JCEF 直接加载 Vite dev server。
 
-启动插件沙箱（任选其一）：
+启动插件沙箱（`runIde` 会等待 Vite 端口就绪，不自动启动）：
 
-- `./gradlew :plugin:runIde -Pvibefly.ui.dev=true`
-- 自定义：`./gradlew :plugin:runIde -Pvibefly.ui.dev.url=http://127.0.0.1:5173/`
-- IDE：使用 **Run Plugin** 配置（已带 `-Pvibefly.ui.dev=true`）
+- IDE（推荐）：**Run Plugin + UI Dev**（Compound = **Run UI Dev** + **Run Plugin**）
+- 或分别：**Run UI Dev**（`./gradlew runVibeflyUiDev`），再 **Run Plugin**（`-Pvibefly.ui.dev=true`）
+- CLI：`./gradlew runVibeflyUiDev`，另开终端 `./gradlew :plugin:runIde -Pvibefly.ui.dev=true`
+- 自定义 URL：`./gradlew :plugin:runIde -Pvibefly.ui.dev.url=http://127.0.0.1:5173/`
 
-`runIde` 在 ui.dev 模式下会先跑 `ensureVibeflyUiDevServer`：若 `127.0.0.1:5173` 未监听则自动 `bun run dev`（日志：`build/vibefly-ui-dev.log`）；已在跑则跳过。也可手动：`cd packages/vibefly-ui && bun run dev`。
+**Run UI Dev** 走 Gradle 任务 `runVibeflyUiDev`（前台 `bun run dev`，日志在 IDE Run / Gradle 控制台）。  
+ui.dev 模式下 `runIde` 依赖 `waitVibeflyUiDevServer`（默认等 `127.0.0.1:5173`，超时 60s）。
 
 对应 JVM 属性：
 

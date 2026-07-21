@@ -33,7 +33,7 @@ changelog {
 
 // Vite HMR: ./gradlew :plugin:runIde -Pvibefly.ui.dev=true
 // Optional: -Pvibefly.ui.dev.url=http://127.0.0.1:5173/
-// When ui.dev is on, ensureVibeflyUiDevServer starts `bun run dev` if the port is free.
+// runIde waits for the Vite port (no auto-start). Use IDE "Run UI Dev" / Compound, or bun run dev.
 // Dev also skips :vibefly-jcef:buildVibeflyUi (no bun run build).
 val isUiDevMode =
     findProperty("vibefly.ui.dev")?.toString() == "true" ||
@@ -41,17 +41,14 @@ val isUiDevMode =
 
 val resolvedUiDevUrl =
     findProperty("vibefly.ui.dev.url")?.toString()?.trim().orEmpty()
-        .ifEmpty { EnsureVibeflyUiDevServerTask.DEFAULT_DEV_URL }
+        .ifEmpty { WaitVibeflyUiDevServerTask.DEFAULT_DEV_URL }
 
-val ensureVibeflyUiDevServer by tasks.registering(EnsureVibeflyUiDevServerTask::class) {
+val waitVibeflyUiDevServer by tasks.registering(WaitVibeflyUiDevServerTask::class) {
     group = "run"
-    description = "Start packages/vibefly-ui `bun run dev` if not already listening"
+    description = "Wait until packages/vibefly-ui Vite dev server is listening"
     uiDevEnabled.set(isUiDevMode)
-    bunCommand.set(providers.gradleProperty("vibefly.bun").orElse("bun"))
-    workingDirectory.set(rootProject.layout.projectDirectory.dir("packages/vibefly-ui"))
     devUrl.set(resolvedUiDevUrl)
     readyTimeoutSeconds.set(60)
-    logFile.set(rootProject.layout.buildDirectory.file("vibefly-ui-dev.log"))
 }
 
 tasks.named<RunIdeTask>("runIde") {
@@ -64,6 +61,6 @@ tasks.named<RunIdeTask>("runIde") {
         jvmArgs("-Dvibefly.ui.dev.url=$devUrlProp")
     }
     if (isUiDevMode) {
-        dependsOn(ensureVibeflyUiDevServer)
+        dependsOn(waitVibeflyUiDevServer)
     }
 }
