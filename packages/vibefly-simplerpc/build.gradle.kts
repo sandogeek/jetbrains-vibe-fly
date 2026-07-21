@@ -14,7 +14,7 @@ java {
     withSourcesJar()
 }
 
-// Root sets kotlin.stdlib.default.dependency=false for the IntelliJ plugin; SimpleRpc needs stdlib.
+// Root sets kotlin.stdlib.default.dependency=false for the IntelliJ plugin; vibefly-simplerpc needs stdlib.
 dependencies {
     implementation(kotlin("stdlib"))
     implementation(kotlin("reflect"))

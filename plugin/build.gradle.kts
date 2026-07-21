@@ -15,7 +15,7 @@ kotlin {
 }
 
 dependencies {
-    implementation(project(":SimpleRpc"))
+    implementation(project(":vibefly-simplerpc"))
     implementation(project(":vibefly-jcef"))
 
     testImplementation("junit:junit:4.13.2")

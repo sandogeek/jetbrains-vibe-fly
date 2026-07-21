@@ -3,7 +3,8 @@ import org.jetbrains.intellij.platform.gradle.extensions.intellijPlatform
 rootProject.name = "jetbrains-vibe-fly"
 
 include("plugin")
-include("SimpleRpc")
+include("vibefly-simplerpc")
+project(":vibefly-simplerpc").projectDir = file("packages/vibefly-simplerpc")
 include("vibefly-jcef")
 project(":vibefly-jcef").projectDir = file("packages/vibefly-jcef")
 

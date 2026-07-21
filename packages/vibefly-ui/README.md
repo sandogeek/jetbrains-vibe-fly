@@ -68,4 +68,5 @@ Gradle 在 `:vibefly-jcef:processResources` 前会执行 `buildVibeflyUi`（`bun
 ## 约定
 
 - 包名以 `vibefly-` 开头，为本仓库自有代码
-- 后续可接入 fork 的 OpenCode UI：`packages/opencode/packages/ui`（`@opencode-ai/ui`）
+- 引擎侧基于 Oh My Pi（`@oh-my-pi/pi-coding-agent` 等）；本包为 JetBrains JCEF 自研前端，经 SimpleRpc 与主机/agent 通信
+

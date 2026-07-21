@@ -18,11 +18,11 @@ internal object TypeScriptCompileSupport {
 
     fun assertCompiles(source: String, label: String = "generated") {
         assumeTrue(
-            "TypeScript package not found (expected SimpleRpc/typeScript)",
+            "TypeScript package not found (expected packages/vibefly-simplerpc/typeScript)",
             Files.isDirectory(typeScriptRoot),
         )
         assumeTrue(
-            "tsc not found at $tsc — run bun install in SimpleRpc/typeScript",
+            "tsc not found at $tsc — run bun install in packages/vibefly-simplerpc/typeScript",
             Files.isRegularFile(tsc),
         )
 
@@ -117,9 +117,10 @@ internal object TypeScriptCompileSupport {
         val cwd = Path.of("").toAbsolutePath()
         val candidates = listOf(
             cwd.resolve("typeScript"),
-            cwd.resolve("SimpleRpc/typeScript"),
-            cwd.parent?.resolve("SimpleRpc/typeScript"),
+            cwd.resolve("packages/vibefly-simplerpc/typeScript"),
+            cwd.parent?.resolve("packages/vibefly-simplerpc/typeScript"),
             cwd.parent?.resolve("typeScript"),
+            cwd.resolve("vibefly-simplerpc/typeScript"),
         ).filterNotNull()
         return candidates.firstOrNull {
             Files.isDirectory(it) && Files.isRegularFile(it.resolve("package.json"))

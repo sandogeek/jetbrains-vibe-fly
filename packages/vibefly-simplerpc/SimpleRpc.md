@@ -48,7 +48,7 @@ stdio：子进程 `stdin`/`stdout` 上 **Content-Length** 分帧 UTF-8 JSON；`s
 ## 模块结构
 
 ```
-SimpleRpc/
+packages/vibefly-simplerpc/
 ├── SimpleRpc.md
 ├── plan.md
 ├── build.gradle.kts
@@ -299,13 +299,13 @@ SimpleRpc.requireSuspendMethods<HostApi>()
 
 ```bash
 # Kotlin（需 JDK 21）
-./gradlew :SimpleRpc:test
+./gradlew :vibefly-simplerpc:test
 
 # TypeScript（浏览器 / JCEF 核心）
-cd SimpleRpc/typeScript && bun install --frozen-lockfile && bun test && bun run build
+cd packages/vibefly-simplerpc/typeScript && bun install --frozen-lockfile && bun test && bun run build
 
 # TypeScript（Bun/Node stdio）
-cd SimpleRpc/typeScript-bun && bun install --frozen-lockfile && bun test && bun run build
+cd packages/vibefly-simplerpc/typeScript-bun && bun install --frozen-lockfile && bun test && bun run build
 ```
 
 ## 超时与取消
