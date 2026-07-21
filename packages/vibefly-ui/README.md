@@ -1,6 +1,6 @@
 # @vibefly/ui
 
-Vibe Fly WebView 前端（Vite + SolidJS + TypeScript）。
+Vibe Fly WebView 前端（Vite + SolidJS + Ark UI + Tailwind CSS v4）。
 
 构建产物由 `vibefly-jcef` 的自定义 Scheme（`http://vibefly/`）从 classpath 提供给 JCEF，保留 Vite 默认多 chunk / 代码分割，无需 singlefile 内联。
 
@@ -9,6 +9,8 @@ Vibe Fly WebView 前端（Vite + SolidJS + TypeScript）。
 - Vite
 - SolidJS
 - TypeScript
+- [Ark UI](https://ark-ui.com/)（`@ark-ui/solid`，无样式 headless 组件）
+- [Tailwind CSS v4](https://tailwindcss.com/)（`@tailwindcss/vite`）
 
 ## 目录
 

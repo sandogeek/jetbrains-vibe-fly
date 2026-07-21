@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "Vibe Fly WebView UI (Vite + SolidJS + TypeScript), served via http://vibefly/",
+  "description": "Vibe Fly WebView UI (Vite + SolidJS + Ark UI + Tailwind CSS v4), served via http://vibefly/",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -11,10 +11,13 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@ark-ui/solid": "^5.37.1",
     "solid-js": "^1.9.9"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^22.15.21",
+    "tailwindcss": "^4.3.3",
     "typescript": "^5.8.3",
     "vite": "^6.3.5",
     "vite-plugin-solid": "^2.11.6"

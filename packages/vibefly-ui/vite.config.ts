@@ -1,5 +1,6 @@
 import { defineConfig } from "vite"
 import solid from "vite-plugin-solid"
+import tailwindcss from "@tailwindcss/vite"
 import { resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -8,7 +9,7 @@ const root = fileURLToPath(new URL(".", import.meta.url))
 // Served by JCEF ClasspathResourceHandler as http://vibefly/
 // Keep relative base so multi-chunk assets resolve under the custom domain.
 export default defineConfig({
-  plugins: [solid()],
+  plugins: [solid(), tailwindcss()],
   base: "./",
   root,
   resolve: {
