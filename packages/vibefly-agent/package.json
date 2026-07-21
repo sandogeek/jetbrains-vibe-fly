@@ -1,0 +1,42 @@
+{
+  "name": "@vibefly/agent",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Vibe Fly Bun agent: Oh My Pi (omp) engine bridged to JVM via SimpleRpc over stdio",
+  "main": "./dist/main.js",
+  "types": "./dist/main.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/main.d.ts",
+      "import": "./dist/main.js"
+    }
+  },
+  "bin": {
+    "vibefly-agent": "./dist/main.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "bun run src/main.ts",
+    "start:dist": "bun run dist/main.js",
+    "prepublishOnly": "bun run build"
+  },
+  "dependencies": {
+    "@oh-my-pi/pi-coding-agent": "17.0.6",
+    "@sandogeek/simple-rpc": "file:../vibefly-simplerpc/typeScript",
+    "@sandogeek/simple-rpc-bun": "file:../vibefly-simplerpc/typeScript-bun"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.21",
+    "typescript": "^5.8.3"
+  },
+  "engines": {
+    "bun": ">=1.1.0",
+    "node": ">=22"
+  },
+  "license": "UNLICENSED"
+}
