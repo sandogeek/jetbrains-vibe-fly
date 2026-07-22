@@ -17,6 +17,21 @@ export type RpcMethodDef<
 }
 
 /**
+ * Extract business arguments from a direct contract method.
+ *
+ * A direct contract may expose the branded RPC options as its final optional
+ * argument. Those options configure the local call and must not be serialized
+ * as a wire argument.
+ */
+export type RpcMethodArgs<Method> = Method extends (
+  ...args: [...infer Args, options?: BrandedRpcOptions]
+) => unknown
+  ? Args
+  : Method extends (...args: infer Args) => unknown
+    ? Args
+    : never
+
+/**
  * Declare a service method with a stable wire id.
  * Args/Result exist only for type inference; they never appear on the wire.
  */

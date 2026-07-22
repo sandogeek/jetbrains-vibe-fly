@@ -1,30 +1,46 @@
-import {
-  defineRpcService,
-  rpcMethod,
-  type RpcClient,
-  type RpcService,
+import type {
+  BrandedRpcOptions,
+  CancelablePromise,
 } from "@sandogeek/simple-rpc"
+import { rpcId, rpcService } from "./rpc-annotations.js"
 import type { AgentEvent, StartTaskRequest, TaskId } from "./types.js"
 
-/** UI → Agent methods over WebSocket SimpleRpc. Wire: Ui2Agent. */
-export const ui2Agent = defineRpcService("Ui2Agent", {
-  ping: rpcMethod<[text: string], string>(1),
-  startTask: rpcMethod<[request: StartTaskRequest], TaskId>(2),
-})
+function contractOnly(name: string): never {
+  throw new Error(`${name} is an RPC contract; use the generated proxy/service helpers`)
+}
 
-export type Ui2Agent = RpcClient<typeof ui2Agent>
-export type Ui2AgentService = RpcService<typeof ui2Agent>
+/**
+ * UI -> Agent methods over WebSocket SimpleRpc.
+ */
+@rpcService()
+export abstract class Ui2Agent {
+  @rpcId(1)
+  ping(
+    text: string,
+    options?: BrandedRpcOptions,
+  ): CancelablePromise<string> {
+    return contractOnly("Ui2Agent.ping")
+  }
 
-export const createUi2AgentProxy = ui2Agent.createProxy
-export const registerUi2AgentService = ui2Agent.register
+  @rpcId(2)
+  startTask(
+    request: StartTaskRequest,
+    options?: BrandedRpcOptions,
+  ): CancelablePromise<TaskId> {
+    return contractOnly("Ui2Agent.startTask")
+  }
+}
 
-/** Agent → UI methods over WebSocket SimpleRpc. Wire: Agent2Ui. */
-export const agent2Ui = defineRpcService("Agent2Ui", {
-  onAgentEvent: rpcMethod<[event: AgentEvent], void>(1),
-})
-
-export type Agent2Ui = RpcClient<typeof agent2Ui>
-export type Agent2UiService = RpcService<typeof agent2Ui>
-
-export const createAgent2UiProxy = agent2Ui.createProxy
-export const registerAgent2UiService = agent2Ui.register
+/**
+ * Agent -> UI methods over WebSocket SimpleRpc.
+ */
+@rpcService()
+export abstract class Agent2Ui {
+  @rpcId(1)
+  onAgentEvent(
+    event: AgentEvent,
+    options?: BrandedRpcOptions,
+  ): CancelablePromise<void> {
+    return contractOnly("Agent2Ui.onAgentEvent")
+  }
+}

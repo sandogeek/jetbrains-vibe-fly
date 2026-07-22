@@ -13,7 +13,10 @@
     }
   },
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "generate": "node ./scripts/generate-rpc-contracts.mjs",
+    "generate:check": "node ./scripts/generate-rpc-contracts.mjs --check",
+    "test": "bun run generate:check && bun test ./test",
+    "typecheck": "bun run generate:check && tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@sandogeek/simple-rpc": "file:../vibefly-simplerpc/typeScript"

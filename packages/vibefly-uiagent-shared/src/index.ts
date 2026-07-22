@@ -3,6 +3,8 @@ export type {
   StartTaskRequest,
   TaskId,
 } from "./types.js"
+export type { Agent2Ui, Ui2Agent } from "./contracts.js"
+export { rpcId, rpcService } from "./rpc-annotations.js"
 
 export {
   agent2Ui,
@@ -11,8 +13,6 @@ export {
   registerAgent2UiService,
   registerUi2AgentService,
   ui2Agent,
-  type Agent2Ui,
   type Agent2UiService,
-  type Ui2Agent,
   type Ui2AgentService,
-} from "./contracts.js"
+} from "./contracts.generated.js"

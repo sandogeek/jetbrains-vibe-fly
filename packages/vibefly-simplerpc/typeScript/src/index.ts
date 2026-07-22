@@ -38,6 +38,7 @@ export {
   rpcMethod,
   type RpcClient,
   type RpcMethodDef,
+  type RpcMethodArgs,
   type RpcService,
   type RpcServiceDefinition,
 } from "./service.js"
