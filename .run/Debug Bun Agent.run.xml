@@ -1,0 +1,10 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Debug Bun Agent" type="BunRunConfiguration" factoryName="Bun" nameIsGenerated="false">
+    <option name="program" value="$PROJECT_DIR$/packages/vibefly-agent/src/main.ts" />
+    <option name="workingDirectory" value="$PROJECT_DIR$/packages/vibefly-agent" />
+    <option name="applicationParameters" value="" />
+    <option name="runtimeParameters" value="" />
+    <option name="stopOnEntry" value="false" />
+    <method v="2" />
+  </configuration>
+</component>

@@ -9,7 +9,7 @@ webview/node_modules
 webview/dist
 
 # vibefly-ui (Vite)
-packages/vibefly-ui/node_modules
+packages/**/node_modules
 packages/vibefly-ui/dist
 packages/vibefly-jcef/**/resources/web/
 

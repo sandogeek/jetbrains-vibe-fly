@@ -1,0 +1,7 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Run Plugin Debug + UI Dev" type="CompoundRunConfigurationType">
+    <toRun name="Run UI Dev" type="GradleRunConfiguration" />
+    <toRun name="Run Plugin Debug" type="GradleRunConfiguration" />
+    <method v="2" />
+  </configuration>
+</component>

@@ -1,8 +1,8 @@
+import { isBrandedRpcOptions } from "./options.js"
 import type {
   CancelablePromise,
   RpcCallContext,
   RpcCallOptions,
-  RpcMethodDescriptor,
   RpcRegistration,
   RpcServiceDescriptor,
   WireMessage,
@@ -183,8 +183,7 @@ export class SimpleRpcPeer {
     const prepared: Array<{ key: string; methodId: number; bound: (...args: never[]) => unknown }> =
       []
     const pendingKeys = new Set<string>()
-    for (const [methodName, entry] of Object.entries(descriptor.methods)) {
-      const methodId = methodIdOf(entry)
+    for (const [methodName, methodId] of Object.entries(descriptor.methods)) {
       const impl = implementation[methodName]
       if (typeof impl !== "function") {
         throw new Error(
@@ -412,15 +411,16 @@ function rejectCancelable<T>(err: Error): CancelablePromise<T> {
 /**
  * Create a typed proxy from a generated descriptor.
  * Each method maps to the numeric method id and returns CancelablePromise.
+ *
+ * Trailing call options are recognized only when branded via {@link rpcOptions}.
+ * Unbranded objects (including DTOs with timeoutMs/signal) are sent as business args.
  */
 export function createProxy<T extends object>(
   peer: SimpleRpcPeer,
   descriptor: RpcServiceDescriptor,
 ): T {
   const target = {} as T
-  for (const [methodName, entry] of Object.entries(descriptor.methods)) {
-    const methodId = methodIdOf(entry)
-    const arity = arityOf(entry)
+  for (const [methodName, methodId] of Object.entries(descriptor.methods)) {
     Object.defineProperty(target, methodName, {
       enumerable: true,
       configurable: false,
@@ -428,40 +428,16 @@ export function createProxy<T extends object>(
       value: (...allArgs: unknown[]) => {
         let options: RpcCallOptions = {}
         let args = allArgs
-        if (arity != null) {
-          // Arity known: any argument past the fixed params is the options object.
-          // This is unambiguous — a DTO in the last param slot is never mistaken
-          // for options.
-          if (allArgs.length > arity) {
-            const last = allArgs[allArgs.length - 1]
-            if (last != null) {
-              options = last as RpcCallOptions
-            }
-            args = allArgs.slice(0, arity)
-          }
-        } else if (allArgs.length > 0) {
-          // Legacy descriptor without arity: fall back to shape detection.
-          const last = allArgs[allArgs.length - 1]
-          if (isRpcCallOptions(last)) {
-            options = last
-            args = allArgs.slice(0, -1)
-          }
+        if (allArgs.length > 0 && isBrandedRpcOptions(allArgs[allArgs.length - 1])) {
+          options = allArgs[allArgs.length - 1] as RpcCallOptions
+          args = allArgs.slice(0, -1)
         }
+        // Unbranded trailing objects are always business parameters.
         return peer.call(descriptor.service, methodId, args, options)
       },
     })
   }
   return target
-}
-
-/** Read the numeric wire id from a descriptor method entry. */
-function methodIdOf(entry: number | RpcMethodDescriptor): number {
-  return typeof entry === "number" ? entry : entry.id
-}
-
-/** Read the fixed positional arity, or null for legacy numeric-only entries. */
-function arityOf(entry: number | RpcMethodDescriptor): number | null {
-  return typeof entry === "number" ? null : entry.arity
 }
 
 /**
@@ -476,13 +452,4 @@ export function registerService(
     descriptor,
     implementation as Record<string, (...args: never[]) => unknown>,
   )
-}
-
-function isRpcCallOptions(value: unknown): value is RpcCallOptions {
-  if (value == null || typeof value !== "object") return false
-  if (Array.isArray(value)) return false
-  const o = value as Record<string, unknown>
-  const keys = Object.keys(o)
-  if (keys.length === 0) return true
-  return keys.every((k) => k === "timeoutMs" || k === "signal")
 }

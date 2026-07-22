@@ -1,14 +1,14 @@
 import { createCefSimpleRpc, type SimpleRpcPeer } from "@sandogeek/simple-rpc"
 import {
-  createHostApiProxy,
-  registerWebApiService,
-  type HostApi,
-  type WebApiService,
+  createUi2HostProxy,
+  registerHost2UiService,
+  type Host2UiService,
+  type Ui2Host,
 } from "../generated/rpc"
 
 export type UiRpc = {
   peer: SimpleRpcPeer
-  hostApi: HostApi
+  ui2Host: Ui2Host
 }
 
 type CefWindow = Window & {
@@ -25,7 +25,7 @@ type CefWindow = Window & {
  * Create SimpleRpc peer when running inside JCEF (cefQuery present).
  * Returns null in plain browser / Vite-only preview.
  */
-export function createUiRpc(webApi: WebApiService): UiRpc | null {
+export function createUiRpc(host2Ui: Host2UiService): UiRpc | null {
   const win = window as CefWindow
   if (typeof win.cefQuery !== "function" || typeof win.cefQueryCancel !== "function") {
     return null
@@ -35,9 +35,9 @@ export function createUiRpc(webApi: WebApiService): UiRpc | null {
     query: (req) => win.cefQuery!(req),
     cancelQuery: (id) => win.cefQueryCancel!(id),
   })
-  registerWebApiService(peer, webApi)
+  registerHost2UiService(peer, host2Ui)
   return {
     peer,
-    hostApi: createHostApiProxy(peer),
+    ui2Host: createUi2HostProxy(peer),
   }
 }

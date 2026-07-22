@@ -51,6 +51,13 @@ val waitVibeflyUiDevServer by tasks.registering(WaitVibeflyUiDevServerTask::clas
     readyTimeoutSeconds.set(60)
 }
 
+// Debug: Bun agent inspect + JCEF WebView CDP
+//   ./gradlew :plugin:runIde -Pvibefly.debug=true
+//   or selectively: -Pvibefly.agent.inspect=6499 -Pvibefly.jcef.debug.port=9222
+// Defaults when -Pvibefly.debug=true: agent inspect 6499, JCEF CDP 9222, internal mode.
+// Bun agent (requires JetBrains Bun plugin):
+//   - Debug Bun Agent → launch packages/vibefly-agent/src/main.ts
+// Plugin-spawned --inspect: use debug.bun.sh or VS Code Attach (Bun plugin has no attach type).
 tasks.named<RunIdeTask>("runIde") {
     val dev = findProperty("vibefly.ui.dev")?.toString()
     if (dev == "true") {
@@ -62,5 +69,43 @@ tasks.named<RunIdeTask>("runIde") {
     }
     if (isUiDevMode) {
         dependsOn(waitVibeflyUiDevServer)
+    }
+
+    // Sandbox IDE user.dir is not the monorepo root; pin agent entry absolutely.
+    // Override: -Pvibefly.agent.entry=/abs/path/to/main.ts
+    val agentEntryOverride = findProperty("vibefly.agent.entry")?.toString()?.trim().orEmpty()
+    val agentEntry = agentEntryOverride.ifEmpty {
+        val src = rootProject.layout.projectDirectory
+            .file("packages/vibefly-agent/src/main.ts").asFile
+        val dist = rootProject.layout.projectDirectory
+            .file("packages/vibefly-agent/dist/main.js").asFile
+        when {
+            src.isFile -> src.absolutePath
+            dist.isFile -> dist.absolutePath
+            else -> src.absolutePath
+        }
+    }
+    jvmArgs("-Dvibefly.agent.entry=$agentEntry")
+
+    val debugAll = findProperty("vibefly.debug")?.toString() == "true"
+    val agentInspect = findProperty("vibefly.agent.inspect")?.toString()?.trim().orEmpty()
+        .ifEmpty { if (debugAll) "6499" else "" }
+    if (agentInspect.isNotEmpty()) {
+        jvmArgs("-Dvibefly.agent.inspect=$agentInspect")
+        val inspectMode = findProperty("vibefly.agent.inspect.mode")?.toString()?.trim().orEmpty()
+        if (inspectMode.isNotEmpty()) {
+            jvmArgs("-Dvibefly.agent.inspect.mode=$inspectMode")
+        }
+    }
+    val jcefDebugPort = findProperty("vibefly.jcef.debug.port")?.toString()?.trim().orEmpty()
+        .ifEmpty { if (debugAll) "9222" else "" }
+    if (jcefDebugPort.isNotEmpty()) {
+        // Registry-compatible system properties (see IntelliJ JCEF debugging docs).
+        jvmArgs("-Dide.browser.jcef.debug.port=$jcefDebugPort")
+        jvmArgs("-Dide.browser.jcef.contextMenu.devTools.enabled=true")
+    }
+    if (debugAll) {
+        // Enables JCEF context-menu "Open DevTools" in the sandbox IDE.
+        jvmArgs("-Didea.is.internal=true")
     }
 }

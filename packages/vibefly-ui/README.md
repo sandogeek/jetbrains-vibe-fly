@@ -22,20 +22,21 @@ packages/vibefly-ui/
     index.tsx
     App.tsx
     styles.css
-    rpc/client.ts          # createCefSimpleRpc + HostApi proxy
-    generated/rpc.ts       # from HostApi/WebApi (./gradlew :vibefly-jcef:generateVibeflyUiRpc)
+    rpc/client.ts          # createCefSimpleRpc + Ui2Host proxy
+    generated/rpc.ts       # from Ui2Host/Host2Ui (./gradlew :vibefly-jcef:generateVibeflyUiRpc)
 ```
 
 ## SimpleRpc
 
-JCEF 内通过 `window.cefQuery` / `cefQueryCancel` 接入 `@sandogeek/simple-rpc`：
+JCEF 内通过 `window.cefQuery` / `cefQueryCancel` 接入 `@sandogeek/simple-rpc`。
+服务名约定：`Caller2Callee`（调用方 → 被调方）。
 
-| 侧 | 服务 | 说明 |
+| 方向 | 服务 | 说明 |
 | --- | --- | --- |
-| UI → Kotlin | `HostApi` | `getAppVersion` / `logFromWeb` |
-| Kotlin → UI | `WebApi` | `setStatus` |
+| UI → Host | `Ui2Host` | `getAppVersion` / `logFromWeb` / `getAgentConnection` |
+| Host → UI | `Host2Ui` | `setStatus` |
 
-契约定义在 `vibefly-jcef`（`HostApi` / `WebApi`），生成：
+契约定义在 `vibefly-jcef`（`Ui2Host` / `Host2Ui`），生成：
 
 ```bash
 ./gradlew :vibefly-jcef:generateVibeflyUiRpc

@@ -4,10 +4,11 @@ import com.github.sandogeek.simplerpc.annotation.KotlinCallTs
 import com.github.sandogeek.simplerpc.annotation.RpcFun
 
 /**
- * Kotlin host → WebView callbacks over SimpleRpc / CefMessageRouter.
+ * Host → UI (Kotlin calls WebView) over SimpleRpc / CefMessageRouter.
+ * Wire service name: Host2Ui.
  */
 @KotlinCallTs
-interface WebApi {
+interface Host2Ui {
     @RpcFun(1)
     suspend fun setStatus(message: String)
 }

@@ -25,26 +25,14 @@ export interface CancelablePromise<T> extends Promise<T> {
 }
 
 /**
- * Per-method descriptor entry: the numeric wire id plus the fixed positional
- * arity (number of real params, excluding the trailing options/context arg).
- * Arity lets the proxy locate the optional options object by position instead
- * of guessing by shape, so a DTO argument is never mistaken for options.
- */
-export interface RpcMethodDescriptor {
-  readonly id: number
-  readonly arity: number
-}
-
-/**
- * Service descriptor emitted by the Kotlin TypeScriptGenerator.
+ * Internal wire service descriptor.
  *
- * Each method value is either an {@link RpcMethodDescriptor} (preferred, carries
- * arity) or a bare numeric id (legacy; proxy falls back to shape-based options
- * detection).
+ * Prefer {@link defineRpcService} for new contracts. Method values are bare
+ * numeric wire ids; call options use branded {@link rpcOptions}.
  */
 export interface RpcServiceDescriptor {
   readonly service: string
-  readonly methods: Readonly<Record<string, number | RpcMethodDescriptor>>
+  readonly methods: Readonly<Record<string, number>>
 }
 
 /** Wire protocol message shapes (field names match Kotlin RpcMessage). */

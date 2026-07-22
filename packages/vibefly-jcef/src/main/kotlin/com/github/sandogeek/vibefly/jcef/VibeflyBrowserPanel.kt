@@ -1,5 +1,7 @@
 package com.github.sandogeek.vibefly.jcef
 
+import com.github.sandogeek.vibefly.jcef.rpc.Ui2Host
+import com.github.sandogeek.vibefly.jcef.rpc.Ui2HostImpl
 import com.github.sandogeek.vibefly.jcef.rpc.VibeflyUiRpc
 import com.intellij.ide.ui.LafManagerListener
 import com.intellij.openapi.Disposable
@@ -24,7 +26,9 @@ import javax.swing.JPanel
  * Dark/light tokens follow the current JetBrains LAF ([VibeflyTheme]).
  * WebView ↔ Kotlin: SimpleRpc over CefMessageRouter ([VibeflyUiRpc]).
  */
-class VibeflyBrowserPanel : JPanel(BorderLayout()), Disposable {
+class VibeflyBrowserPanel(
+    ui2Host: Ui2Host = Ui2HostImpl(),
+) : JPanel(BorderLayout()), Disposable {
 
     private val browser: JBCefBrowser
     private val uiRpc: VibeflyUiRpc
@@ -47,7 +51,7 @@ class VibeflyBrowserPanel : JPanel(BorderLayout()), Disposable {
         add(browser.component, BorderLayout.CENTER)
         Disposer.register(this, browser)
         // MessageRouter must be registered before the page creates createCefSimpleRpc.
-        uiRpc = VibeflyUiRpc.attach(browser, this)
+        uiRpc = VibeflyUiRpc.attach(browser, this, ui2Host)
 
         browser.jbCefClient.addLoadHandler(
             object : CefLoadHandlerAdapter() {
@@ -80,7 +84,7 @@ class VibeflyBrowserPanel : JPanel(BorderLayout()), Disposable {
     val jbCefBrowser: JBCefBrowser
         get() = browser
 
-    /** SimpleRpc session for this panel (HostApi registered; [webApi] proxies into the page). */
+    /** SimpleRpc session for this panel (Ui2Host registered; [host2Ui] proxies into the page). */
     val rpc: VibeflyUiRpc
         get() = uiRpc
 

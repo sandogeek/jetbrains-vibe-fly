@@ -22,7 +22,7 @@ import org.cef.handler.CefMessageRouterHandlerAdapter
  */
 class VibeflyUiRpc(
     private val browser: JBCefBrowser,
-    hostApi: HostApi = HostApiImpl(),
+    ui2Host: Ui2Host = Ui2HostImpl(),
 ) : Disposable {
 
     private val transport = CefMessageRouterTransport { script ->
@@ -33,12 +33,12 @@ class VibeflyUiRpc(
 
     val session: RpcSession = SimpleRpc.open(transport)
 
-    val webApi: WebApi = session.proxy()
+    val host2Ui: Host2Ui = session.proxy()
 
     private val router: CefMessageRouter
 
     init {
-        session.register(HostApi::class.java, hostApi)
+        session.register(Ui2Host::class.java, ui2Host)
 
         val config = CefMessageRouterConfig(
             CefMessageRouterTransport.JS_QUERY_FUNCTION,
@@ -101,9 +101,9 @@ class VibeflyUiRpc(
         fun attach(
             browser: JBCefBrowser,
             parent: Disposable,
-            hostApi: HostApi = HostApiImpl(),
+            ui2Host: Ui2Host = Ui2HostImpl(),
         ): VibeflyUiRpc {
-            val rpc = VibeflyUiRpc(browser, hostApi)
+            val rpc = VibeflyUiRpc(browser, ui2Host)
             Disposer.register(parent, rpc)
             return rpc
         }

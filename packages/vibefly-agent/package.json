@@ -28,9 +28,11 @@
   "dependencies": {
     "@oh-my-pi/pi-coding-agent": "17.0.6",
     "@sandogeek/simple-rpc": "file:../vibefly-simplerpc/typeScript",
-    "@sandogeek/simple-rpc-bun": "file:../vibefly-simplerpc/typeScript-bun"
+    "@sandogeek/simple-rpc-bun": "file:../vibefly-simplerpc/typeScript-bun",
+    "@vibefly/uiagent-shared": "file:../vibefly-uiagent-shared"
   },
   "devDependencies": {
+    "@types/bun": "latest",
     "@types/node": "^22.15.21",
     "typescript": "^5.8.3"
   },

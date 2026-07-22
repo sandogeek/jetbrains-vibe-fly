@@ -1,0 +1,25 @@
+{
+  "name": "@vibefly/uiagent-shared",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Shared UI ↔ Agent SimpleRpc contracts (TypeScript-only, no Kotlin)",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@sandogeek/simple-rpc": "file:../vibefly-simplerpc/typeScript"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  },
+  "license": "UNLICENSED"
+}

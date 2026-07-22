@@ -1,0 +1,39 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "bun",
+      "request": "launch",
+      "name": "Debug vibefly-agent",
+      "program": "${workspaceFolder}/packages/vibefly-agent/src/main.ts",
+      "cwd": "${workspaceFolder}/packages/vibefly-agent",
+      "stopOnEntry": false,
+      "watchMode": false
+    },
+    {
+      "type": "bun",
+      "request": "launch",
+      "name": "Debug vibefly-agent (stop on entry)",
+      "program": "${workspaceFolder}/packages/vibefly-agent/src/main.ts",
+      "cwd": "${workspaceFolder}/packages/vibefly-agent",
+      "stopOnEntry": true,
+      "watchMode": false
+    },
+    {
+      "type": "bun",
+      "request": "attach",
+      "name": "Attach vibefly-agent",
+      "url": "${input:bunInspectorUrl}",
+      "localRoot": "${workspaceFolder}/packages/vibefly-agent",
+      "remoteRoot": "${workspaceFolder}/packages/vibefly-agent"
+    }
+  ],
+  "inputs": [
+    {
+      "id": "bunInspectorUrl",
+      "type": "promptString",
+      "description": "Bun Inspector WebSocket URL from agent stderr (e.g. ws://localhost:6499/)",
+      "default": "ws://localhost:6499/"
+    }
+  ]
+}

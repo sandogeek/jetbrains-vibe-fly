@@ -1,5 +1,6 @@
 plugins {
     id("org.jetbrains.kotlin.jvm")
+    id("org.jetbrains.kotlin.plugin.serialization")
     id("org.jetbrains.intellij.platform.module")
 }
 
@@ -13,6 +14,7 @@ kotlin {
 dependencies {
     implementation(kotlin("stdlib"))
     implementation(project(":vibefly-simplerpc"))
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
 
     testImplementation("junit:junit:4.13.2")
 
@@ -21,18 +23,33 @@ dependencies {
     }
 }
 
-// packages/vibefly-ui/src/generated/rpc.ts from HostApi + WebApi
+// packages/vibefly-ui/src/generated/rpc.ts from Ui2Host + Host2Ui
 val uiRpcTs = rootProject.layout.projectDirectory.file("packages/vibefly-ui/src/generated/rpc.ts")
 
 val generateVibeflyUiRpc by tasks.registering(JavaExec::class) {
     group = "build"
-    description = "Generate vibefly-ui SimpleRpc TypeScript contracts from HostApi/WebApi"
+    description = "Generate vibefly-ui SimpleRpc TypeScript contracts from Ui2Host/Host2Ui"
     dependsOn(tasks.named("compileKotlin"))
     classpath = sourceSets["main"].runtimeClasspath
     mainClass.set("com.github.sandogeek.vibefly.jcef.rpc.GenerateUiRpcKt")
     args(uiRpcTs.asFile.absolutePath)
     inputs.files(sourceSets["main"].allSource)
     outputs.file(uiRpcTs)
+}
+
+// packages/vibefly-agent/src/generated/controlRpc.ts from Host2Agent
+val agentControlRpcTs =
+    rootProject.layout.projectDirectory.file("packages/vibefly-agent/src/generated/controlRpc.ts")
+
+val generateVibeflyAgentControlRpc by tasks.registering(JavaExec::class) {
+    group = "build"
+    description = "Generate vibefly-agent SimpleRpc control contracts from Host2Agent"
+    dependsOn(tasks.named("compileKotlin"))
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("com.github.sandogeek.vibefly.jcef.rpc.GenerateAgentControlRpcKt")
+    args(agentControlRpcTs.asFile.absolutePath)
+    inputs.files(sourceSets["main"].allSource)
+    outputs.file(agentControlRpcTs)
 }
 
 // vibefly-ui (Vite) → src/main/resources/web for ClasspathResourceHandler
