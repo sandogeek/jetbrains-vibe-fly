@@ -24,7 +24,7 @@
     "@sandogeek/simple-rpc": "file:../typeScript"
   },
   "devDependencies": {
-    "@types/node": "^22.13.10",
+    "@types/bun": "latest",
     "typescript": "^5.8.2"
   },
   "engines": {

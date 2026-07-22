@@ -14,7 +14,7 @@
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "noUncheckedIndexedAccess": true,
-    "types": ["node"]
+    "types": ["bun"]
   },
   "include": ["src/**/*.ts"]
 }

@@ -12,7 +12,6 @@
       },
       "devDependencies": {
         "@types/bun": "latest",
-        "@types/node": "^22.15.21",
         "typescript": "^5.8.3",
       },
     },
@@ -606,7 +605,7 @@
 
     "@sandogeek/simple-rpc-bun/@sandogeek/simple-rpc": ["@sandogeek/simple-rpc@file:../vibefly-simplerpc/typeScript", { "devDependencies": { "typescript": "^5.8.2" } }],
 
-    "@vibefly/uiagent-shared/@sandogeek/simple-rpc": ["@sandogeek/simple-rpc@file:../vibefly-simplerpc/typeScript", {}],
+    "@vibefly/uiagent-shared/@sandogeek/simple-rpc": ["@sandogeek/simple-rpc@file:../vibefly-simplerpc/typeScript", { "devDependencies": { "typescript": "^5.8.2" } }],
 
     "chromium-bidi/zod": ["zod@3.25.76", "", {}, "sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ=="],
 
