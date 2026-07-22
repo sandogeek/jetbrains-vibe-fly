@@ -1,5 +1,6 @@
 package com.github.sandogeek.vibefly.jcef
 
+import com.github.sandogeek.vibefly.jcef.rpc.VibeflyUiRpc
 import com.intellij.ide.ui.LafManagerListener
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
@@ -21,10 +22,12 @@ import javax.swing.JPanel
  * Dev (Vite HMR): [VibeflyUiDev] → e.g. `http://127.0.0.1:5173/`.
  *
  * Dark/light tokens follow the current JetBrains LAF ([VibeflyTheme]).
+ * WebView ↔ Kotlin: SimpleRpc over CefMessageRouter ([VibeflyUiRpc]).
  */
 class VibeflyBrowserPanel : JPanel(BorderLayout()), Disposable {
 
     private val browser: JBCefBrowser
+    private val uiRpc: VibeflyUiRpc
 
     @Volatile
     private var disposed: Boolean = false
@@ -43,6 +46,8 @@ class VibeflyBrowserPanel : JPanel(BorderLayout()), Disposable {
             .build()
         add(browser.component, BorderLayout.CENTER)
         Disposer.register(this, browser)
+        // MessageRouter must be registered before the page creates createCefSimpleRpc.
+        uiRpc = VibeflyUiRpc.attach(browser, this)
 
         browser.jbCefClient.addLoadHandler(
             object : CefLoadHandlerAdapter() {
@@ -75,6 +80,10 @@ class VibeflyBrowserPanel : JPanel(BorderLayout()), Disposable {
     val jbCefBrowser: JBCefBrowser
         get() = browser
 
+    /** SimpleRpc session for this panel (HostApi registered; [webApi] proxies into the page). */
+    val rpc: VibeflyUiRpc
+        get() = uiRpc
+
     private fun applyTheme() {
         // Resolve tokens on the later EDT pass so UIManager colors match the new LAF
         // (listener can fire while named colors are still settling).
@@ -93,7 +102,7 @@ class VibeflyBrowserPanel : JPanel(BorderLayout()), Disposable {
 
     override fun dispose() {
         disposed = true
-        // Browser disposed via Disposer parent-child link.
+        // uiRpc + browser disposed via Disposer parent-child link.
     }
 
     companion object {

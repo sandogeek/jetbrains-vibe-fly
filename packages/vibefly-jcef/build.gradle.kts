@@ -12,12 +12,27 @@ kotlin {
 
 dependencies {
     implementation(kotlin("stdlib"))
+    implementation(project(":vibefly-simplerpc"))
 
     testImplementation("junit:junit:4.13.2")
 
     intellijPlatform {
         intellijIdea("2025.2.6.2")
     }
+}
+
+// packages/vibefly-ui/src/generated/rpc.ts from HostApi + WebApi
+val uiRpcTs = rootProject.layout.projectDirectory.file("packages/vibefly-ui/src/generated/rpc.ts")
+
+val generateVibeflyUiRpc by tasks.registering(JavaExec::class) {
+    group = "build"
+    description = "Generate vibefly-ui SimpleRpc TypeScript contracts from HostApi/WebApi"
+    dependsOn(tasks.named("compileKotlin"))
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("com.github.sandogeek.vibefly.jcef.rpc.GenerateUiRpcKt")
+    args(uiRpcTs.asFile.absolutePath)
+    inputs.files(sourceSets["main"].allSource)
+    outputs.file(uiRpcTs)
 }
 
 // vibefly-ui (Vite) → src/main/resources/web for ClasspathResourceHandler

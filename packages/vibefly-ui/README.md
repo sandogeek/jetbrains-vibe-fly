@@ -22,7 +22,26 @@ packages/vibefly-ui/
     index.tsx
     App.tsx
     styles.css
+    rpc/client.ts          # createCefSimpleRpc + HostApi proxy
+    generated/rpc.ts       # from HostApi/WebApi (./gradlew :vibefly-jcef:generateVibeflyUiRpc)
 ```
+
+## SimpleRpc
+
+JCEF 内通过 `window.cefQuery` / `cefQueryCancel` 接入 `@sandogeek/simple-rpc`：
+
+| 侧 | 服务 | 说明 |
+| --- | --- | --- |
+| UI → Kotlin | `HostApi` | `getAppVersion` / `logFromWeb` |
+| Kotlin → UI | `WebApi` | `setStatus` |
+
+契约定义在 `vibefly-jcef`（`HostApi` / `WebApi`），生成：
+
+```bash
+./gradlew :vibefly-jcef:generateVibeflyUiRpc
+```
+
+Kotlin 侧在 `VibeflyBrowserPanel` 经 `VibeflyUiRpc` 挂上 `CefMessageRouter`。
 
 ## 开发
 
@@ -77,4 +96,3 @@ Gradle 在 `:vibefly-jcef:processResources` 前会执行 `buildVibeflyUi`（`bun
 
 - 包名以 `vibefly-` 开头，为本仓库自有代码
 - 引擎侧基于 Oh My Pi（`@oh-my-pi/pi-coding-agent` 等）；本包为 JetBrains JCEF 自研前端，经 SimpleRpc 与主机/agent 通信
-
