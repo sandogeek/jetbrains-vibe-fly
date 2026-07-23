@@ -85,6 +85,7 @@ tasks.named<RunIdeTask>("runIde") {
             else -> src.absolutePath
         }
     }
+    logger.lifecycle("agentEntry=$agentEntry")
     jvmArgs("-Dvibefly.agent.entry=$agentEntry")
 
     val debugAll = findProperty("vibefly.debug")?.toString() == "true"
