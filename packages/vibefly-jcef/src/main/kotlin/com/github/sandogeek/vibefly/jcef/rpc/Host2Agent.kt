@@ -5,7 +5,7 @@ import com.github.sandogeek.simplerpc.annotation.RpcFun
 
 /**
  * Host → Agent (Kotlin calls Bun) control plane over stdio SimpleRpc.
- * Lifecycle and session tickets only; no UI business frames.
+ * Lifecycle, session tickets, and short request/response helpers (e.g. commit message).
  * Wire service name: Host2Agent.
  */
 @KotlinCallTs
@@ -15,4 +15,9 @@ interface Host2Agent {
 
     @RpcFun(2)
     suspend fun shutdown()
+
+    @RpcFun(3)
+    suspend fun generateCommitMessage(
+        request: GenerateCommitMessageRequest,
+    ): GenerateCommitMessageResult
 }

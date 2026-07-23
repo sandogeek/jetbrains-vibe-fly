@@ -9,11 +9,23 @@
     ]]></description>
 
     <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.vcs</depends>
 
     <resource-bundle>messages.MyBundle</resource-bundle>
 
     <extensions defaultExtensionNs="com.intellij">
         <toolWindow factoryClass="com.github.sandogeek.jetbrainsvibefly.toolWindow.MyToolWindowFactory" id="Vibe Fly"/>
         <postStartupActivity implementation="com.github.sandogeek.jetbrainsvibefly.startup.MyProjectActivity" />
+        <notificationGroup id="Vibe Fly" displayType="BALLOON"/>
     </extensions>
+
+    <actions>
+        <action id="VibeFly.GenerateCommitMessage"
+                class="com.github.sandogeek.jetbrainsvibefly.commit.GenerateCommitMessageAction"
+                text="Generate Commit Message with Vibe Fly"
+                description="Generate a commit message from selected changes"
+                icon="AllIcons.Actions.Edit">
+            <add-to-group group-id="Vcs.MessageActionGroup" anchor="first"/>
+        </action>
+    </actions>
 </idea-plugin>

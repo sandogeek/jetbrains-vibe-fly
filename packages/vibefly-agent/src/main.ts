@@ -11,6 +11,7 @@ import {
   type Agent2Ui,
   type Ui2AgentService,
 } from "@vibefly/uiagent-shared"
+import { generateCommitMessage } from "./commitMessage.js"
 import {
   registerHost2AgentService,
   type AgentConnection,
@@ -58,6 +59,9 @@ async function main(): Promise<void> {
     shutdown() {
       log("shutdown requested")
       teardown(0)
+    },
+    async generateCommitMessage(request) {
+      return generateCommitMessage(request)
     },
   }
   registerHost2AgentService(peer, controlImpl)

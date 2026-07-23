@@ -10,9 +10,31 @@ export interface AgentConnection {
   expiresAtEpochMs: number;
 }
 
+export interface CommitFileChange {
+  path: string;
+  changeType: string;
+  oldPath?: string | null;
+  additions?: number;
+  deletions?: number;
+  diff?: string | null;
+  truncated?: boolean;
+  omittedReason?: string | null;
+}
+
+export interface GenerateCommitMessageRequest {
+  files: Array<CommitFileChange>;
+  style?: string;
+  recentMessages?: Array<string>;
+}
+
+export interface GenerateCommitMessageResult {
+  message: string;
+}
+
 export const host2Agent = defineRpcService("Host2Agent", {
   openWebSocketSession: rpcMethod<[expectedOrigin: string], AgentConnection>(1),
   shutdown: rpcMethod<[], void>(2),
+  generateCommitMessage: rpcMethod<[request: GenerateCommitMessageRequest], GenerateCommitMessageResult>(3),
 });
 
 export type Host2AgentService = RpcService<typeof host2Agent>;
@@ -20,3 +42,4 @@ export type Host2AgentService = RpcService<typeof host2Agent>;
 export function registerHost2AgentService(peer: SimpleRpcPeer, implementation: Host2AgentService) {
   return host2Agent.register(peer, implementation);
 }
+

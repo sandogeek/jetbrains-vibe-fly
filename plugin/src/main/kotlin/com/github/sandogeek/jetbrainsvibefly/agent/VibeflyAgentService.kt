@@ -5,6 +5,8 @@ import com.github.sandogeek.simplerpc.SimpleRpc
 import com.github.sandogeek.simplerpc.stdio.StdioRpcTransport
 import com.github.sandogeek.vibefly.jcef.AgentOrigin
 import com.github.sandogeek.vibefly.jcef.rpc.AgentConnection
+import com.github.sandogeek.vibefly.jcef.rpc.GenerateCommitMessageRequest
+import com.github.sandogeek.vibefly.jcef.rpc.GenerateCommitMessageResult
 import com.github.sandogeek.vibefly.jcef.rpc.Host2Agent
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.Service
@@ -13,9 +15,11 @@ import com.intellij.openapi.project.Project
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeout
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicReference
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Project-level Bun agent lifecycle over stdio SimpleRpc control plane.
@@ -53,6 +57,22 @@ class VibeflyAgentService(@Suppress("unused") private val project: Project) : Di
         val control = controlRef.get()
             ?: error("Agent control API is not available")
         return control.openWebSocketSession(expectedOrigin)
+    }
+
+    /**
+     * Generate a conventional commit message from included change summaries/diff.
+     * Starts the agent on demand; times out after [timeoutMs].
+     */
+    suspend fun generateCommitMessage(
+        request: GenerateCommitMessageRequest,
+        timeoutMs: Long = DEFAULT_COMMIT_MESSAGE_TIMEOUT_MS,
+    ): GenerateCommitMessageResult {
+        ensureStarted()
+        val control = controlRef.get()
+            ?: error("Agent control API is not available")
+        return withTimeout(timeoutMs.milliseconds) {
+            control.generateCommitMessage(request)
+        }
     }
 
     suspend fun ensureStarted() {
@@ -142,6 +162,8 @@ class VibeflyAgentService(@Suppress("unused") private val project: Project) : Di
 
     companion object {
         private val log = logger<VibeflyAgentService>()
+
+        const val DEFAULT_COMMIT_MESSAGE_TIMEOUT_MS: Long = 90_000L
 
         fun getInstance(project: Project): VibeflyAgentService =
             project.getService(VibeflyAgentService::class.java)
