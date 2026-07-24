@@ -176,6 +176,7 @@ export function createWebSocketTransport(
       }
       if (isHelloAck(parsed)) {
         ready = true
+        console.log(`hello_ack receive`)
         if (handshakeTimer != null) {
           clearTimeout(handshakeTimer)
           handshakeTimer = null

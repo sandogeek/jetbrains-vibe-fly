@@ -3,6 +3,7 @@ import type { SimpleRpcPeer } from "@sandogeek/simple-rpc"
 import type { AgentEvent } from "@vibefly/uiagent-shared"
 import { createUiRpc } from "./rpc/client"
 import { connectAgentRpc, type AgentStatus } from "./rpc/agent"
+import { bindConsoleToHost } from "./rpc/console"
 
 export function App() {
   const [hostStatus, setHostStatus] = createSignal("connecting…")
@@ -13,11 +14,14 @@ export function App() {
   let peer: SimpleRpcPeer | null = null
   let cancelled = false
   let stopAgent: (() => void) | null = null
+  let unbindConsole: (() => void) | null = null
 
   onCleanup(() => {
     cancelled = true
     stopAgent?.()
     stopAgent = null
+    unbindConsole?.()
+    unbindConsole = null
     peer?.close()
     peer = null
   })
@@ -36,9 +40,12 @@ export function App() {
     }
 
     peer = rpc.peer
+    unbindConsole = bindConsoleToHost(rpc.ui2Host)
 
     void (async () => {
       try {
+        // Await host path explicitly so failures surface on the UI (not only
+        // fire-and-forget console → logFromWeb).
         await rpc.ui2Host.logFromWeb("ui ready")
         const v = await rpc.ui2Host.getAppVersion()
         if (cancelled) return

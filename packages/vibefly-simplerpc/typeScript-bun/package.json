@@ -1,7 +1,7 @@
 {
   "name": "@sandogeek/simple-rpc-bun",
   "version": "0.0.1",
-  "description": "Bun/Node stdio transport and Content-Length framing for SimpleRpc",
+  "description": "Bun/Node SimpleRpc transports: stdio Content-Length framing and ServerWebSocket hello handshake",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

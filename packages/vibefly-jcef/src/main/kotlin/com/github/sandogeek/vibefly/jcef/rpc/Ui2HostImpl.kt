@@ -16,6 +16,7 @@ class Ui2HostImpl(
     override suspend fun getAppVersion(): String = appVersion
 
     override suspend fun logFromWeb(message: String) {
+        // Visible in idea.log / Debug Log Settings for this category.
         log.info("WebView: $message")
     }
 

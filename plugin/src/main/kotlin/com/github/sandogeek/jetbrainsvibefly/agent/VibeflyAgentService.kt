@@ -32,7 +32,7 @@ class VibeflyAgentService(@Suppress("unused") private val project: Project) : Di
     private val processRef = AtomicReference<Process?>(null)
     private val transportRef = AtomicReference<StdioRpcTransport?>(null)
     private val sessionRef = AtomicReference<RpcSession?>(null)
-    private val controlRef = AtomicReference<Host2Agent?>(null)
+    private val host2AgentRef = AtomicReference<Host2Agent?>(null)
 
     @Volatile
     private var disposed = false
@@ -54,7 +54,7 @@ class VibeflyAgentService(@Suppress("unused") private val project: Project) : Di
      */
     suspend fun openSession(expectedOrigin: String = AgentOrigin.currentPanel()): AgentConnection {
         ensureStarted()
-        val control = controlRef.get()
+        val control = host2AgentRef.get()
             ?: error("Agent control API is not available")
         return control.openWebSocketSession(expectedOrigin)
     }
@@ -68,7 +68,7 @@ class VibeflyAgentService(@Suppress("unused") private val project: Project) : Di
         timeoutMs: Long = DEFAULT_COMMIT_MESSAGE_TIMEOUT_MS,
     ): GenerateCommitMessageResult {
         ensureStarted()
-        val control = controlRef.get()
+        val control = host2AgentRef.get()
             ?: error("Agent control API is not available")
         return withTimeout(timeoutMs.milliseconds) {
             control.generateCommitMessage(request)
@@ -80,7 +80,7 @@ class VibeflyAgentService(@Suppress("unused") private val project: Project) : Di
         mutex.withLock {
             if (disposed) error("VibeflyAgentService is disposed")
             val existing = processRef.get()
-            if (existing != null && existing.isAlive && controlRef.get() != null) {
+            if (existing != null && existing.isAlive && host2AgentRef.get() != null) {
                 state = State.READY
                 return
             }
@@ -121,11 +121,11 @@ class VibeflyAgentService(@Suppress("unused") private val project: Project) : Di
         val session = SimpleRpc.open(transport)
         sessionRef.set(session)
         val control = session.proxy(Host2Agent::class.java)
-        controlRef.set(control)
+        host2AgentRef.set(control)
     }
 
     private fun stopLocked() {
-        val control = controlRef.getAndSet(null)
+        val control = host2AgentRef.getAndSet(null)
         if (control != null) {
             try {
                 runBlocking {

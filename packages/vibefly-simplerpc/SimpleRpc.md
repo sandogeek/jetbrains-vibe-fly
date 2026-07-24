@@ -6,6 +6,7 @@ Kotlin/JVM 与 TypeScript 之间的双向 RPC 桥。契约、生成器、取消/
 |------|------------------|------------|
 | JCEF WebView ↔ 插件 | `CefMessageRouterTransport` | `@sandogeek/simple-rpc` → `createCefSimpleRpc` |
 | Node/Bun 子进程 ↔ 插件 | `StdioRpcTransport` | `@sandogeek/simple-rpc-bun` → `createStdioSimpleRpc` |
+| UI ↔ Bun agent WebSocket | — | 客户端 `@sandogeek/simple-rpc` → `createWebSocketSimpleRpc`；服务端 `@sandogeek/simple-rpc-bun` → `createBunServerWebSocketRpc` |
 
 JCEF：CefMessageRouter（TS → Kotlin）+ executeJavaScript / DOM CustomEvent（Kotlin → TS）。  
 stdio：子进程 `stdin`/`stdout` 上 **Content-Length** 分帧 UTF-8 JSON；`stdout` 仅承载协议，日志写 `stderr`。
@@ -55,7 +56,7 @@ packages/vibefly-simplerpc/
 ├── typeScript/                 # @sandogeek/simple-rpc（浏览器 / JCEF，无 Node 依赖）
 │   ├── package.json
 │   └── src/
-├── typeScript-bun/             # @sandogeek/simple-rpc-bun（stdio + Content-Length framing）
+├── typeScript-bun/             # @sandogeek/simple-rpc-bun（stdio + Bun ServerWebSocket）
 │   ├── package.json
 │   └── src/
 └── src/
