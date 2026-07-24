@@ -18,6 +18,7 @@ import {
 } from "@oh-my-pi/pi-catalog/models"
 import type { ModelSpec } from "@oh-my-pi/pi-catalog/types"
 import type {
+  CommitFileChange,
   GenerateCommitMessageRequest,
   GenerateCommitMessageResult,
 } from "./generated/controlRpc.js"
@@ -81,13 +82,16 @@ FILE: path
 STATUS: ADDED|MODIFIED|DELETED|MOVED
 OLD_PATH: previous/path   (renames only)
 STATS: +N -M
-PATCH_STATUS: full|partial|omitted|lockfile|…
+PATCH_STATUS: partial|omitted|lockfile|…  (omitted when full — the default)
 <patch>
-…unified diff…
+@@ -old,count +new,count @@
+…unified hunks…
 </patch>
 END_FILE
 \`\`\`
 Lockfiles and sensitive paths may be summarized without patches.
+When PATCH_STATUS is absent, the patch is complete (full).
+When PATCH_STATUS is partial, some hunks were dropped to fit the model context budget.
 
 ## Analysis Instructions
 When analyzing staged changes:
@@ -108,6 +112,24 @@ When analyzing staged changes:
 
 const DEFAULT_CUSTOM_API: Api = "openai-responses"
 const DEFAULT_CUSTOM_BASE_URL = "https://api.openai.com/v1"
+
+/** Soft cap on how many per-file blocks are expanded in the user prompt. */
+const MAX_PROMPT_FILE_BLOCKS = 100
+/** Max recent commits used as few-shot style examples. */
+const MAX_RECENT_MESSAGES = 5
+/** Fraction of model context reserved for unified-diff hunks. */
+export const DIFF_CONTEXT_RATIO = 0.6
+/** Rough chars-per-token for code/diff budgeting without a real tokenizer. */
+const CHARS_PER_TOKEN = 4
+const DEFAULT_CONTEXT_WINDOW = 128_000
+const TRUNCATION_MARKER = "...[truncated]...\n"
+
+export type CommitPromptOptions = {
+  /** Model context window in tokens (default 128000). */
+  contextWindow?: number
+  /** Max share of context used for diffs (default 0.6). */
+  diffBudgetRatio?: number
+}
 
 /** Parse style like "conventional_en", "conventional_zh", "en", "zh-CN". */
 export function resolveCommitLanguage(style?: string): string {
@@ -152,16 +174,44 @@ export function buildSystemPrompt(style?: string): string {
   return SYSTEM_PROMPT + languageInstruction(language)
 }
 
-/** Soft cap on how many per-file blocks are expanded in the user prompt. */
-const MAX_PROMPT_FILE_BLOCKS = 80
-/** Max recent commits used as few-shot style examples. */
-const MAX_RECENT_MESSAGES = 10
+/** Character budget for all unified-diff hunks combined. */
+export function diffCharBudget(
+  contextWindow: number = DEFAULT_CONTEXT_WINDOW,
+  ratio: number = DIFF_CONTEXT_RATIO,
+): number {
+  const r = Number.isFinite(ratio) && ratio > 0 ? Math.min(ratio, 1) : DIFF_CONTEXT_RATIO
+  const cw =
+    Number.isFinite(contextWindow) && contextWindow > 0
+      ? contextWindow
+      : DEFAULT_CONTEXT_WINDOW
+  return Math.floor(cw * r * CHARS_PER_TOKEN)
+}
 
-export function buildUserPrompt(request: GenerateCommitMessageRequest): string {
-  const files = request.files
+type FileForPrompt = {
+  path: string
+  changeType: string
+  oldPath?: string | null
+  additions?: number
+  deletions?: number
+  hunks?: string[] | null
+  omittedReason?: string | null
+  /** Agent-side: some hunks dropped or shrunk to fit budget. */
+  truncated?: boolean
+}
+
+export function buildUserPrompt(
+  request: GenerateCommitMessageRequest,
+  options?: CommitPromptOptions,
+): string {
+  const budget = diffCharBudget(
+    options?.contextWindow ?? DEFAULT_CONTEXT_WINDOW,
+    options?.diffBudgetRatio ?? DIFF_CONTEXT_RATIO,
+  )
+  const files = fitFilesToDiffBudget(request.files ?? [], budget)
+
   const parts = [
     "Generate a conventional commit message for the following changes.",
-    "Each file is a self-contained block (metadata + optional patch).",
+    "Each file is a self-contained block (metadata + optional patch hunks).",
     "",
   ]
 
@@ -232,17 +282,231 @@ export function formatRecentExamples(
   return lines.join("\n").trimEnd()
 }
 
-function partitionForPrompt(files: Array<{
-  path: string
-  changeType: string
-  oldPath?: string | null
-  additions?: number
-  deletions?: number
-  diff?: string | null
-  truncated?: boolean
-  omittedReason?: string | null
-}>): {
-  expanded: typeof files
+/**
+ * Fit full host-provided hunks into [maxChars], sampling evenly across files
+ * and hunks so later changes remain visible when the diff must shrink.
+ */
+export function fitFilesToDiffBudget(
+  files: CommitFileChange[],
+  maxChars: number,
+): FileForPrompt[] {
+  if (files.length === 0) return []
+
+  const normalized: FileForPrompt[] = files.map((f) => ({
+    path: f.path,
+    changeType: f.changeType,
+    oldPath: f.oldPath,
+    additions: f.additions,
+    deletions: f.deletions,
+    hunks: (f.hunks ?? []).filter((h) => typeof h === "string" && h.length > 0),
+    omittedReason: f.omittedReason,
+    truncated: false,
+  }))
+
+  const totalHunkChars = normalized.reduce(
+    (sum, f) => sum + (f.hunks ?? []).reduce((s, h) => s + h.length, 0),
+    0,
+  )
+  if (totalHunkChars <= maxChars) {
+    return normalized
+  }
+
+  if (maxChars <= 0) {
+    return normalized.map((f) => {
+      if (!f.hunks?.length) return f
+      return {
+        ...f,
+        hunks: [],
+        truncated: true,
+        omittedReason: f.omittedReason ?? "budget",
+      }
+    })
+  }
+
+  const weights = normalized.map((f) =>
+    (f.hunks ?? []).reduce((s, h) => s + h.length, 0),
+  )
+  const quotas = fairQuotas(weights, maxChars)
+
+  return normalized.map((f, i) => {
+    const hunks = f.hunks ?? []
+    if (hunks.length === 0) return f
+    const q = quotas[i] ?? 0
+    if (q <= 0) {
+      return {
+        ...f,
+        hunks: [],
+        truncated: true,
+        omittedReason: f.omittedReason ?? "budget",
+      }
+    }
+    const fitted = fitHunksToBudget(hunks, q)
+    return {
+      ...f,
+      hunks: fitted.hunks,
+      truncated: fitted.truncated,
+      omittedReason:
+        fitted.hunks.length === 0
+          ? (f.omittedReason ?? "budget")
+          : f.omittedReason,
+    }
+  })
+}
+
+/** Sample/shrink hunks to fit [maxChars]. Prefers keeping change lines over context. */
+export function fitHunksToBudget(
+  hunks: string[],
+  maxChars: number,
+): { hunks: string[]; truncated: boolean } {
+  if (maxChars <= 0) {
+    return { hunks: [], truncated: hunks.length > 0 }
+  }
+  const full = hunks.join("")
+  if (full.length <= maxChars) {
+    return { hunks: [...hunks], truncated: false }
+  }
+
+  const markerLen = TRUNCATION_MARKER.length
+  const bodyBudget = Math.max(0, maxChars - markerLen)
+  if (bodyBudget <= 0) {
+    return { hunks: [sliceChars(TRUNCATION_MARKER, maxChars)], truncated: true }
+  }
+
+  const quotas = fairQuotas(
+    hunks.map((h) => h.length),
+    bodyBudget,
+  )
+  const parts: string[] = []
+  for (let i = 0; i < hunks.length; i++) {
+    const h = hunks[i]!
+    const q = quotas[i] ?? 0
+    if (q <= 0) continue
+    if (h.length <= q) {
+      parts.push(h)
+    } else {
+      const cut = shrinkHunkText(h, q)
+      if (cut) parts.push(cut)
+    }
+  }
+
+  if (parts.length === 0 && hunks.length > 0) {
+    const first = shrinkHunkText(hunks[0]!, bodyBudget)
+    if (first) {
+      return {
+        hunks: [first + TRUNCATION_MARKER],
+        truncated: true,
+      }
+    }
+    return { hunks: [], truncated: true }
+  }
+
+  return {
+    hunks: [...parts, TRUNCATION_MARKER],
+    truncated: true,
+  }
+}
+
+/**
+ * Drop context (' ') body lines first, then hard-slice if still over budget.
+ * Keeps the @@ header line when present.
+ */
+export function shrinkHunkText(hunk: string, maxChars: number): string {
+  if (maxChars <= 0) return ""
+  if (hunk.length <= maxChars) return hunk
+
+  const normalized = hunk.replace(/\r\n/g, "\n")
+  const lines = normalized.split("\n")
+  // Drop trailing empty from final newline so we can re-join cleanly.
+  if (lines.length > 0 && lines[lines.length - 1] === "") {
+    lines.pop()
+  }
+  if (lines.length === 0) return sliceChars(hunk, maxChars)
+
+  const header = lines[0]!.startsWith("@@") ? lines[0]! : null
+  const body = header != null ? lines.slice(1) : lines
+  const changeLines = body.filter(
+    (l) => l.startsWith("-") || l.startsWith("+"),
+  )
+  const slimLines =
+    header != null ? [header, ...changeLines] : changeLines
+  const slim =
+    slimLines.length > 0 ? slimLines.join("\n") + "\n" : ""
+
+  if (slim && slim.length <= maxChars) return slim
+  if (slim) return sliceChars(slim, maxChars)
+  return sliceChars(hunk, maxChars)
+}
+
+/**
+ * Distribute [totalBudget] across items with given [weights], sharing by weight.
+ */
+export function fairQuotas(weights: number[], totalBudget: number): number[] {
+  const n = weights.length
+  if (n === 0) return []
+  if (totalBudget <= 0) return Array(n).fill(0)
+
+  const quotas = Array(n).fill(0) as number[]
+  const active = weights
+    .map((w, i) => (w > 0 ? i : -1))
+    .filter((i) => i >= 0)
+  if (active.length === 0) return quotas
+
+  const weightSum = active.reduce((s, i) => s + weights[i]!, 0)
+  let assigned = 0
+  for (let idx = 0; idx < active.length; idx++) {
+    const i = active[idx]!
+    const share =
+      idx === active.length - 1
+        ? totalBudget - assigned
+        : Math.floor((totalBudget * weights[i]!) / weightSum)
+    quotas[i] = Math.max(0, share)
+    assigned += Math.max(0, share)
+  }
+
+  // Cap each quota by content size.
+  for (let i = 0; i < n; i++) {
+    if (weights[i]! > 0) {
+      quotas[i] = Math.min(quotas[i]!, weights[i]!)
+    }
+  }
+
+  // Redistribute leftover from caps.
+  let leftover = totalBudget - quotas.reduce((a, b) => a + b, 0)
+  let guard = 0
+  while (leftover > 0 && guard < n * 4) {
+    let progressed = false
+    for (const i of active) {
+      if (leftover <= 0) break
+      if (quotas[i]! < weights[i]!) {
+        quotas[i]!++
+        leftover--
+        progressed = true
+      }
+    }
+    if (!progressed) break
+    guard++
+  }
+  return quotas
+}
+
+function sliceChars(text: string, maxChars: number): string {
+  if (maxChars <= 0) return ""
+  if (text.length <= maxChars) return text
+  // Avoid splitting surrogate pairs.
+  let end = maxChars
+  if (
+    end > 0 &&
+    end < text.length &&
+    text.charCodeAt(end - 1) >= 0xd800 &&
+    text.charCodeAt(end - 1) <= 0xdbff
+  ) {
+    end--
+  }
+  return text.slice(0, end)
+}
+
+function partitionForPrompt(files: FileForPrompt[]): {
+  expanded: FileForPrompt[]
   summaries: string[]
   skipped: number
 } {
@@ -250,7 +514,6 @@ function partitionForPrompt(files: Array<{
   const lockfiles = files.filter((f) => f.omittedReason === "lockfile")
   const sensitive = files.filter((f) => f.omittedReason === "sensitive")
 
-  // Prefer host-side collapse, but still aggregate if many individual rows remain.
   if (lockfiles.length >= 2) {
     summaries.push(
       `${lockfiles.length} dependency lock files changed; contents omitted`,
@@ -268,10 +531,9 @@ function partitionForPrompt(files: Array<{
     return true
   })
 
-  // Prefer files that still carry a patch; keep omitted-but-named rows early.
   const ranked = [...rest].sort((a, b) => {
-    const score = (f: (typeof files)[number]) => {
-      if (f.diff) return 0
+    const score = (f: FileForPrompt) => {
+      if (f.hunks?.length) return 0
       if (f.omittedReason === "budget" || f.truncated) return 1
       if (f.omittedReason) return 2
       return 1
@@ -284,31 +546,18 @@ function partitionForPrompt(files: Array<{
   return { expanded, summaries, skipped }
 }
 
-function patchStatusOf(f: {
-  diff?: string | null
-  truncated?: boolean
-  omittedReason?: string | null
-}): string {
+function patchStatusOf(f: FileForPrompt): string {
   if (f.omittedReason) {
     if (f.omittedReason === "budget") return "omitted"
-    if (f.truncated && f.diff) return `partial (${f.omittedReason})`
+    if (f.truncated && f.hunks?.length) return `partial (${f.omittedReason})`
     return f.omittedReason
   }
   if (f.truncated) return "partial"
-  if (f.diff) return "full"
+  if (f.hunks?.length) return "full"
   return "none"
 }
 
-function formatFileBlock(f: {
-  path: string
-  changeType: string
-  oldPath?: string | null
-  additions?: number
-  deletions?: number
-  diff?: string | null
-  truncated?: boolean
-  omittedReason?: string | null
-}): string {
+function formatFileBlock(f: FileForPrompt): string {
   const lines = [
     `FILE: ${f.path}`,
     `STATUS: ${f.changeType}`,
@@ -317,10 +566,15 @@ function formatFileBlock(f: {
   if ((f.additions ?? 0) > 0 || (f.deletions ?? 0) > 0) {
     lines.push(`STATS: +${f.additions ?? 0} -${f.deletions ?? 0}`)
   }
-  lines.push(`PATCH_STATUS: ${patchStatusOf(f)}`)
-  if (typeof f.diff === "string" && f.diff.length > 0) {
+  const patchStatus = patchStatusOf(f)
+  if (patchStatus !== "full") {
+    lines.push(`PATCH_STATUS: ${patchStatus}`)
+  }
+  const hunks = f.hunks ?? []
+  if (hunks.length > 0) {
     lines.push("<patch>")
-    lines.push(f.diff.replace(/\n$/, ""))
+    const body = hunks.join("").replace(/\n$/, "")
+    lines.push(body)
     lines.push("</patch>")
   }
   lines.push("END_FILE", "")
@@ -453,9 +707,9 @@ export function buildCustomCommitModel(
 }
 
 function applyModelOverrides(
-  model: Model<Api>,
+  model: Model,
   overrides: { api?: Api; baseUrl?: string },
-): Model<Api> {
+): Model {
   const api = overrides.api
   const baseUrl = overrides.baseUrl
   if (!api && !baseUrl) return model
@@ -465,7 +719,7 @@ function applyModelOverrides(
     api: api ?? model.api,
     baseUrl: baseUrl ?? model.baseUrl,
     compat: model.compatConfig,
-  } as ModelSpec<Api>)
+  } as ModelSpec)
 }
 
 /**
@@ -478,7 +732,7 @@ function applyModelOverrides(
  * - VIBEFLY_COMMIT_API_KEY / provider env key / OPENAI_API_KEY
  */
 export function resolveCommitModel(): {
-  model: Model<Api>
+  model: Model
   apiKey: string
 } {
   const override = (
@@ -566,6 +820,75 @@ function isCommitDebug(): boolean {
   return raw === "1" || raw === "true" || raw === "yes"
 }
 
+function contentLength(content: unknown): number {
+  if (typeof content === "string") return content.length
+  if (Array.isArray(content)) {
+    return content.reduce((sum, part) => {
+      if (typeof part === "string") return sum + part.length
+      if (part && typeof part === "object" && "text" in part) {
+        return sum + String((part as { text?: unknown }).text ?? "").length
+      }
+      return sum + JSON.stringify(part).length
+    }, 0)
+  }
+  if (content == null) return 0
+  return String(content).length
+}
+
+function formatContent(content: unknown): string {
+  if (typeof content === "string") return content
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        if (typeof part === "string") return part
+        if (part && typeof part === "object" && "text" in part) {
+          return String((part as { text?: unknown }).text ?? "")
+        }
+        return JSON.stringify(part, null, 2)
+      })
+      .join("\n")
+  }
+  if (content == null) return ""
+  return String(content)
+}
+
+/** Structured multi-line dump of the LLM context for VIBEFLY_COMMIT_DEBUG. */
+function logCommitContext(context: Context): void {
+  const systemParts = Array.isArray(context.systemPrompt)
+    ? context.systemPrompt
+    : context.systemPrompt
+      ? [context.systemPrompt]
+      : []
+  const systemText = systemParts.map((p) => String(p)).join("\n")
+  const messages = context.messages ?? []
+
+  const messageStats = messages.map((m, i) => {
+    const len = contentLength(m.content)
+    return `#${i + 1} ${m.role} ${len} chars`
+  })
+
+  log(
+    "generateCommitMessage context",
+    `systemPrompt=${systemText.length} chars`,
+    `messages=${messages.length}`,
+    messageStats.length ? `(${messageStats.join("; ")})` : "",
+  )
+
+  const divider = "─".repeat(60)
+  log(divider)
+  log(`[systemPrompt] ${systemText.length} chars`)
+  log(systemText || "(empty)")
+  log(divider)
+
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i]!
+    const text = formatContent(m.content)
+    log(`[message ${i + 1}/${messages.length}] role=${m.role} chars=${text.length}`)
+    log(text || "(empty)")
+    log(divider)
+  }
+}
+
 export async function generateCommitMessage(
   request: GenerateCommitMessageRequest,
 ): Promise<GenerateCommitMessageResult> {
@@ -575,10 +898,16 @@ export async function generateCommitMessage(
 
   const { model, apiKey } = resolveCommitModel()
   const language = resolveCommitLanguage(request.style)
+  const contextWindow =
+    typeof model.contextWindow === "number" && model.contextWindow > 0
+      ? model.contextWindow
+      : DEFAULT_CONTEXT_WINDOW
   log(
     "generateCommitMessage model",
     `${model.provider}/${model.id}`,
     `lang=${language}`,
+    `ctx=${contextWindow}`,
+    `diffBudget=${diffCharBudget(contextWindow)}chars`,
   )
 
   const context: Context = {
@@ -586,27 +915,14 @@ export async function generateCommitMessage(
     messages: [
       {
         role: "user",
-        content: buildUserPrompt(request),
+        content: buildUserPrompt(request, { contextWindow }),
         timestamp: Date.now(),
       },
     ],
   }
 
   if (isCommitDebug()) {
-    log(
-      "generateCommitMessage context",
-      JSON.stringify(
-        {
-          systemPrompt: context.systemPrompt,
-          messages: context.messages.map((m) => ({
-            role: m.role,
-            content: m.content,
-          })),
-        },
-        null,
-        2,
-      ),
-    )
+    logCommitContext(context)
   }
 
   const response = await completeSimple(model, context, {

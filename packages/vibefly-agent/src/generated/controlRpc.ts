@@ -16,8 +16,7 @@ export interface CommitFileChange {
   oldPath?: string | null;
   additions?: number;
   deletions?: number;
-  diff?: string | null;
-  truncated?: boolean;
+  hunks?: Array<string>;
   omittedReason?: string | null;
 }
 

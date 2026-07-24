@@ -6,7 +6,8 @@ import kotlinx.serialization.Serializable
  * Per-file change for commit message generation.
  *
  * [path] is project-relative. [oldPath] is set for renames/moves.
- * [diff] is unified-hunk text, or null when omitted ([omittedReason]).
+ * [hunks] are full unified-diff hunks (`@@ … @@` + body). Host does not truncate;
+ * the agent budgets inclusion against the model context window.
  */
 @Serializable
 data class CommitFileChange(
@@ -16,10 +17,10 @@ data class CommitFileChange(
     val oldPath: String? = null,
     val additions: Int = 0,
     val deletions: Int = 0,
-    val diff: String? = null,
-    val truncated: Boolean = false,
+    /** Unified-diff hunks; empty when omitted ([omittedReason]) or no line changes. */
+    val hunks: List<String> = emptyList(),
     /**
-     * lockfile | sensitive | binary | unavailable | budget | read_error | empty
+     * lockfile | sensitive | binary | unavailable | read_error | empty
      */
     val omittedReason: String? = null,
 )

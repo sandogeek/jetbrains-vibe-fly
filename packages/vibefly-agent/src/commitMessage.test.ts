@@ -3,10 +3,15 @@ import {
   buildCustomCommitModel,
   buildSystemPrompt,
   buildUserPrompt,
+  diffCharBudget,
+  DIFF_CONTEXT_RATIO,
+  fairQuotas,
+  fitHunksToBudget,
   formatRecentExamples,
   languageInstruction,
   resolveCommitLanguage,
   sanitizeCommitMessage,
+  shrinkHunkText,
 } from "./commitMessage.js"
 
 describe("sanitizeCommitMessage", () => {
@@ -128,8 +133,63 @@ describe("formatRecentExamples", () => {
   })
 })
 
+describe("diffCharBudget", () => {
+  test("defaults to 60% of context as chars", () => {
+    expect(DIFF_CONTEXT_RATIO).toBe(0.6)
+    // 1000 tokens * 0.6 * 4 chars/token
+    expect(diffCharBudget(1000)).toBe(2400)
+    expect(diffCharBudget(1000, 0.5)).toBe(2000)
+  })
+})
+
+describe("fairQuotas", () => {
+  test("gives every non-zero weight a share", () => {
+    const quotas = fairQuotas([50_000, 50_000, 50_000], 3000)
+    expect(quotas).toHaveLength(3)
+    expect(quotas.every((q) => q > 0)).toBe(true)
+    expect(quotas.reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(3000)
+  })
+})
+
+describe("fitHunksToBudget", () => {
+  test("keeps all hunks when under budget", () => {
+    const hunks = ["@@ -1 +1 @@\n-a\n+b\n"]
+    const fitted = fitHunksToBudget(hunks, 10_000)
+    expect(fitted.truncated).toBe(false)
+    expect(fitted.hunks).toEqual(hunks)
+  })
+
+  test("samples multiple hunks not only head", () => {
+    function makeHunk(marker: string): string {
+      const ctx = Array.from({ length: 30 }, (_, i) => ` pad-${i}`).join("\n")
+      return `@@ -1,62 +1,62 @@\n${ctx}\n-old-${marker}\n+${marker}\n${ctx}\n`
+    }
+    const hunks = [makeHunk("HEAD_A"), makeHunk("MID_B"), makeHunk("TAIL_C")]
+    const full = hunks.join("").length
+    const budget = Math.max(200, Math.floor(full * 0.4))
+    const fitted = fitHunksToBudget(hunks, budget)
+    expect(fitted.truncated).toBe(true)
+    const text = fitted.hunks.join("")
+    const markers = ["HEAD_A", "MID_B", "TAIL_C"].filter((m) => text.includes(m))
+    expect(markers.length).toBeGreaterThanOrEqual(2)
+  })
+})
+
+describe("shrinkHunkText", () => {
+  test("drops context lines before change lines", () => {
+    const hunk =
+      "@@ -10,5 +10,5 @@\n ctx-a\n ctx-b\n-old\n+new\n ctx-c\n"
+    // Full hunk is longer than this; change-only form still fits.
+    const slim = shrinkHunkText(hunk, 40)
+    expect(slim).toContain("@@")
+    expect(slim).toContain("-old")
+    expect(slim).toContain("+new")
+    expect(slim).not.toContain("ctx-a")
+  })
+})
+
 describe("buildUserPrompt", () => {
-  test("emits per-file blocks with metadata and patch", () => {
+  test("emits per-file blocks with metadata and hunks", () => {
     const prompt = buildUserPrompt({
       files: [
         {
@@ -137,8 +197,7 @@ describe("buildUserPrompt", () => {
           changeType: "MODIFIED",
           additions: 2,
           deletions: 1,
-          truncated: true,
-          diff: "--- a/a.kt\n+++ b/a.kt\n+x\n",
+          hunks: ["@@ -1,2 +1,3 @@\n-a\n+x\n"],
         },
         { path: "b.ts", changeType: "ADDED", additions: 5, deletions: 0 },
       ],
@@ -146,14 +205,36 @@ describe("buildUserPrompt", () => {
     expect(prompt).toContain("FILE: a.kt")
     expect(prompt).toContain("STATUS: MODIFIED")
     expect(prompt).toContain("STATS: +2 -1")
-    expect(prompt).toContain("PATCH_STATUS: partial")
+    expect(prompt).not.toContain("PATCH_STATUS: full")
     expect(prompt).toContain("<patch>")
-    expect(prompt).toContain("+++ b/a.kt")
+    expect(prompt).toContain("@@ -1,2 +1,3 @@")
+    expect(prompt).toContain("+x")
     expect(prompt).toContain("</patch>")
     expect(prompt).toContain("END_FILE")
     expect(prompt).toContain("FILE: b.ts")
     expect(prompt).toContain("STATUS: ADDED")
     expect(prompt).toContain("STATS: +5 -0")
+  })
+
+  test("marks partial when budget forces truncation", () => {
+    const bigHunk =
+      "@@ -1,100 +1,100 @@\n" +
+      Array.from({ length: 200 }, (_, i) => `+line-${i}-padding`).join("\n") +
+      "\n"
+    const prompt = buildUserPrompt(
+      {
+        files: [
+          {
+            path: "big.kt",
+            changeType: "MODIFIED",
+            additions: 200,
+            hunks: [bigHunk],
+          },
+        ],
+      },
+      { contextWindow: 50, diffBudgetRatio: 0.6 },
+    )
+    expect(prompt).toContain("PATCH_STATUS: partial")
     expect(prompt).toContain("partial or omitted")
   })
 
@@ -177,7 +258,7 @@ describe("buildUserPrompt", () => {
           changeType: "MOVED",
           additions: 1,
           deletions: 1,
-          diff: "--- a/old/A.kt\n+++ b/new/A.kt\n+x\n",
+          hunks: ["@@ -1 +1 @@\n-x\n+y\n"],
         },
         {
           path: "yarn.lock",
@@ -199,7 +280,7 @@ describe("buildUserPrompt", () => {
     expect(prompt).toContain("FILE: new/A.kt")
     expect(prompt).toContain("OLD_PATH: old/A.kt")
     expect(prompt).toContain("STATUS: MOVED")
-    expect(prompt).toContain("+++ b/new/A.kt")
+    expect(prompt).toContain("+y")
     expect(prompt).toContain(
       "3 dependency lock files changed; contents omitted",
     )
