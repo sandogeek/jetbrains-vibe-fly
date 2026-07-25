@@ -18,7 +18,10 @@ import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.DialogPanel
 import com.intellij.openapi.ui.Messages
+import com.intellij.ui.DocumentAdapter
 import com.intellij.ui.JBColor
+import com.intellij.ui.SearchTextField
+import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBTextField
 import com.intellij.ui.dsl.builder.Align
 import com.intellij.ui.dsl.builder.AlignX
@@ -26,8 +29,10 @@ import com.intellij.ui.dsl.builder.BottomGap
 import com.intellij.ui.dsl.builder.Cell
 import com.intellij.ui.dsl.builder.Panel
 import com.intellij.ui.dsl.builder.RightGap
+import com.intellij.ui.dsl.builder.RowLayout
 import com.intellij.ui.dsl.builder.TopGap
 import com.intellij.ui.dsl.builder.panel
+import com.intellij.util.ui.JBUI
 import java.awt.BorderLayout
 import java.awt.Font
 import java.util.concurrent.atomic.AtomicInteger
@@ -39,6 +44,7 @@ import javax.swing.JComponent
 import javax.swing.JLabel
 import javax.swing.JPanel
 import javax.swing.SwingUtilities
+import javax.swing.event.DocumentEvent
 
 /**
  * Settings > Vibe Fly > Providers
@@ -53,9 +59,13 @@ class VibeflyProvidersConfigurable : SearchableConfigurable, Configurable.NoScro
 
     private var root: DialogPanel? = null
     private lateinit var agentDirField: JBTextField
+    private lateinit var builtinSearchField: SearchTextField
     private lateinit var defaultModelCombo: ComboBox<String>
     private lateinit var errorLabel: JLabel
-    private val listsHolder = JPanel(BorderLayout())
+    /** Connected + add-custom + built-in header/search (outside scroll). */
+    private val fixedListsHeader = JPanel(BorderLayout())
+    /** Built-in provider rows only (inside scroll). */
+    private val builtinListHolder = JPanel(BorderLayout())
 
     private var catalogProviders: List<CatalogProvider> = emptyList()
     private var snapshots: MutableMap<String, ProviderSnapshot> = linkedMapOf()
@@ -75,6 +85,17 @@ class VibeflyProvidersConfigurable : SearchableConfigurable, Configurable.NoScro
             return it
         }
 
+        builtinSearchField = SearchTextField(false).apply {
+            textEditor.emptyText.text =
+                VibeflyBundle.message("settings.providers.buildin.search.placeholder")
+            textEditor.border = JBUI.Borders.empty(2, 4)
+            addDocumentListener(object : DocumentAdapter() {
+                override fun textChanged(e: DocumentEvent) {
+                    rebuildSections()
+                }
+            })
+        }
+
         root = panel {
             row(VibeflyBundle.message("settings.providers.agentDir")) {
                 textField()
@@ -86,9 +107,8 @@ class VibeflyProvidersConfigurable : SearchableConfigurable, Configurable.NoScro
                 comboBox(listOf(""))
                     .align(AlignX.FILL)
                     .resizableColumn()
+                    .gap(RightGap.SMALL)
                     .applyToComponent { defaultModelCombo = this }
-            }
-            row {
                 button(VibeflyBundle.message("settings.providers.reload")) {
                     scheduleLoad(
                         agentDir = currentAgentDirRaw(),
@@ -107,8 +127,14 @@ class VibeflyProvidersConfigurable : SearchableConfigurable, Configurable.NoScro
                     }
                     .align(AlignX.FILL)
             }
+            // Fixed header (Connected / search) does not scroll with the built-in list.
             row {
-                scrollCell(listsHolder)
+                cell(fixedListsHeader)
+                    .align(AlignX.FILL)
+                    .resizableColumn()
+            }
+            row {
+                scrollCell(builtinListHolder)
                     .align(Align.FILL)
                     .resizableColumn()
             }.resizableRow()
@@ -309,10 +335,18 @@ class VibeflyProvidersConfigurable : SearchableConfigurable, Configurable.NoScro
 
     private fun rebuildSections() {
         val classified = ProviderUiHelpers.classifyProviders(snapshots.values.toList())
+        val filteredBuiltIn = ProviderUiHelpers.filterBuiltInProviders(
+            classified.popular,
+            builtinSearchQuery(),
+        )
         // Allow mutations when we already have data (e.g. cache paint + background refresh).
         val canMutate = loadError == null && (!loading || snapshots.isNotEmpty())
+        val showSearch = classified.popular.isNotEmpty() || builtinSearchQuery().isNotEmpty()
 
-        val lists = panel {
+        // Detach reusable search field before rebuilding its parent tree.
+        builtinSearchField.parent?.remove(builtinSearchField)
+
+        val header = panel {
             group(VibeflyBundle.message("settings.providers.connected")) {
                 if (loading && classified.connected.isEmpty()) {
                     row {
@@ -335,43 +369,73 @@ class VibeflyProvidersConfigurable : SearchableConfigurable, Configurable.NoScro
                     .enabled(canMutate)
             }.topGap(TopGap.SMALL).bottomGap(BottomGap.SMALL)
 
-            group(VibeflyBundle.message("settings.providers.buildin")) {
-                if (loading && classified.popular.isEmpty()) {
-                    row {
-                        comment(VibeflyBundle.message("settings.providers.loadingShort"))
-                    }
-                } else if (classified.popular.isEmpty()) {
-                    row {
-                        comment(VibeflyBundle.message("settings.providers.buildin.empty"))
-                    }
-                } else {
-                    for (snap in classified.popular) {
-                        popularRow(snap, canMutate)
-                    }
+            // Built-in title + sticky search stay outside the scroll pane.
+            row {
+                label(VibeflyBundle.message("settings.providers.buildin")).bold()
+            }.topGap(TopGap.MEDIUM)
+            if (showSearch) {
+                row {
+                    cell(builtinSearchField)
+                        .align(AlignX.FILL)
+                        .resizableColumn()
+                }.bottomGap(BottomGap.SMALL)
+            }
+        }
+
+        val builtinBody = panel {
+            if (loading && filteredBuiltIn.isEmpty() && classified.popular.isEmpty()) {
+                row {
+                    comment(VibeflyBundle.message("settings.providers.loadingShort"))
+                }
+            } else if (classified.popular.isEmpty() && builtinSearchQuery().isEmpty()) {
+                row {
+                    comment(VibeflyBundle.message("settings.providers.buildin.empty"))
+                }
+            } else if (filteredBuiltIn.isEmpty()) {
+                row {
+                    comment(VibeflyBundle.message("settings.providers.buildin.noResults"))
+                }
+            } else {
+                for (snap in filteredBuiltIn) {
+                    popularRow(snap, canMutate)
                 }
             }
         }
 
-        listsHolder.removeAll()
+        fixedListsHeader.removeAll()
+        fixedListsHeader.add(header, BorderLayout.NORTH)
+        fixedListsHeader.revalidate()
+        fixedListsHeader.repaint()
+
+        builtinListHolder.removeAll()
         // NORTH keeps preferred height (avoids huge blank stretch).
-        listsHolder.add(lists, BorderLayout.NORTH)
-        listsHolder.revalidate()
-        listsHolder.repaint()
+        builtinListHolder.add(builtinBody, BorderLayout.NORTH)
+        builtinListHolder.revalidate()
+        builtinListHolder.repaint()
     }
+
+    private fun builtinSearchQuery(): String =
+        if (::builtinSearchField.isInitialized) builtinSearchField.text.trim() else ""
 
     private fun Panel.connectedRow(snap: ProviderSnapshot) {
         val name = ProviderUiHelpers.displayName(snap.id)
         val badge = ProviderUiHelpers.badgeLabel(ProviderUiHelpers.primaryBadge(snap))
         row {
-            label(name)
-                .bold()
-                .gap(RightGap.SMALL)
-            label(badge)
-                .gap(RightGap.SMALL)
-                .applyToComponent {
-                    font = font.deriveFont(Font.PLAIN, font.size2D * 0.9f)
-                    foreground = JBColor.GRAY
-                }
+            panel {
+                row {
+                    label(name).bold().gap(RightGap.SMALL)
+                    cell(
+                        JBLabel(badge).apply {
+                            font = font.deriveFont(Font.PLAIN, font.size2D * 0.85f)
+                            foreground = JBColor.GRAY
+                            border = JBUI.Borders.compound(
+                                JBUI.Borders.customLine(JBColor.border(), 1),
+                                JBUI.Borders.empty(1, 6),
+                            )
+                        },
+                    )
+                }.layout(RowLayout.INDEPENDENT)
+            }.resizableColumn().align(AlignX.FILL)
             button(VibeflyBundle.message("settings.providers.edit")) {
                 if (snap.isCatalog) onEditCatalog(snap) else onEditCustom(snap)
             }.withIcon(AllIcons.Actions.Edit)
@@ -382,7 +446,7 @@ class VibeflyProvidersConfigurable : SearchableConfigurable, Configurable.NoScro
                 button(VibeflyBundle.message("settings.providers.delete")) { onDeleteCustom(snap) }
                     .withIcon(AllIcons.General.Remove)
             }
-        }
+        }.layout(RowLayout.PARENT_GRID)
     }
 
     private fun Panel.popularRow(
@@ -392,16 +456,18 @@ class VibeflyProvidersConfigurable : SearchableConfigurable, Configurable.NoScro
         val name = ProviderUiHelpers.displayName(snap.id)
         val desc = ProviderUiHelpers.description(snap.id)
         row {
-            label(name)
-                .bold()
-                .gap(RightGap.SMALL)
-            comment(desc)
-                .resizableColumn()
-                .align(AlignX.FILL)
+            panel {
+                row {
+                    label(name).bold()
+                }
+                row {
+                    comment(desc)
+                }.topGap(TopGap.NONE)
+            }.resizableColumn().align(AlignX.FILL)
             button(VibeflyBundle.message("settings.providers.connect")) { onConnect(snap) }
                 .withIcon(AllIcons.General.Web)
                 .enabled(canMutate)
-        }
+        }.layout(RowLayout.PARENT_GRID).bottomGap(BottomGap.SMALL)
     }
 
     private fun Cell<JButton>.withIcon(icon: Icon): Cell<JButton> =

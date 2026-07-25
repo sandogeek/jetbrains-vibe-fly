@@ -110,6 +110,23 @@ object ProviderUiHelpers {
     }
 
     /**
+     * Filters built-in provider entries by provider id, display name, or description.
+     * An empty query keeps the original order and all entries.
+     */
+    fun filterBuiltInProviders(
+        providers: List<ProviderSnapshot>,
+        query: String,
+    ): List<ProviderSnapshot> {
+        val needle = query.trim().lowercase()
+        if (needle.isEmpty()) return providers
+        return providers.filter { provider ->
+            provider.id.lowercase().contains(needle) ||
+                displayName(provider.id).lowercase().contains(needle) ||
+                description(provider.id).lowercase().contains(needle)
+        }
+    }
+
+    /**
      * Default-model options: only models from connected providers.
      * Prefer snapshot model lists; fall back to catalog models when empty.
      */

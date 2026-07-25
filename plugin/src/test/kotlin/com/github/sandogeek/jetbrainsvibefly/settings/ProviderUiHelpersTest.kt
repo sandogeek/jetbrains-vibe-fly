@@ -82,6 +82,32 @@ class ProviderUiHelpersTest {
     }
 
     @Test
+    fun filterBuiltInProvidersMatchesIdNameAndDescriptionCaseInsensitively() {
+        val providers = listOf(
+            ProviderSnapshot(id = "openai", isCatalog = true),
+            ProviderSnapshot(id = "deepseek", isCatalog = true),
+            ProviderSnapshot(id = "custom-catalog", isCatalog = true),
+        )
+
+        assertEquals(
+            listOf("openai"),
+            ProviderUiHelpers.filterBuiltInProviders(providers, "OPENAI").map { it.id },
+        )
+        assertEquals(
+            listOf("deepseek"),
+            ProviderUiHelpers.filterBuiltInProviders(providers, "reasoner").map { it.id },
+        )
+        assertEquals(
+            listOf("custom-catalog"),
+            ProviderUiHelpers.filterBuiltInProviders(providers, "catalog").map { it.id },
+        )
+        assertEquals(
+            providers,
+            ProviderUiHelpers.filterBuiltInProviders(providers, "  "),
+        )
+    }
+
+    @Test
     fun isConnectedRules() {
         assertTrue(
             ProviderUiHelpers.isConnected(
