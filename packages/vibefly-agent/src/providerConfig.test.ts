@@ -123,6 +123,7 @@ describe("applyProvidersPatch + AuthStorage", () => {
     const yml = fs.readFileSync(path.join(agentDir, "models.yml"), "utf-8")
     expect(yml).toContain("my-proxy")
     expect(yml).toContain("https://proxy.example/v1")
+    expect(yml).toMatch(/auth:\s*none/)
     expect(yml).not.toContain("sk-test-secret")
     expect(yml).not.toMatch(/apiKey:\s*sk-/)
 
@@ -153,6 +154,53 @@ describe("applyProvidersPatch + AuthStorage", () => {
     } finally {
       auth2.close()
     }
+  })
+
+  test("forces auth none when patch requests apiKey (keys stay in agent.db)", async () => {
+    const agentDir = tempAgentDir()
+    setAgentDir(agentDir)
+
+    const result = await applyProvidersPatch({
+      agentDir,
+      providers: [
+        {
+          id: "local-grok",
+          baseUrl: "http://127.0.0.1:8000/v1",
+          api: "openai-responses",
+          auth: "apiKey",
+          models: [{ id: "grok-4.5", name: "grok-4.5" }],
+        },
+      ],
+      credentials: [
+        { provider: "local-grok", action: "set", apiKey: "sk-local" },
+      ],
+    })
+    expect(result.ok).toBe(true)
+
+    const raw = loadRawModelsConfig(agentDir)
+    expect((raw.providers as any)["local-grok"].auth).toBe("none")
+    expect((raw.providers as any)["local-grok"].apiKey).toBeUndefined()
+  })
+
+  test("repairModelsYmlAuthForOmp rewrites auth apiKey without inline key", async () => {
+    const agentDir = tempAgentDir()
+    setAgentDir(agentDir)
+    writeRawModelsConfig(agentDir, {
+      providers: {
+        "local-grok": {
+          baseUrl: "http://127.0.0.1:8000/v1",
+          api: "openai-responses",
+          auth: "apiKey",
+          models: [{ id: "grok-4.5", name: "grok-4.5" }],
+        },
+      },
+    })
+
+    const { repairModelsYmlAuthForOmp } = await import("./providerConfig.js")
+    expect(repairModelsYmlAuthForOmp(agentDir)).toBe(true)
+    const raw = loadRawModelsConfig(agentDir)
+    expect((raw.providers as any)["local-grok"].auth).toBe("none")
+    expect(repairModelsYmlAuthForOmp(agentDir)).toBe(false)
   })
 
   test("empty api key set is a no-op (keep existing)", async () => {

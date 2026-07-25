@@ -28,18 +28,19 @@ afterEach(() => {
   clearOmpRuntimeCache()
 })
 
-describe("resolveCommitModel with OMP agentDir", () => {
-  test("reads custom model + api key from agent.db and models.yml", async () => {
+describe("resolveCommitModel request + OMP only", () => {
+  test("uses request commitModel from agent.db and models.yml", async () => {
     const agentDir = tempAgentDir()
     setAgentDir(agentDir)
     setEnv("PI_CODING_AGENT_DIR", agentDir)
-    setEnv("VIBEFLY_DEFAULT_MODEL", "local-proxy/demo-model")
-    setEnv("VIBEFLY_COMMIT_MODEL", undefined)
-    setEnv("OMP_COMMIT_MODEL", undefined)
-    setEnv("VIBEFLY_COMMIT_API_KEY", undefined)
-    setEnv("OPENAI_API_KEY", undefined)
-    setEnv("OPENAI_BASE_URL", undefined)
-    setEnv("VIBEFLY_COMMIT_BASE_URL", undefined)
+    // Old commit env vars must not affect resolution.
+    setEnv("VIBEFLY_DEFAULT_MODEL", "openai/gpt-4o-mini")
+    setEnv("VIBEFLY_COMMIT_MODEL", "openai/gpt-4o-mini")
+    setEnv("VIBEFLY_COMMIT_API_KEY", "sk-should-not-be-used")
+    setEnv("OPENAI_API_KEY", "sk-openai-should-not-be-used")
+    setEnv("OPENAI_BASE_URL", "https://should-not-be-used.example/v1")
+    setEnv("VIBEFLY_COMMIT_BASE_URL", "https://should-not-be-used.example/v1")
+    setEnv("VIBEFLY_COMMIT_API", "openai-completions")
 
     const patch = await applyProvidersPatch({
       agentDir,
@@ -59,26 +60,137 @@ describe("resolveCommitModel with OMP agentDir", () => {
     expect(patch.ok).toBe(true)
     clearOmpRuntimeCache()
 
-    const { model, apiKey } = await resolveCommitModel()
+    const { model, apiKey } = await resolveCommitModel({
+      commitModel: "local-proxy/demo-model",
+      defaultModel: "openai/gpt-4o-mini",
+    })
     expect(String(model.provider)).toBe("local-proxy")
     expect(String(model.id)).toBe("demo-model")
     expect(model.baseUrl).toContain("llm.example")
     expect(apiKey).toBe("sk-from-agent-db")
   })
 
-  test("env VIBEFLY_COMMIT_API_KEY still works as fallback", async () => {
+  test("falls back to request defaultModel when commitModel empty", async () => {
     const agentDir = tempAgentDir()
     setAgentDir(agentDir)
     setEnv("PI_CODING_AGENT_DIR", agentDir)
-    setEnv("VIBEFLY_DEFAULT_MODEL", "openai/gpt-4o-mini")
-    setEnv("VIBEFLY_COMMIT_MODEL", "openai/gpt-4o-mini")
-    setEnv("VIBEFLY_COMMIT_API_KEY", "sk-env-fallback")
-    // Ensure no stored key shadows; empty agent.db is fine.
+
+    const patch = await applyProvidersPatch({
+      agentDir,
+      providers: [
+        {
+          id: "local-proxy",
+          baseUrl: "https://llm.example/v1",
+          api: "openai-responses",
+          auth: "none",
+          models: [
+            { id: "default-model", name: "default-model" },
+            { id: "other-model", name: "other-model" },
+          ],
+        },
+      ],
+      credentials: [
+        { provider: "local-proxy", action: "set", apiKey: "sk-default" },
+      ],
+    })
+    expect(patch.ok).toBe(true)
     clearOmpRuntimeCache()
 
-    const { model, apiKey } = await resolveCommitModel()
-    expect(String(model.provider)).toBe("openai")
-    expect(String(model.id)).toContain("gpt-4o-mini")
-    expect(apiKey).toBe("sk-env-fallback")
+    const { model, apiKey } = await resolveCommitModel({
+      commitModel: "",
+      defaultModel: "local-proxy/default-model",
+    })
+    expect(String(model.provider)).toBe("local-proxy")
+    expect(String(model.id)).toBe("default-model")
+    expect(apiKey).toBe("sk-default")
+  })
+
+  test("prefers commitModel over defaultModel", async () => {
+    const agentDir = tempAgentDir()
+    setAgentDir(agentDir)
+    setEnv("PI_CODING_AGENT_DIR", agentDir)
+
+    const patch = await applyProvidersPatch({
+      agentDir,
+      providers: [
+        {
+          id: "local-proxy",
+          baseUrl: "https://llm.example/v1",
+          api: "openai-responses",
+          auth: "none",
+          models: [
+            { id: "default-model", name: "default-model" },
+            { id: "commit-model", name: "commit-model" },
+          ],
+        },
+      ],
+      credentials: [
+        { provider: "local-proxy", action: "set", apiKey: "sk-key" },
+      ],
+    })
+    expect(patch.ok).toBe(true)
+    clearOmpRuntimeCache()
+
+    const { model } = await resolveCommitModel({
+      commitModel: "local-proxy/commit-model",
+      defaultModel: "local-proxy/default-model",
+    })
+    expect(String(model.id)).toBe("commit-model")
+  })
+
+  test("errors when neither commit nor default model is set", async () => {
+    const agentDir = tempAgentDir()
+    setAgentDir(agentDir)
+    setEnv("PI_CODING_AGENT_DIR", agentDir)
+    setEnv("VIBEFLY_COMMIT_MODEL", "openai/gpt-4o-mini")
+    setEnv("OPENAI_API_KEY", "sk-env")
+
+    await expect(resolveCommitModel({})).rejects.toThrow(/No commit model configured/)
+  })
+
+  test("errors when model missing from OMP registry", async () => {
+    const agentDir = tempAgentDir()
+    setAgentDir(agentDir)
+    setEnv("PI_CODING_AGENT_DIR", agentDir)
+    clearOmpRuntimeCache()
+
+    await expect(
+      resolveCommitModel({ commitModel: "missing/provider-model" }),
+    ).rejects.toThrow(/not found/)
+  })
+
+  test("custom models coerce auth to none; env API keys are ignored", async () => {
+    const agentDir = tempAgentDir()
+    setAgentDir(agentDir)
+    setEnv("PI_CODING_AGENT_DIR", agentDir)
+    setEnv("OPENAI_API_KEY", "sk-env-must-not-apply")
+    setEnv("VIBEFLY_COMMIT_API_KEY", "sk-env-must-not-apply")
+
+    // auth "apiKey" would make OMP reject models.yml; Vibe Fly forces "none".
+    const patch = await applyProvidersPatch({
+      agentDir,
+      providers: [
+        {
+          id: "local-proxy",
+          baseUrl: "https://llm.example/v1",
+          api: "openai-responses",
+          auth: "apiKey",
+          models: [{ id: "demo-model", name: "demo-model" }],
+        },
+      ],
+      credentials: [
+        { provider: "local-proxy", action: "set", apiKey: "sk-from-agent-db" },
+      ],
+    })
+    expect(patch.ok).toBe(true)
+    clearOmpRuntimeCache()
+
+    const { model, apiKey } = await resolveCommitModel({
+      defaultModel: "local-proxy/demo-model",
+    })
+    expect(String(model.provider)).toBe("local-proxy")
+    expect(String(model.id)).toBe("demo-model")
+    // Credential comes from agent.db only, not env.
+    expect(apiKey).toBe("sk-from-agent-db")
   })
 })

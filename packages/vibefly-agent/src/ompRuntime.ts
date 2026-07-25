@@ -12,6 +12,7 @@ import { setAgentDir } from "@oh-my-pi/pi-utils"
 import {
   modelsYmlPath,
   openAuthStorage,
+  repairModelsYmlAuthForOmp,
   resolveAgentDir,
   resolveModelsReadPath,
 } from "./providerConfig.js"
@@ -63,6 +64,10 @@ export async function getOmpRuntime(options?: {
     resolveModelsReadPath(agentDir) ?? modelsYmlPath(agentDir)
   // Prefer yml path for ModelRegistry so JSON→YAML migration can run.
   const registryModelsPath = path.join(agentDir, "models.yml")
+
+  // Custom models + auth apiKey without inline key fail OMP validation.
+  // Normalize before ModelRegistry loads so local/custom providers resolve.
+  repairModelsYmlAuthForOmp(agentDir)
 
   const auth = await openAuthStorage(agentDir)
   const registry = new ModelRegistry(auth, registryModelsPath)

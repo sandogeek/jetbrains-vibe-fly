@@ -55,11 +55,16 @@ describe("sanitizeCommitMessage", () => {
 describe("resolveCommitLanguage", () => {
   test("defaults to en", () => {
     expect(resolveCommitLanguage(undefined)).toBe("en")
-    expect(resolveCommitLanguage("conventional_en")).toBe("en")
+    expect(resolveCommitLanguage(undefined, "conventional_en")).toBe("en")
   })
 
-  test("parses zh styles", () => {
-    expect(resolveCommitLanguage("conventional_zh")).toBe("zh")
+  test("prefers explicit language over style", () => {
+    expect(resolveCommitLanguage("zh", "conventional_en")).toBe("zh")
+    expect(resolveCommitLanguage("en", "conventional_zh")).toBe("en")
+  })
+
+  test("parses zh styles when language omitted", () => {
+    expect(resolveCommitLanguage(undefined, "conventional_zh")).toBe("zh")
     expect(resolveCommitLanguage("zh-CN")).toBe("zh")
   })
 })
@@ -90,6 +95,26 @@ describe("buildSystemPrompt", () => {
     expect(buildSystemPrompt("conventional_en")).not.toContain(
       "Language Requirement",
     )
+  })
+
+  test("custom prompt replaces built-in and keeps language constraint", () => {
+    const prompt = buildSystemPrompt({
+      language: "zh",
+      customPrompt: "You write tiny commit subjects only.",
+    })
+    expect(prompt).toContain("You write tiny commit subjects only.")
+    expect(prompt).not.toContain("Conventional Commits Format")
+    expect(prompt).toContain("Language Requirement")
+    expect(prompt).toContain("Chinese")
+  })
+
+  test("empty custom prompt keeps built-in", () => {
+    const prompt = buildSystemPrompt({
+      language: "en",
+      customPrompt: "   ",
+    })
+    expect(prompt).toContain("Conventional Commits")
+    expect(prompt).not.toContain("Language Requirement")
   })
 })
 

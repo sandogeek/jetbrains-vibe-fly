@@ -33,8 +33,10 @@ class VibeflyProvidersConfigurableRegistrationTest {
         val text = pluginXml.readText()
         assertTrue(text.contains("id=\"vibefly.settings\""))
         assertTrue(text.contains("id=\"vibefly.providers\""))
+        assertTrue(text.contains("id=\"vibefly.commitMessage\""))
         assertTrue(text.contains("VibeflySettingsConfigurable"))
         assertTrue(text.contains("VibeflyProvidersConfigurable"))
+        assertTrue(text.contains("VibeflyCommitMessageConfigurable"))
         assertTrue(text.contains("parentId=\"vibefly.settings\""))
     }
 

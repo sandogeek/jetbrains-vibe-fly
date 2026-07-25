@@ -24,6 +24,10 @@ export interface GenerateCommitMessageRequest {
   files: Array<CommitFileChange>;
   style?: string;
   recentMessages?: Array<string>;
+  commitModel?: string | null;
+  defaultModel?: string | null;
+  language?: string | null;
+  customPrompt?: string | null;
 }
 
 export interface GenerateCommitMessageResult {

@@ -28,6 +28,11 @@
                 id="vibefly.providers"
                 key="settings.providers"
                 instance="com.github.sandogeek.jetbrainsvibefly.settings.VibeflyProvidersConfigurable"/>
+        <applicationConfigurable
+                parentId="vibefly.settings"
+                id="vibefly.commitMessage"
+                key="settings.commitMessage"
+                instance="com.github.sandogeek.jetbrainsvibefly.settings.VibeflyCommitMessageConfigurable"/>
     </extensions>
 
     <actions>

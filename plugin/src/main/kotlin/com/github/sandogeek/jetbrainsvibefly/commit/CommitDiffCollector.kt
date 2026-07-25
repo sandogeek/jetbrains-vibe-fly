@@ -161,11 +161,21 @@ object CommitDiffCollector {
         val files: List<CommitFileChange>,
         val recentMessages: List<String> = emptyList(),
     ) {
-        fun toRequest(style: String = "conventional_en"): GenerateCommitMessageRequest =
+        fun toRequest(
+            style: String = "conventional_en",
+            commitModel: String? = null,
+            defaultModel: String? = null,
+            language: String? = null,
+            customPrompt: String? = null,
+        ): GenerateCommitMessageRequest =
             GenerateCommitMessageRequest(
                 files = files,
                 style = style,
                 recentMessages = recentMessages,
+                commitModel = commitModel?.trim()?.takeIf { it.isNotEmpty() },
+                defaultModel = defaultModel?.trim()?.takeIf { it.isNotEmpty() },
+                language = language?.trim()?.takeIf { it.isNotEmpty() },
+                customPrompt = customPrompt?.trim()?.takeIf { it.isNotEmpty() },
             )
     }
 

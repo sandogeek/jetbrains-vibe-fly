@@ -189,7 +189,6 @@ class VibeflyAgentService(@Suppress("unused") private val project: Project) : Di
         val settings = VibeflyProviderSettingsState.getInstance()
         val handle = VibeflyAgentProcess.start(
             agentDir = settings.resolvedAgentDir(),
-            defaultModel = settings.defaultModelSpec().ifEmpty { null },
         )
         processRef.set(handle.process)
         transportRef.set(handle.transport)

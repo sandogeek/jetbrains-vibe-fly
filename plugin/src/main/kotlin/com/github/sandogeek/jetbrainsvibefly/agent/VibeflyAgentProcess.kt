@@ -54,7 +54,6 @@ object VibeflyAgentProcess {
 
     fun start(
         agentDir: String? = null,
-        defaultModel: String? = null,
     ): Handle {
         val entry = VibeflyAgentPaths.resolveAgentEntry()
         val command = mutableListOf(VibeflyAgentPaths.resolveBunCommand())
@@ -69,15 +68,8 @@ object VibeflyAgentProcess {
         val env = builder.environment()
         val dir = agentDir?.trim().orEmpty()
         if (dir.isNotEmpty()) {
+            // Internal process param for OMP agent dir (not commit config).
             env["PI_CODING_AGENT_DIR"] = dir
-        }
-        val model = defaultModel?.trim().orEmpty()
-        if (model.isNotEmpty()) {
-            env["VIBEFLY_DEFAULT_MODEL"] = model
-            // Keep commit path aligned with Settings selection.
-            if (env["VIBEFLY_COMMIT_MODEL"].isNullOrBlank()) {
-                env["VIBEFLY_COMMIT_MODEL"] = model
-            }
         }
 
         val process = builder.start()
@@ -96,11 +88,10 @@ object VibeflyAgentProcess {
      */
     fun <T> withControl(
         agentDir: String? = null,
-        defaultModel: String? = null,
         timeoutMs: Long = 60_000L,
         block: suspend (Host2Agent) -> T,
     ): T {
-        val handle = start(agentDir = agentDir, defaultModel = defaultModel)
+        val handle = start(agentDir = agentDir)
         try {
             return runBlocking {
                 withTimeout(timeoutMs.milliseconds) {

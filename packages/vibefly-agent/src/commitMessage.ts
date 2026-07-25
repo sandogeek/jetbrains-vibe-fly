@@ -1,21 +1,17 @@
 /**
  * Single-shot conventional commit message generation via pi-ai complete.
  * Logs only via stderr (log.ts); never write to stdout.
+ *
+ * Model, language, and prompt config come from the RPC request + OMP
+ * ModelRegistry only (no commit env-var overrides).
  */
 import {
   completeSimple,
-  getEnvApiKey,
   type Api,
   type Context,
   type Model,
 } from "@oh-my-pi/pi-ai"
 import { buildModel } from "@oh-my-pi/pi-catalog/build"
-import {
-  getBundledModel,
-  getBundledModels,
-  getBundledProviders,
-  type GeneratedProvider,
-} from "@oh-my-pi/pi-catalog/models"
 import type { ModelSpec } from "@oh-my-pi/pi-catalog/types"
 import type {
   CommitFileChange,
@@ -110,9 +106,6 @@ When analyzing staged changes:
 - For significant changes, include a detailed body explaining the changes
 - Prefer matching the repo's recent commit style over generic examples when both apply`
 
-const DEFAULT_CUSTOM_API: Api = "openai-responses"
-const DEFAULT_CUSTOM_BASE_URL = "https://api.openai.com/v1"
-
 /** Soft cap on how many per-file blocks are expanded in the user prompt. */
 const MAX_PROMPT_FILE_BLOCKS = 100
 /** Max recent commits used as few-shot style examples. */
@@ -131,10 +124,16 @@ export type CommitPromptOptions = {
   diffBudgetRatio?: number
 }
 
-/** Parse style like "conventional_en", "conventional_zh", "en", "zh-CN". */
-export function resolveCommitLanguage(style?: string): string {
-  const env = (process.env.VIBEFLY_COMMIT_LANGUAGE || "").trim()
-  if (env) return normalizeLanguage(env)
+/**
+ * Resolve language from RPC request only (no env).
+ * Prefer explicit `language`; fall back to style tokens like "conventional_zh".
+ */
+export function resolveCommitLanguage(
+  language?: string | null,
+  style?: string | null,
+): string {
+  const explicit = (language || "").trim()
+  if (explicit) return normalizeLanguage(explicit)
 
   const raw = (style || "conventional_en").trim().toLowerCase()
   if (!raw) return "en"
@@ -161,7 +160,6 @@ export function languageInstruction(language?: string): string {
       ? "Chinese (Simplified)"
       : language
   return (
-
     `\n\n## Language Requirement\n` +
     `CRITICAL: Write the commit description, body, and footers in ${label}. ` +
     `Keep Conventional Commit type and scope tokens in English ` +
@@ -169,9 +167,25 @@ export function languageInstruction(language?: string): string {
   )
 }
 
-export function buildSystemPrompt(style?: string): string {
-  const language = resolveCommitLanguage(style)
-  return SYSTEM_PROMPT + languageInstruction(language)
+export type SystemPromptOptions = {
+  language?: string | null
+  style?: string | null
+  /** When non-empty, replaces the built-in Conventional Commits prompt. */
+  customPrompt?: string | null
+}
+
+export function buildSystemPrompt(
+  styleOrOptions?: string | SystemPromptOptions,
+  maybeOptions?: SystemPromptOptions,
+): string {
+  const options: SystemPromptOptions =
+    typeof styleOrOptions === "string" || styleOrOptions == null
+      ? { style: styleOrOptions ?? undefined, ...(maybeOptions ?? {}) }
+      : styleOrOptions
+  const language = resolveCommitLanguage(options.language, options.style)
+  const custom = (options.customPrompt || "").trim()
+  const base = custom || SYSTEM_PROMPT
+  return base + languageInstruction(language)
 }
 
 /** Character budget for all unified-diff hunks combined. */
@@ -625,7 +639,9 @@ export function sanitizeCommitMessage(raw: string): string {
   return clampedBody ? `${subject}\n\n${clampedBody}` : subject
 }
 
-function parseModelSpec(spec: string): { provider: string; modelId: string } | null {
+export function parseModelSpec(
+  spec: string,
+): { provider: string; modelId: string } | null {
   const trimmed = spec.trim()
   if (!trimmed) return null
   const slash = trimmed.indexOf("/")
@@ -640,57 +656,14 @@ function parseModelSpec(spec: string): { provider: string; modelId: string } | n
   return { provider, modelId }
 }
 
-function tryBundled(
-  provider: string,
-  modelId: string,
-): Model<Api> | undefined {
-  try {
-    const model = getBundledModel(provider as GeneratedProvider, modelId) as
-      | Model<Api>
-      | undefined
-    if (!model?.id || !model.provider) return undefined
-    return model
-  } catch {
-    return undefined
-  }
-}
-
-function readCommitEnv(name: string): string {
-  return (process.env[name] || "").trim()
-}
-
-function resolveCommitApiKey(provider: string): string | undefined {
-  return (
-    readCommitEnv("VIBEFLY_COMMIT_API_KEY") ||
-    getEnvApiKey(provider) ||
-    readCommitEnv("OPENAI_API_KEY") ||
-    undefined
-  )
-}
-
-function resolveCommitApi(fallback?: Api): Api {
-  const raw = readCommitEnv("VIBEFLY_COMMIT_API")
-  if (raw) return raw as Api
-  return fallback ?? DEFAULT_CUSTOM_API
-}
-
-function resolveCommitBaseUrl(fallback?: string): string {
-  return (
-    readCommitEnv("VIBEFLY_COMMIT_BASE_URL") ||
-    readCommitEnv("OPENAI_BASE_URL") ||
-    fallback ||
-    DEFAULT_CUSTOM_BASE_URL
-  )
-}
-
-/** Build a non-catalog model (custom base URL / API / model id). */
+/** Build a non-catalog model (tests / rare local fixtures). Not used for env fallback. */
 export function buildCustomCommitModel(
   provider: string,
   modelId: string,
   options?: { api?: Api; baseUrl?: string },
-): Model<Api> {
-  const api = options?.api ?? DEFAULT_CUSTOM_API
-  const baseUrl = options?.baseUrl ?? DEFAULT_CUSTOM_BASE_URL
+): Model {
+  const api = options?.api ?? ("openai-responses" as Api)
+  const baseUrl = options?.baseUrl ?? "https://api.openai.com/v1"
   const spec: ModelSpec<Api> = {
     id: modelId,
     name: modelId,
@@ -706,177 +679,75 @@ export function buildCustomCommitModel(
   return buildModel(spec)
 }
 
-function applyModelOverrides(
-  model: Model,
-  overrides: { api?: Api; baseUrl?: string },
-): Model {
-  const api = overrides.api
-  const baseUrl = overrides.baseUrl
-  if (!api && !baseUrl) return model
-  if (api === model.api && (!baseUrl || baseUrl === model.baseUrl)) return model
-  return buildModel({
-    ...model,
-    api: api ?? model.api,
-    baseUrl: baseUrl ?? model.baseUrl,
-    compat: model.compatConfig,
-  } as ModelSpec)
+export type ResolveCommitModelInput = {
+  /** Commit-specific model (`provider/modelId`). Empty = use defaultModel. */
+  commitModel?: string | null
+  /** Providers default model (`provider/modelId`). */
+  defaultModel?: string | null
 }
 
 /**
- * Resolve model from Settings / OMP registry / env / bundled catalog.
+ * Resolve model from RPC request + OMP ModelRegistry only.
  *
  * Priority:
- * 1. VIBEFLY_COMMIT_MODEL / VIBEFLY_DEFAULT_MODEL / OMP_COMMIT_MODEL (Settings)
- * 2. OMP ModelRegistry available models (agent.db + models.yml)
- * 3. Env API keys + bundled catalog (legacy fallback)
+ * 1. request.commitModel
+ * 2. request.defaultModel
+ * 3. error — no available commit model
  *
- * Env:
- * - VIBEFLY_COMMIT_MODEL / VIBEFLY_DEFAULT_MODEL / OMP_COMMIT_MODEL: "provider/modelId"
- * - VIBEFLY_COMMIT_API: wire API (default openai-responses for custom models)
- * - VIBEFLY_COMMIT_BASE_URL / OPENAI_BASE_URL: custom endpoint
- * - VIBEFLY_COMMIT_API_KEY / provider env key / OPENAI_API_KEY
- * - PI_CODING_AGENT_DIR: Oh My Pi agent directory
+ * API key / base URL / API type come only from OMP models.yml + agent.db.
+ * Commit-related env vars are ignored.
  */
-export async function resolveCommitModel(): Promise<{
+export async function resolveCommitModel(
+  input: ResolveCommitModelInput = {},
+): Promise<{
   model: Model
   apiKey: string
 }> {
-  const override = (
-    process.env.VIBEFLY_COMMIT_MODEL ||
-    process.env.VIBEFLY_DEFAULT_MODEL ||
-    process.env.OMP_COMMIT_MODEL ||
-    ""
-  ).trim()
+  const commitModel = (input.commitModel || "").trim()
+  const defaultModel = (input.defaultModel || "").trim()
+  const selected = commitModel || defaultModel
 
-  const apiEnv = readCommitEnv("VIBEFLY_COMMIT_API")
-  const baseUrlEnv =
-    readCommitEnv("VIBEFLY_COMMIT_BASE_URL") || readCommitEnv("OPENAI_BASE_URL")
-
-  // Prefer OMP registry (models.yml + agent.db) when available.
-  try {
-    const { getOmpRuntime } = await import("./ompRuntime.js")
-    const runtime = await getOmpRuntime()
-    const { registry } = runtime
-
-    // Explicit VIBEFLY_COMMIT_* overrides only — do not let OPENAI_BASE_URL
-    // clobber models.yml baseUrl for Settings/OMP-selected models.
-    const ompApiOverride = readCommitEnv("VIBEFLY_COMMIT_API")
-    const ompBaseUrlOverride = readCommitEnv("VIBEFLY_COMMIT_BASE_URL")
-
-    if (override) {
-      const parsed = parseModelSpec(override)
-      if (!parsed) {
-        throw new Error(
-          `Invalid model "${override}". Use provider/modelId (e.g. openai/gpt-4o-mini).`,
-        )
-      }
-      let model =
-        registry.find(parsed.provider, parsed.modelId) ??
-        tryBundled(parsed.provider, parsed.modelId)
-      if (model) {
-        model = applyModelOverrides(model, {
-          api: ompApiOverride ? (ompApiOverride as Api) : undefined,
-          baseUrl: ompBaseUrlOverride || undefined,
-        })
-      } else {
-        const providerBase = registry.getProviderBaseUrl(parsed.provider)
-        model = buildCustomCommitModel(parsed.provider, parsed.modelId, {
-          api: resolveCommitApi(
-            registry.getAll().find((m) => String(m.provider) === parsed.provider)
-              ?.api,
-          ),
-          // Prefer OMP provider baseUrl over OPENAI_BASE_URL for custom ids.
-          baseUrl:
-            ompBaseUrlOverride ||
-            providerBase ||
-            resolveCommitBaseUrl(),
-        })
-      }
-      const apiKey =
-        (await registry.getApiKey(model)) ||
-        resolveCommitApiKey(String(model.provider))
-      if (apiKey) return { model, apiKey }
-      throw new Error(
-        `No API key for provider "${model.provider}". ` +
-          `Configure it in Settings > Vibe Fly > Providers, or set VIBEFLY_COMMIT_API_KEY / OPENAI_API_KEY.`,
-      )
-    }
-
-    const available = registry.getAvailable()
-    if (available.length > 0) {
-      let model = available[0]!
-      model = applyModelOverrides(model, {
-        api: ompApiOverride ? (ompApiOverride as Api) : undefined,
-        baseUrl: ompBaseUrlOverride || undefined,
-      })
-      const apiKey =
-        (await registry.getApiKey(model)) ||
-        resolveCommitApiKey(String(model.provider))
-      if (apiKey) return { model, apiKey }
-    }
-  } catch (error) {
-    // Fall through to env/catalog when OMP is unavailable.
-    if (
-      error instanceof Error &&
-      (error.message.startsWith("Invalid model") ||
-        error.message.startsWith("No API key"))
-    ) {
-      throw error
-    }
-    log("resolveCommitModel OMP path failed, using env fallback", error)
+  if (!selected) {
+    throw new Error(
+      "No commit model configured. " +
+        "Set a default model in Settings > Vibe Fly > Providers, " +
+        "or choose a commit model in Settings > Vibe Fly > Commit Message.",
+    )
   }
 
-  if (override) {
-    const parsed = parseModelSpec(override)
-    if (!parsed) {
-      throw new Error(
-        `Invalid VIBEFLY_COMMIT_MODEL "${override}". Use provider/modelId (e.g. openai/gpt-4o-mini).`,
-      )
-    }
-
-    let model = tryBundled(parsed.provider, parsed.modelId)
-    if (model) {
-      model = applyModelOverrides(model, {
-        api: apiEnv ? (apiEnv as Api) : undefined,
-        baseUrl: baseUrlEnv || undefined,
-      })
-    } else {
-      model = buildCustomCommitModel(parsed.provider, parsed.modelId, {
-        api: resolveCommitApi(),
-        baseUrl: resolveCommitBaseUrl(),
-      })
-    }
-
-    const apiKey = resolveCommitApiKey(String(model.provider))
-    if (!apiKey) {
-      throw new Error(
-        `No API key for provider "${model.provider}". Set VIBEFLY_COMMIT_API_KEY, ` +
-          `the provider env key (e.g. OPENAI_API_KEY), or configure omp auth.`,
-      )
-    }
-    return { model, apiKey }
+  const parsed = parseModelSpec(selected)
+  if (!parsed) {
+    throw new Error(
+      `Invalid model "${selected}". Use provider/modelId (e.g. openai/gpt-4o-mini).`,
+    )
   }
 
-  // Any provider with an env key and at least one bundled model.
-  for (const provider of getBundledProviders()) {
-    const providerId = String(provider)
-    const apiKey = resolveCommitApiKey(providerId)
-    if (!apiKey) continue
-    const models = getBundledModels(provider as GeneratedProvider) as Model<Api>[]
-    let model = models[0]
-    if (!model) continue
-    model = applyModelOverrides(model, {
-      api: apiEnv ? (apiEnv as Api) : undefined,
-      baseUrl: baseUrlEnv || undefined,
-    })
-    return { model, apiKey }
+  const { getOmpRuntime } = await import("./ompRuntime.js")
+  const runtime = await getOmpRuntime()
+  const { registry } = runtime
+
+  const model = registry.find(parsed.provider, parsed.modelId)
+  if (!model) {
+    const loadError = registry.getError()
+    const loadHint = loadError
+      ? ` Config load error: ${loadError.message}`
+      : ""
+    throw new Error(
+      `Model "${selected}" was not found in Oh My Pi config (models.yml).` +
+        loadHint +
+        ` Configure it in Settings > Vibe Fly > Providers.`,
+    )
   }
 
-  throw new Error(
-    "No model/API key available for commit message generation. " +
-      "Configure Settings > Vibe Fly > Providers, or set VIBEFLY_COMMIT_MODEL=provider/modelId " +
-      "and an API key (VIBEFLY_COMMIT_API_KEY or e.g. OPENAI_API_KEY).",
-  )
+  const apiKey = await registry.getApiKey(model)
+  if (!apiKey) {
+    throw new Error(
+      `No API key for provider "${model.provider}". ` +
+        `Configure it in Settings > Vibe Fly > Providers.`,
+    )
+  }
+
+  return { model, apiKey }
 }
 
 function extractText(response: { content: Array<{ type: string; text?: string }> }): string {
@@ -976,8 +847,11 @@ export async function generateCommitMessage(
     throw new Error("No changes to describe")
   }
 
-  const { model, apiKey } = await resolveCommitModel()
-  const language = resolveCommitLanguage(request.style)
+  const { model, apiKey } = await resolveCommitModel({
+    commitModel: request.commitModel,
+    defaultModel: request.defaultModel,
+  })
+  const language = resolveCommitLanguage(request.language, request.style)
   const contextWindow =
     typeof model.contextWindow === "number" && model.contextWindow > 0
       ? model.contextWindow
@@ -991,7 +865,13 @@ export async function generateCommitMessage(
   )
 
   const context: Context = {
-    systemPrompt: [buildSystemPrompt(request.style)],
+    systemPrompt: [
+      buildSystemPrompt({
+        language,
+        style: request.style,
+        customPrompt: request.customPrompt,
+      }),
+    ],
     messages: [
       {
         role: "user",

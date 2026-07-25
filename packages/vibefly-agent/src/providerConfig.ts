@@ -121,6 +121,42 @@ export function loadRawModelsConfig(agentDir: string): RawModelsFile {
 }
 
 /**
+ * OMP rejects custom model lists with auth "apiKey" unless models.yml has an
+ * inline apiKey. Vibe Fly never writes keys to YAML, so rewrite those entries
+ * to auth "none" (credentials stay in agent.db). Returns true if the file was
+ * rewritten.
+ */
+export function repairModelsYmlAuthForOmp(agentDir: string): boolean {
+  const readPath = resolveModelsReadPath(agentDir)
+  if (!readPath) return false
+  const raw = loadRawModelsConfig(agentDir)
+  const providers = raw.providers
+  if (!providers) return false
+
+  let changed = false
+  for (const entry of Object.values(providers)) {
+    if (!entry || typeof entry !== "object") continue
+    const models = entry.models
+    const hasModels = Array.isArray(models) && models.length > 0
+    if (!hasModels) continue
+    // Inline apiKey would satisfy OMP, but Vibe Fly policy forbids it.
+    if (entry.apiKey != null) {
+      delete entry.apiKey
+      changed = true
+    }
+    const auth = asString(entry.auth)
+    if (auth !== "none") {
+      entry.auth = "none"
+      changed = true
+    }
+  }
+  if (!changed) return false
+  writeRawModelsConfig(agentDir, raw)
+  log("repairModelsYmlAuthForOmp", `agentDir=${agentDir}`)
+  return true
+}
+
+/**
  * Write models.yml, migrating from models.json on first write when only json exists.
  * Preserves unknown top-level and per-provider fields.
  */
@@ -356,10 +392,10 @@ function applyProviderPatch(
           `Provider ${id}: api is required at provider or model level for custom models`,
         )
       }
-      if (!asString(entry.auth)) {
-        entry.auth = "none"
-      }
-      // Never persist apiKey in YAML from Vibe Fly.
+      // OMP validates: custom models need inline apiKey OR auth "none".
+      // Vibe Fly never writes apiKey to YAML (keys live in agent.db only),
+      // so auth must be "none". Agent.db credentials still resolve via AuthStorage.
+      entry.auth = "none"
       delete entry.apiKey
     }
   }

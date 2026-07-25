@@ -9,6 +9,7 @@ import com.github.sandogeek.vibefly.jcef.rpc.ProviderSnapshot
 import com.github.sandogeek.vibefly.jcef.rpc.ProvidersPatchRequest
 import com.github.sandogeek.vibefly.jcef.rpc.ProvidersPatchResult
 import com.github.sandogeek.vibefly.jcef.rpc.ProvidersSnapshot
+import com.intellij.icons.AllIcons
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.options.Configurable
@@ -22,6 +23,7 @@ import com.intellij.ui.components.JBTextField
 import com.intellij.ui.dsl.builder.Align
 import com.intellij.ui.dsl.builder.AlignX
 import com.intellij.ui.dsl.builder.BottomGap
+import com.intellij.ui.dsl.builder.Cell
 import com.intellij.ui.dsl.builder.Panel
 import com.intellij.ui.dsl.builder.RightGap
 import com.intellij.ui.dsl.builder.TopGap
@@ -31,6 +33,8 @@ import java.awt.Font
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import javax.swing.DefaultComboBoxModel
+import javax.swing.Icon
+import javax.swing.JButton
 import javax.swing.JComponent
 import javax.swing.JLabel
 import javax.swing.JPanel
@@ -92,7 +96,7 @@ class VibeflyProvidersConfigurable : SearchableConfigurable, Configurable.NoScro
                         preferredModel = parseDefaultModelSelection().second,
                         forceNetwork = true,
                     )
-                }
+                }.withIcon(AllIcons.Actions.Refresh)
             }
             row {
                 label(" ")
@@ -327,6 +331,7 @@ class VibeflyProvidersConfigurable : SearchableConfigurable, Configurable.NoScro
 
             row {
                 button(VibeflyBundle.message("settings.providers.addCustom")) { onAddCustom() }
+                    .withIcon(AllIcons.General.Add)
                     .enabled(canMutate)
             }.topGap(TopGap.SMALL).bottomGap(BottomGap.SMALL)
 
@@ -369,11 +374,13 @@ class VibeflyProvidersConfigurable : SearchableConfigurable, Configurable.NoScro
                 }
             button(VibeflyBundle.message("settings.providers.edit")) {
                 if (snap.isCatalog) onEditCatalog(snap) else onEditCustom(snap)
-            }
+            }.withIcon(AllIcons.Actions.Edit)
             if (snap.isCatalog) {
                 button(VibeflyBundle.message("settings.providers.disconnect")) { onDisconnect(snap) }
+                    .withIcon(AllIcons.Actions.Cancel)
             } else {
                 button(VibeflyBundle.message("settings.providers.delete")) { onDeleteCustom(snap) }
+                    .withIcon(AllIcons.General.Remove)
             }
         }
     }
@@ -392,9 +399,13 @@ class VibeflyProvidersConfigurable : SearchableConfigurable, Configurable.NoScro
                 .resizableColumn()
                 .align(AlignX.FILL)
             button(VibeflyBundle.message("settings.providers.connect")) { onConnect(snap) }
+                .withIcon(AllIcons.General.Web)
                 .enabled(canMutate)
         }
     }
+
+    private fun Cell<JButton>.withIcon(icon: Icon): Cell<JButton> =
+        applyToComponent { this.icon = icon }
 
     private fun parentComponent(): JComponent =
         root ?: createComponent()

@@ -2,6 +2,8 @@ package com.github.sandogeek.jetbrainsvibefly.commit
 
 import com.github.sandogeek.jetbrainsvibefly.VibeflyBundle
 import com.github.sandogeek.jetbrainsvibefly.agent.VibeflyAgentService
+import com.github.sandogeek.jetbrainsvibefly.settings.VibeflyCommitMessageSettingsState
+import com.github.sandogeek.jetbrainsvibefly.settings.VibeflyProviderSettingsState
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.actionSystem.ActionUpdateThread
@@ -97,9 +99,21 @@ class GenerateCommitMessageAction : AnAction(), DumbAware {
                     indicator.text = VibeflyBundle.message("commit.generate.progress.rpc")
                     if (indicator.isCanceled) throw ProcessCanceledException()
 
+                    val commitSettings = VibeflyCommitMessageSettingsState.getInstance()
+                    val providerSettings = VibeflyProviderSettingsState.getInstance()
+                    val language = commitSettings.resolvedLanguage()
+                    val style = if (language == "zh") "conventional_zh" else "conventional_en"
+                    val request = collected.toRequest(
+                        style = style,
+                        commitModel = commitSettings.commitModelSpec,
+                        defaultModel = providerSettings.defaultModelSpec(),
+                        language = language,
+                        customPrompt = commitSettings.resolvedCustomPrompt(),
+                    )
+
                     val agent = VibeflyAgentService.getInstance(project)
                     val result = runBlocking {
-                        agent.generateCommitMessage(collected.toRequest())
+                        agent.generateCommitMessage(request)
                     }
                     if (indicator.isCanceled) throw ProcessCanceledException()
 
@@ -151,68 +165,68 @@ class GenerateCommitMessageAction : AnAction(), DumbAware {
 
     companion object {
         private val log = logger<GenerateCommitMessageAction>()
+    }
+}
 
-        internal fun resolveIncludedChanges(e: AnActionEvent, project: Project): Collection<Change> {
-            val workflowUi: CommitWorkflowUi? = e.getData(VcsDataKeys.COMMIT_WORKFLOW_UI)
-            if (workflowUi != null) {
-                val included = workflowUi.getIncludedChanges()
-                val unversioned = workflowUi.getIncludedUnversionedFiles()
-                if (included.isEmpty() && unversioned.isEmpty()) {
-                    return emptyList()
-                }
-                if (unversioned.isEmpty()) {
-                    return included
-                }
-                val result = ArrayList<Change>(included.size + unversioned.size)
-                result.addAll(included)
-                for (filePath in unversioned) {
-                    result.add(unversionedAsAddedChange(filePath))
-                }
-                return result
-            }
-            return ChangeListManager.getInstance(project).defaultChangeList.changes
+internal fun resolveIncludedChanges(e: AnActionEvent, project: Project): Collection<Change> {
+    val workflowUi: CommitWorkflowUi? = e.getData(VcsDataKeys.COMMIT_WORKFLOW_UI)
+    if (workflowUi != null) {
+        val included = workflowUi.getIncludedChanges()
+        val unversioned = workflowUi.getIncludedUnversionedFiles()
+        if (included.isEmpty() && unversioned.isEmpty()) {
+            return emptyList()
         }
-
-        internal fun unversionedAsAddedChange(filePath: FilePath): Change =
-            Change(null, CurrentContentRevision.create(filePath))
-
-        internal fun resolveCommitMessageWriter(e: AnActionEvent): CommitMessageWriter? {
-            e.getData(VcsDataKeys.COMMIT_MESSAGE_CONTROL)?.let {
-                return CommitMessageWriter.FromCommitMessageI(it)
-            }
-            val workflowUi: CommitWorkflowUi? = e.getData(VcsDataKeys.COMMIT_WORKFLOW_UI)
-            workflowUi?.commitMessageUi?.let {
-                return CommitMessageWriter.FromCommitMessageUi(it)
-            }
-            return null
+        if (unversioned.isEmpty()) {
+            return included
         }
+        val result = ArrayList<Change>(included.size + unversioned.size)
+        result.addAll(included)
+        for (filePath in unversioned) {
+            result.add(unversionedAsAddedChange(filePath))
+        }
+        return result
+    }
+    return ChangeListManager.getInstance(project).defaultChangeList.changes
+}
 
-        private fun notify(
-            project: Project,
-            title: String,
-            content: String,
-            type: NotificationType,
-        ) {
-            NotificationGroupManager.getInstance()
-                .getNotificationGroup("Vibe Fly")
-                .createNotification(title, content, type)
-                .notify(project)
+internal fun unversionedAsAddedChange(filePath: FilePath): Change =
+    Change(null, CurrentContentRevision.create(filePath))
+
+internal fun resolveCommitMessageWriter(e: AnActionEvent): CommitMessageWriter? {
+    e.getData(VcsDataKeys.COMMIT_MESSAGE_CONTROL)?.let {
+        return CommitMessageWriter.FromCommitMessageI(it)
+    }
+    val workflowUi: CommitWorkflowUi? = e.getData(VcsDataKeys.COMMIT_WORKFLOW_UI)
+    workflowUi?.commitMessageUi?.let {
+        return CommitMessageWriter.FromCommitMessageUi(it)
+    }
+    return null
+}
+
+private fun notify(
+    project: Project,
+    title: String,
+    content: String,
+    type: NotificationType,
+) {
+    NotificationGroupManager.getInstance()
+        .getNotificationGroup("Vibe Fly")
+        .createNotification(title, content, type)
+        .notify(project)
+}
+
+internal sealed interface CommitMessageWriter {
+    fun setMessage(text: String)
+
+    class FromCommitMessageI(private val control: CommitMessageI) : CommitMessageWriter {
+        override fun setMessage(text: String) {
+            control.setCommitMessage(text)
         }
     }
 
-    internal sealed interface CommitMessageWriter {
-        fun setMessage(text: String)
-
-        class FromCommitMessageI(private val control: CommitMessageI) : CommitMessageWriter {
-            override fun setMessage(text: String) {
-                control.setCommitMessage(text)
-            }
-        }
-
-        class FromCommitMessageUi(private val ui: CommitMessageUi) : CommitMessageWriter {
-            override fun setMessage(text: String) {
-                ui.text = text
-            }
+    class FromCommitMessageUi(private val ui: CommitMessageUi) : CommitMessageWriter {
+        override fun setMessage(text: String) {
+            ui.text = text
         }
     }
 }
