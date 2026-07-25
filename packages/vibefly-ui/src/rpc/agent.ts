@@ -9,6 +9,7 @@ import {
   type AgentEvent,
   type Ui2Agent,
 } from "@vibefly/uiagent-shared"
+import { log } from "../log"
 import type { AgentConnection, Ui2Host } from "../generated/rpc"
 
 export type AgentStatus =
@@ -64,14 +65,17 @@ export function connectAgentRpc(options: {
   const connectOnce = async () => {
     if (stopped || options.isStopped()) return
     options.onStatus("connecting")
+    log.info("agent connecting")
     let connection: AgentConnection | null | undefined
     try {
       connection = await options.ui2Host.getAgentConnection()
-    } catch {
+    } catch (e) {
+      log.warn("getAgentConnection failed", e)
       connection = null
     }
     if (stopped || options.isStopped()) return
     if (connection == null) {
+      log.warn("agent connection unavailable")
       options.onStatus("unavailable")
       schedule()
       return
@@ -89,7 +93,8 @@ export function connectAgentRpc(options: {
         url: connection.url,
         ticket: connection.ticket,
       })
-    } catch {
+    } catch (e) {
+      log.warn("agent websocket create failed", e)
       options.onStatus("unavailable")
       schedule()
       return
@@ -120,8 +125,10 @@ export function connectAgentRpc(options: {
       if (typeof pong === "string") {
         attempt = 0
         options.onStatus("ready")
+        log.info("agent ready")
       }
-    } catch {
+    } catch (e) {
+      log.warn("agent ping failed", e)
       current?.close()
       current = null
       if (!stopped && !options.isStopped()) {
@@ -135,6 +142,7 @@ export function connectAgentRpc(options: {
     const transportClose = () => {
       if (stopped || options.isStopped()) return
       current = null
+      log.info("agent closed, reconnecting")
       options.onStatus("closed")
       schedule()
     }

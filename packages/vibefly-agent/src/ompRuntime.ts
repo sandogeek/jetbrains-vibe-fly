@@ -90,7 +90,7 @@ export async function getOmpRuntime(options?: {
     cached = runtime
   }
 
-  log("omp runtime ready", `agentDir=${agentDir}`, `models=${modelsPath}`)
+  log.info("omp runtime ready", { agentDir, models: modelsPath })
   return runtime
 }
 

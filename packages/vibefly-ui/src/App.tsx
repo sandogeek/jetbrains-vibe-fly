@@ -1,6 +1,7 @@
 import { createSignal, onCleanup, onMount, Show } from "solid-js"
 import type { SimpleRpcPeer } from "@sandogeek/simple-rpc"
 import type { AgentEvent } from "@vibefly/uiagent-shared"
+import { log } from "./log"
 import { createUiRpc } from "./rpc/client"
 import { connectAgentRpc, type AgentStatus } from "./rpc/agent"
 import { bindConsoleToHost } from "./rpc/console"
@@ -34,6 +35,7 @@ export function App() {
     })
 
     if (!rpc) {
+      log.warn("offline (no cefQuery — open in IDE JCEF)")
       setHostStatus("offline (no cefQuery — open in IDE JCEF)")
       setAgentStatus("unavailable")
       return
@@ -44,13 +46,13 @@ export function App() {
 
     void (async () => {
       try {
-        // Await host path explicitly so failures surface on the UI (not only
-        // fire-and-forget console → logFromWeb).
-        await rpc.ui2Host.logFromWeb("ui ready")
+        // loglevel → console → bindConsoleToHost → logFromWeb
+        log.info("ui ready")
         const v = await rpc.ui2Host.getAppVersion()
         if (cancelled) return
         setVersion(v)
         setHostStatus("host connected")
+        log.info("host connected", v)
 
         const agent = connectAgentRpc({
           ui2Host: rpc.ui2Host,
@@ -67,6 +69,7 @@ export function App() {
       } catch (e) {
         if (cancelled) return
         const msg = e instanceof Error ? e.message : String(e)
+        log.error("ui bootstrap failed", msg)
         setError(msg)
         setHostStatus("error")
       }

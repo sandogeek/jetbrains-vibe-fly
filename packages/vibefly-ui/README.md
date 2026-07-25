@@ -26,6 +26,21 @@ packages/vibefly-ui/
     generated/rpc.ts       # from Ui2Host/Host2Ui (./gradlew :vibefly-jcef:generateVibeflyUiRpc)
 ```
 
+## 日志
+
+使用 [loglevel](https://github.com/pimterry/loglevel)，入口 `src/log.ts`。默认写 `console.*`，经 `bindConsoleToHost` 转发为 `Ui2Host.logFromWeb`（host 侧 `WebView: …`）。
+
+| 项 | 说明 |
+| --- | --- |
+| 默认级别 | `info` |
+| 覆盖 | 1) `localStorage.vibefly.log.level` 2) `import.meta.env.VIBEFLY_LOG_LEVEL` 3) `info` |
+| 前缀 | `[vibefly-ui]` / `[vibefly-ui:<name>]` |
+
+```js
+localStorage.setItem("vibefly.log.level", "debug")
+// 刷新页面后生效
+```
+
 ## SimpleRpc
 
 JCEF 内通过 `window.cefQuery` / `cefQueryCancel` 接入 `@sandogeek/simple-rpc`。

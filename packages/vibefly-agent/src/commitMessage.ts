@@ -760,17 +760,6 @@ function extractText(response: { content: Array<{ type: string; text?: string }>
   return parts.join("").trim()
 }
 
-function isCommitDebug(): boolean {
-  const raw = (
-    process.env.VIBEFLY_COMMIT_DEBUG ||
-    process.env.VIBEFLY_DEBUG ||
-    ""
-  )
-    .trim()
-    .toLowerCase()
-  return raw === "1" || raw === "true" || raw === "yes"
-}
-
 function contentLength(content: unknown): number {
   if (typeof content === "string") return content.length
   if (Array.isArray(content)) {
@@ -803,7 +792,7 @@ function formatContent(content: unknown): string {
   return String(content)
 }
 
-/** Structured multi-line dump of the LLM context for VIBEFLY_COMMIT_DEBUG. */
+/** Full multi-line dump of the LLM context (debug level only). */
 function logCommitContext(context: Context): void {
   const systemParts = Array.isArray(context.systemPrompt)
     ? context.systemPrompt
@@ -818,25 +807,26 @@ function logCommitContext(context: Context): void {
     return `#${i + 1} ${m.role} ${len} chars`
   })
 
-  log(
-    "generateCommitMessage context",
-    `systemPrompt=${systemText.length} chars`,
-    `messages=${messages.length}`,
-    messageStats.length ? `(${messageStats.join("; ")})` : "",
-  )
+  log.info("generateCommitMessage context", {
+    systemPromptChars: systemText.length,
+    messages: messages.length,
+    messageStats: messageStats.length ? messageStats.join("; ") : undefined,
+  })
 
   const divider = "─".repeat(60)
-  log(divider)
-  log(`[systemPrompt] ${systemText.length} chars`)
-  log(systemText || "(empty)")
-  log(divider)
+  log.debug(divider)
+  log.debug(`[systemPrompt] ${systemText.length} chars`)
+  log.debug(systemText || "(empty)")
+  log.debug(divider)
 
   for (let i = 0; i < messages.length; i++) {
     const m = messages[i]!
     const text = formatContent(m.content)
-    log(`[message ${i + 1}/${messages.length}] role=${m.role} chars=${text.length}`)
-    log(text || "(empty)")
-    log(divider)
+    log.debug(
+      `[message ${i + 1}/${messages.length}] role=${m.role} chars=${text.length}`,
+    )
+    log.debug(text || "(empty)")
+    log.debug(divider)
   }
 }
 
@@ -856,13 +846,12 @@ export async function generateCommitMessage(
     typeof model.contextWindow === "number" && model.contextWindow > 0
       ? model.contextWindow
       : DEFAULT_CONTEXT_WINDOW
-  log(
-    "generateCommitMessage model",
-    `${model.provider}/${model.id}`,
-    `lang=${language}`,
-    `ctx=${contextWindow}`,
-    `diffBudget=${diffCharBudget(contextWindow)}chars`,
-  )
+  log.info("generateCommitMessage model", {
+    model: `${model.provider}/${model.id}`,
+    lang: language,
+    ctx: contextWindow,
+    diffBudget: `${diffCharBudget(contextWindow)}chars`,
+  })
 
   const context: Context = {
     systemPrompt: [
@@ -881,9 +870,8 @@ export async function generateCommitMessage(
     ],
   }
 
-  if (isCommitDebug()) {
-    logCommitContext(context)
-  }
+  // Full prompt dump only when VIBEFLY_LOG_LEVEL=debug (or lower).
+  logCommitContext(context)
 
   const response = await completeSimple(model, context, {
     apiKey,

@@ -1,4 +1,5 @@
 import { createCefSimpleRpc, type SimpleRpcPeer } from "@sandogeek/simple-rpc"
+import { log } from "../log"
 import {
   createUi2HostProxy,
   registerHost2UiService,
@@ -28,6 +29,7 @@ type CefWindow = Window & {
 export function createUiRpc(host2Ui: Host2UiService): UiRpc | null {
   const win = window as CefWindow
   if (typeof win.cefQuery !== "function" || typeof win.cefQueryCancel !== "function") {
+    log.debug("createUiRpc: cefQuery unavailable")
     return null
   }
 

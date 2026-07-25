@@ -75,7 +75,10 @@ export function createAgentWsServer(options: {
         return { ok: false, code: 4001, reason: "ticket expired" }
       }
       if (!origin || origin !== rec.expectedOrigin) {
-        log("ws origin mismatch", { got: origin, expected: rec.expectedOrigin })
+        log.warn("ws origin mismatch", {
+          got: origin,
+          expected: rec.expectedOrigin,
+        })
         return { ok: false, code: 4003, reason: "origin mismatch" }
       }
       rec.used = true
@@ -91,12 +94,12 @@ export function createAgentWsServer(options: {
       try {
         sessionFactory?.(session.peer)
       } catch (e) {
-        log("session factory failed", e)
+        log.warn("session factory failed", { err: e })
         session.close(4000, "session setup failed")
         if (active === session) active = null
         return
       }
-      log("ws session established")
+      log.info("ws session established")
     },
     onSessionClosed(session) {
       if (active === session) {

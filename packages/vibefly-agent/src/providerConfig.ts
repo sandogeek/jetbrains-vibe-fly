@@ -152,7 +152,7 @@ export function repairModelsYmlAuthForOmp(agentDir: string): boolean {
   }
   if (!changed) return false
   writeRawModelsConfig(agentDir, raw)
-  log("repairModelsYmlAuthForOmp", `agentDir=${agentDir}`)
+  log.info("repairModelsYmlAuthForOmp", { agentDir })
   return true
 }
 
@@ -473,17 +473,16 @@ export async function applyProvidersPatch(
     }
 
     const snapshot = await getProvidersSnapshot(agentDir)
-    log(
-      "applyProvidersPatch ok",
-      `agentDir=${agentDir}`,
-      `providers=${providerPatches.length}`,
-      `credentials=${credentialActions.length}`,
-      wroteModels ? "wrote models.yml" : "no models write",
-    )
+    log.info("applyProvidersPatch ok", {
+      agentDir,
+      providers: providerPatches.length,
+      credentials: credentialActions.length,
+      wroteModels,
+    })
     return { ok: true, snapshot }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    log("applyProvidersPatch failed", message)
+    log.warn("applyProvidersPatch failed", { err: message })
     return { ok: false, error: message }
   }
 }

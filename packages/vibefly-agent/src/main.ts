@@ -36,17 +36,17 @@ async function main(): Promise<void> {
   }
 
   const agentDir = applyAgentDirFromEnv()
-  log("agentDir", agentDir)
+  log.info("agentDir", { agentDir })
   // Warm OMP auth + model registry (no secrets in env).
   try {
     await getOmpRuntime()
   } catch (error) {
-    log("omp runtime warm failed", error)
+    log.warn("omp runtime warm failed", { err: error })
   }
 
   const ticketStore = createTicketStore()
   const wsServer = createAgentWsServer({ ticketStore })
-  log("ws listening", wsServer.url)
+  log.info("ws listening", { url: wsServer.url })
 
   let shuttingDown = false
 
@@ -54,7 +54,7 @@ async function main(): Promise<void> {
     input: process.stdin,
     output: process.stdout,
     onClosed: () => {
-      log("stdio closed")
+      log.info("stdio closed")
       teardown(0)
     },
   })
@@ -72,7 +72,7 @@ async function main(): Promise<void> {
       }
     },
     shutdown() {
-      log("shutdown requested")
+      log.info("shutdown requested")
       teardown(0)
     },
     async generateCommitMessage(request) {
@@ -91,7 +91,7 @@ async function main(): Promise<void> {
         try {
           await getOmpRuntime({ forceNew: true, agentDir: request.agentDir })
         } catch (error) {
-          log("omp reload after patch failed", error)
+          log.warn("omp reload after patch failed", { err: error })
         }
       }
       return result
@@ -132,7 +132,7 @@ async function main(): Promise<void> {
     registerUi2AgentService(wsPeer, ui2AgentImpl)
   })
 
-  log("agent ready")
+  log.info("agent ready")
 
   function teardown(code: number): void {
     if (shuttingDown) return
@@ -165,6 +165,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((error) => {
-  log("fatal", error)
+  log.error("fatal", { err: error })
   process.exit(1)
 })
