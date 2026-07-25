@@ -30,10 +30,92 @@ export interface GenerateCommitMessageResult {
   message: string;
 }
 
+export interface CatalogModel {
+  id: string;
+  name?: string;
+}
+
+export interface CatalogProvider {
+  id: string;
+  models?: Array<CatalogModel>;
+}
+
+export interface ProviderCatalog {
+  providers?: Array<CatalogProvider>;
+}
+
+export interface ProviderModelSnapshot {
+  id: string;
+  name?: string | null;
+  api?: string | null;
+  isCustom?: boolean;
+}
+
+export interface ProviderCredentialStatus {
+  hasApiKey?: boolean;
+  hasOAuth?: boolean;
+  originKind?: string;
+}
+
+export interface ProviderSnapshot {
+  id: string;
+  isCatalog?: boolean;
+  isConfigured?: boolean;
+  baseUrl?: string | null;
+  api?: string | null;
+  auth?: string | null;
+  models?: Array<ProviderModelSnapshot>;
+  credential?: ProviderCredentialStatus;
+}
+
+export interface ProvidersSnapshot {
+  agentDir: string;
+  providers?: Array<ProviderSnapshot>;
+  modelsPath?: string | null;
+}
+
+export interface ProviderModelPatch {
+  id: string;
+  name?: string | null;
+  api?: string | null;
+}
+
+export interface ProviderPatch {
+  id: string;
+  remove?: boolean;
+  baseUrl?: string | null;
+  api?: string | null;
+  auth?: string | null;
+  models?: Array<ProviderModelPatch> | null;
+  clearBaseUrl?: boolean;
+  clearApi?: boolean;
+}
+
+export interface CredentialAction {
+  provider: string;
+  action: string;
+  apiKey?: string | null;
+}
+
+export interface ProvidersPatchRequest {
+  agentDir: string;
+  providers?: Array<ProviderPatch>;
+  credentials?: Array<CredentialAction>;
+}
+
+export interface ProvidersPatchResult {
+  ok: boolean;
+  error?: string | null;
+  snapshot?: ProvidersSnapshot | null;
+}
+
 export const host2Agent = defineRpcService("Host2Agent", {
   openWebSocketSession: rpcMethod<[expectedOrigin: string], AgentConnection>(1),
   shutdown: rpcMethod<[], void>(2),
   generateCommitMessage: rpcMethod<[request: GenerateCommitMessageRequest], GenerateCommitMessageResult>(3),
+  getProviderCatalog: rpcMethod<[], ProviderCatalog>(4),
+  getProvidersSnapshot: rpcMethod<[agentDir: string], ProvidersSnapshot>(5),
+  applyProvidersPatch: rpcMethod<[request: ProvidersPatchRequest], ProvidersPatchResult>(6),
 });
 
 export type Host2AgentService = RpcService<typeof host2Agent>;

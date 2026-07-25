@@ -1,6 +1,6 @@
 package com.github.sandogeek.jetbrainsvibefly.commit
 
-import com.github.sandogeek.jetbrainsvibefly.MyBundle
+import com.github.sandogeek.jetbrainsvibefly.VibeflyBundle
 import com.github.sandogeek.jetbrainsvibefly.agent.VibeflyAgentService
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
@@ -51,8 +51,8 @@ class GenerateCommitMessageAction : AnAction(), DumbAware {
             generating.set(false)
             notify(
                 project,
-                MyBundle.message("commit.generate.error.title"),
-                MyBundle.message("commit.generate.error.noControl"),
+                VibeflyBundle.message("commit.generate.error.title"),
+                VibeflyBundle.message("commit.generate.error.noControl"),
                 NotificationType.WARNING,
             )
             return
@@ -63,8 +63,8 @@ class GenerateCommitMessageAction : AnAction(), DumbAware {
             generating.set(false)
             notify(
                 project,
-                MyBundle.message("commit.generate.error.title"),
-                MyBundle.message("commit.generate.error.noChanges"),
+                VibeflyBundle.message("commit.generate.error.title"),
+                VibeflyBundle.message("commit.generate.error.noChanges"),
                 NotificationType.INFORMATION,
             )
             return
@@ -72,13 +72,13 @@ class GenerateCommitMessageAction : AnAction(), DumbAware {
 
         ProgressManager.getInstance().run(object : Task.Backgroundable(
             project,
-            MyBundle.message("commit.generate.progress"),
+            VibeflyBundle.message("commit.generate.progress"),
             true,
         ) {
             override fun run(indicator: ProgressIndicator) {
                 try {
                     indicator.isIndeterminate = true
-                    indicator.text = MyBundle.message("commit.generate.progress.collect")
+                    indicator.text = VibeflyBundle.message("commit.generate.progress.collect")
                     if (indicator.isCanceled) throw ProcessCanceledException()
 
                     val collected = CommitDiffCollector.collect(project, changes)
@@ -86,15 +86,15 @@ class GenerateCommitMessageAction : AnAction(), DumbAware {
                         ApplicationManager.getApplication().invokeLater {
                             notify(
                                 project,
-                                MyBundle.message("commit.generate.error.title"),
-                                MyBundle.message("commit.generate.error.noChanges"),
+                                VibeflyBundle.message("commit.generate.error.title"),
+                                VibeflyBundle.message("commit.generate.error.noChanges"),
                                 NotificationType.INFORMATION,
                             )
                         }
                         return
                     }
 
-                    indicator.text = MyBundle.message("commit.generate.progress.rpc")
+                    indicator.text = VibeflyBundle.message("commit.generate.progress.rpc")
                     if (indicator.isCanceled) throw ProcessCanceledException()
 
                     val agent = VibeflyAgentService.getInstance(project)
@@ -108,8 +108,8 @@ class GenerateCommitMessageAction : AnAction(), DumbAware {
                         ApplicationManager.getApplication().invokeLater {
                             notify(
                                 project,
-                                MyBundle.message("commit.generate.error.title"),
-                                MyBundle.message("commit.generate.error.empty"),
+                                VibeflyBundle.message("commit.generate.error.title"),
+                                VibeflyBundle.message("commit.generate.error.empty"),
                                 NotificationType.WARNING,
                             )
                         }
@@ -124,11 +124,11 @@ class GenerateCommitMessageAction : AnAction(), DumbAware {
                 } catch (ex: Exception) {
                     log.warn("generate commit message failed", ex)
                     val detail = ex.message?.takeIf { it.isNotBlank() }
-                        ?: MyBundle.message("commit.generate.error.unknown")
+                        ?: VibeflyBundle.message("commit.generate.error.unknown")
                     ApplicationManager.getApplication().invokeLater {
                         notify(
                             project,
-                            MyBundle.message("commit.generate.error.title"),
+                            VibeflyBundle.message("commit.generate.error.title"),
                             detail,
                             NotificationType.ERROR,
                         )

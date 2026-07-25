@@ -723,20 +723,27 @@ function applyModelOverrides(
 }
 
 /**
- * Resolve model from env / bundled catalog + env API keys.
+ * Resolve model from Settings / OMP registry / env / bundled catalog.
+ *
+ * Priority:
+ * 1. VIBEFLY_COMMIT_MODEL / VIBEFLY_DEFAULT_MODEL / OMP_COMMIT_MODEL (Settings)
+ * 2. OMP ModelRegistry available models (agent.db + models.yml)
+ * 3. Env API keys + bundled catalog (legacy fallback)
  *
  * Env:
- * - VIBEFLY_COMMIT_MODEL / OMP_COMMIT_MODEL: "provider/modelId" or "provider:modelId"
+ * - VIBEFLY_COMMIT_MODEL / VIBEFLY_DEFAULT_MODEL / OMP_COMMIT_MODEL: "provider/modelId"
  * - VIBEFLY_COMMIT_API: wire API (default openai-responses for custom models)
  * - VIBEFLY_COMMIT_BASE_URL / OPENAI_BASE_URL: custom endpoint
  * - VIBEFLY_COMMIT_API_KEY / provider env key / OPENAI_API_KEY
+ * - PI_CODING_AGENT_DIR: Oh My Pi agent directory
  */
-export function resolveCommitModel(): {
+export async function resolveCommitModel(): Promise<{
   model: Model
   apiKey: string
-} {
+}> {
   const override = (
     process.env.VIBEFLY_COMMIT_MODEL ||
+    process.env.VIBEFLY_DEFAULT_MODEL ||
     process.env.OMP_COMMIT_MODEL ||
     ""
   ).trim()
@@ -744,6 +751,80 @@ export function resolveCommitModel(): {
   const apiEnv = readCommitEnv("VIBEFLY_COMMIT_API")
   const baseUrlEnv =
     readCommitEnv("VIBEFLY_COMMIT_BASE_URL") || readCommitEnv("OPENAI_BASE_URL")
+
+  // Prefer OMP registry (models.yml + agent.db) when available.
+  try {
+    const { getOmpRuntime } = await import("./ompRuntime.js")
+    const runtime = await getOmpRuntime()
+    const { registry } = runtime
+
+    // Explicit VIBEFLY_COMMIT_* overrides only — do not let OPENAI_BASE_URL
+    // clobber models.yml baseUrl for Settings/OMP-selected models.
+    const ompApiOverride = readCommitEnv("VIBEFLY_COMMIT_API")
+    const ompBaseUrlOverride = readCommitEnv("VIBEFLY_COMMIT_BASE_URL")
+
+    if (override) {
+      const parsed = parseModelSpec(override)
+      if (!parsed) {
+        throw new Error(
+          `Invalid model "${override}". Use provider/modelId (e.g. openai/gpt-4o-mini).`,
+        )
+      }
+      let model =
+        registry.find(parsed.provider, parsed.modelId) ??
+        tryBundled(parsed.provider, parsed.modelId)
+      if (model) {
+        model = applyModelOverrides(model, {
+          api: ompApiOverride ? (ompApiOverride as Api) : undefined,
+          baseUrl: ompBaseUrlOverride || undefined,
+        })
+      } else {
+        const providerBase = registry.getProviderBaseUrl(parsed.provider)
+        model = buildCustomCommitModel(parsed.provider, parsed.modelId, {
+          api: resolveCommitApi(
+            registry.getAll().find((m) => String(m.provider) === parsed.provider)
+              ?.api,
+          ),
+          // Prefer OMP provider baseUrl over OPENAI_BASE_URL for custom ids.
+          baseUrl:
+            ompBaseUrlOverride ||
+            providerBase ||
+            resolveCommitBaseUrl(),
+        })
+      }
+      const apiKey =
+        (await registry.getApiKey(model)) ||
+        resolveCommitApiKey(String(model.provider))
+      if (apiKey) return { model, apiKey }
+      throw new Error(
+        `No API key for provider "${model.provider}". ` +
+          `Configure it in Settings > Vibe Fly > Providers, or set VIBEFLY_COMMIT_API_KEY / OPENAI_API_KEY.`,
+      )
+    }
+
+    const available = registry.getAvailable()
+    if (available.length > 0) {
+      let model = available[0]!
+      model = applyModelOverrides(model, {
+        api: ompApiOverride ? (ompApiOverride as Api) : undefined,
+        baseUrl: ompBaseUrlOverride || undefined,
+      })
+      const apiKey =
+        (await registry.getApiKey(model)) ||
+        resolveCommitApiKey(String(model.provider))
+      if (apiKey) return { model, apiKey }
+    }
+  } catch (error) {
+    // Fall through to env/catalog when OMP is unavailable.
+    if (
+      error instanceof Error &&
+      (error.message.startsWith("Invalid model") ||
+        error.message.startsWith("No API key"))
+    ) {
+      throw error
+    }
+    log("resolveCommitModel OMP path failed, using env fallback", error)
+  }
 
   if (override) {
     const parsed = parseModelSpec(override)
@@ -793,9 +874,8 @@ export function resolveCommitModel(): {
 
   throw new Error(
     "No model/API key available for commit message generation. " +
-      "Set VIBEFLY_COMMIT_MODEL=provider/modelId (catalog or custom), " +
-      "optional VIBEFLY_COMMIT_API / VIBEFLY_COMMIT_BASE_URL, and an API key " +
-      "(VIBEFLY_COMMIT_API_KEY or e.g. OPENAI_API_KEY).",
+      "Configure Settings > Vibe Fly > Providers, or set VIBEFLY_COMMIT_MODEL=provider/modelId " +
+      "and an API key (VIBEFLY_COMMIT_API_KEY or e.g. OPENAI_API_KEY).",
   )
 }
 
@@ -896,7 +976,7 @@ export async function generateCommitMessage(
     throw new Error("No changes to describe")
   }
 
-  const { model, apiKey } = resolveCommitModel()
+  const { model, apiKey } = await resolveCommitModel()
   const language = resolveCommitLanguage(request.style)
   const contextWindow =
     typeof model.contextWindow === "number" && model.contextWindow > 0

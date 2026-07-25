@@ -11,7 +11,7 @@ import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
 import com.intellij.ui.content.ContentFactory
 
-class MyToolWindowFactory : ToolWindowFactory {
+class VibeflyToolWindowFactory : ToolWindowFactory {
 
     override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
         val agentService = VibeflyAgentService.getInstance(project)
@@ -35,6 +35,6 @@ class MyToolWindowFactory : ToolWindowFactory {
     override fun shouldBeAvailable(project: Project) = true
 
     companion object {
-        private val log = logger<MyToolWindowFactory>()
+        private val log = logger<VibeflyToolWindowFactory>()
     }
 }

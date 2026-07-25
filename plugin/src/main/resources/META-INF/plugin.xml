@@ -11,19 +11,28 @@
     <depends>com.intellij.modules.platform</depends>
     <depends>com.intellij.modules.vcs</depends>
 
-    <resource-bundle>messages.MyBundle</resource-bundle>
+    <resource-bundle>messages.VibeflyBundle</resource-bundle>
 
     <extensions defaultExtensionNs="com.intellij">
-        <toolWindow factoryClass="com.github.sandogeek.jetbrainsvibefly.toolWindow.MyToolWindowFactory" id="Vibe Fly"/>
+        <toolWindow factoryClass="com.github.sandogeek.jetbrainsvibefly.toolWindow.VibeflyToolWindowFactory" id="Vibe Fly"/>
         <postStartupActivity implementation="com.github.sandogeek.jetbrainsvibefly.startup.MyProjectActivity" />
         <notificationGroup id="Vibe Fly" displayType="BALLOON"/>
+
+        <applicationConfigurable
+                parentId="tools"
+                id="vibefly.settings"
+                key="settings.vibefly"
+                instance="com.github.sandogeek.jetbrainsvibefly.settings.VibeflySettingsConfigurable"/>
+        <applicationConfigurable
+                parentId="vibefly.settings"
+                id="vibefly.providers"
+                key="settings.providers"
+                instance="com.github.sandogeek.jetbrainsvibefly.settings.VibeflyProvidersConfigurable"/>
     </extensions>
 
     <actions>
         <action id="VibeFly.GenerateCommitMessage"
                 class="com.github.sandogeek.jetbrainsvibefly.commit.GenerateCommitMessageAction"
-                text="Generate Commit Message with Vibe Fly"
-                description="Generate a commit message from selected changes"
                 icon="AllIcons.Actions.Edit">
             <add-to-group group-id="Vcs.MessageActionGroup" anchor="first"/>
         </action>

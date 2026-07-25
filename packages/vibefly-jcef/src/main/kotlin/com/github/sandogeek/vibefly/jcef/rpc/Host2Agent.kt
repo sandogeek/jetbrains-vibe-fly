@@ -20,4 +20,13 @@ interface Host2Agent {
     suspend fun generateCommitMessage(
         request: GenerateCommitMessageRequest,
     ): GenerateCommitMessageResult
+
+    @RpcFun(4)
+    suspend fun getProviderCatalog(): ProviderCatalog
+
+    @RpcFun(5)
+    suspend fun getProvidersSnapshot(agentDir: String): ProvidersSnapshot
+
+    @RpcFun(6)
+    suspend fun applyProvidersPatch(request: ProvidersPatchRequest): ProvidersPatchResult
 }

@@ -18,6 +18,12 @@ import {
   type Host2AgentService,
 } from "./generated/controlRpc.js"
 import { log } from "./log.js"
+import { applyAgentDirFromEnv, clearOmpRuntimeCache, getOmpRuntime } from "./ompRuntime.js"
+import {
+  applyProvidersPatch,
+  getProviderCatalog,
+  getProvidersSnapshot,
+} from "./providerConfig.js"
 import {
   createAgentWsServer,
   createTicketStore,
@@ -27,6 +33,15 @@ import {
 async function main(): Promise<void> {
   console.log = (...args: unknown[]) => {
     console.error("[vibefly-agent:stdout-redirect]", ...args)
+  }
+
+  const agentDir = applyAgentDirFromEnv()
+  log("agentDir", agentDir)
+  // Warm OMP auth + model registry (no secrets in env).
+  try {
+    await getOmpRuntime()
+  } catch (error) {
+    log("omp runtime warm failed", error)
   }
 
   const ticketStore = createTicketStore()
@@ -62,6 +77,24 @@ async function main(): Promise<void> {
     },
     async generateCommitMessage(request) {
       return generateCommitMessage(request)
+    },
+    getProviderCatalog() {
+      return getProviderCatalog()
+    },
+    async getProvidersSnapshot(agentDir) {
+      return getProvidersSnapshot(agentDir)
+    },
+    async applyProvidersPatch(request) {
+      const result = await applyProvidersPatch(request)
+      if (result.ok) {
+        clearOmpRuntimeCache()
+        try {
+          await getOmpRuntime({ forceNew: true, agentDir: request.agentDir })
+        } catch (error) {
+          log("omp reload after patch failed", error)
+        }
+      }
+      return result
     },
   }
   registerHost2AgentService(peer, controlImpl)
@@ -104,6 +137,11 @@ async function main(): Promise<void> {
   function teardown(code: number): void {
     if (shuttingDown) return
     shuttingDown = true
+    try {
+      clearOmpRuntimeCache()
+    } catch {
+      // ignore
+    }
     try {
       ticketStore.clear()
     } catch {

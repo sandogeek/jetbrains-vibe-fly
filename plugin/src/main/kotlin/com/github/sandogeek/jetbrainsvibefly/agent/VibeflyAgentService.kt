@@ -1,23 +1,28 @@
 package com.github.sandogeek.jetbrainsvibefly.agent
 
+import com.github.sandogeek.jetbrainsvibefly.settings.ProvidersSettingsLoader
+import com.github.sandogeek.jetbrainsvibefly.settings.VibeflyProviderSettingsState
+import com.github.sandogeek.jetbrainsvibefly.settings.VibeflyProvidersConfigurable
 import com.github.sandogeek.simplerpc.RpcSession
-import com.github.sandogeek.simplerpc.SimpleRpc
 import com.github.sandogeek.simplerpc.stdio.StdioRpcTransport
 import com.github.sandogeek.vibefly.jcef.AgentOrigin
 import com.github.sandogeek.vibefly.jcef.rpc.AgentConnection
 import com.github.sandogeek.vibefly.jcef.rpc.GenerateCommitMessageRequest
 import com.github.sandogeek.vibefly.jcef.rpc.GenerateCommitMessageResult
 import com.github.sandogeek.vibefly.jcef.rpc.Host2Agent
+import com.github.sandogeek.vibefly.jcef.rpc.ProvidersPatchRequest
+import com.github.sandogeek.vibefly.jcef.rpc.ProvidersPatchResult
+import com.github.sandogeek.vibefly.jcef.rpc.ProvidersSnapshot
 import com.intellij.openapi.Disposable
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.project.ProjectManager
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
-import java.nio.file.Files
-import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -75,6 +80,30 @@ class VibeflyAgentService(@Suppress("unused") private val project: Project) : Di
         }
     }
 
+    suspend fun getProvidersSnapshot(
+        agentDir: String,
+        timeoutMs: Long = DEFAULT_CONFIG_TIMEOUT_MS,
+    ): ProvidersSnapshot {
+        ensureStarted()
+        val control = host2AgentRef.get()
+            ?: error("Agent control API is not available")
+        return withTimeout(timeoutMs.milliseconds) {
+            control.getProvidersSnapshot(agentDir)
+        }
+    }
+
+    suspend fun applyProvidersPatch(
+        request: ProvidersPatchRequest,
+        timeoutMs: Long = DEFAULT_CONFIG_TIMEOUT_MS,
+    ): ProvidersPatchResult {
+        ensureStarted()
+        val control = host2AgentRef.get()
+            ?: error("Agent control API is not available")
+        return withTimeout(timeoutMs.milliseconds) {
+            control.applyProvidersPatch(request)
+        }
+    }
+
     suspend fun ensureStarted() {
         if (disposed) error("VibeflyAgentService is disposed")
         mutex.withLock {
@@ -89,6 +118,7 @@ class VibeflyAgentService(@Suppress("unused") private val project: Project) : Di
             try {
                 startLocked()
                 state = State.READY
+                onAgentBecameReady()
             } catch (e: Exception) {
                 state = State.FAILED
                 stopLocked()
@@ -97,31 +127,74 @@ class VibeflyAgentService(@Suppress("unused") private val project: Project) : Di
         }
     }
 
+    /**
+     * Fresh start → READY only.
+     * - Settings page open: [VibeflyProvidersConfigurable.scheduleLoadOnAgentReady] only
+     * - Otherwise: warm providers cache for the next Settings open
+     */
+    private fun onAgentBecameReady() {
+        if (VibeflyProvidersConfigurable.onAgentReady()) {
+            log.debug("agent ready: providers settings will scheduleLoad")
+            return
+        }
+        val control = host2AgentRef.get() ?: return
+        val agentDir = VibeflyProviderSettingsState.getInstance().resolvedAgentDir()
+        ApplicationManager.getApplication().executeOnPooledThread {
+            if (disposed || host2AgentRef.get() !== control) return@executeOnPooledThread
+            try {
+                runBlocking {
+                    withTimeout(DEFAULT_CONFIG_TIMEOUT_MS.milliseconds) {
+                        ProvidersSettingsLoader.fetchWith(control, agentDir)
+                    }
+                }
+                log.debug("providers cache warmed after agent ready (settings closed)")
+            } catch (e: Exception) {
+                log.debug("providers cache warmup after agent ready failed", e)
+            }
+        }
+    }
+
+    suspend fun stopIfRunning() {
+        mutex.withLock {
+            stopLocked()
+        }
+    }
+
+    /**
+     * Run [block] on an already-live control plane without starting the agent.
+     * Returns null when this service has no ready process (caller should fall back).
+     */
+    fun <T> tryWithReadyControl(
+        timeoutMs: Long = DEFAULT_CONFIG_TIMEOUT_MS,
+        block: suspend (Host2Agent) -> T,
+    ): ReadyControlResult<T>? {
+        if (disposed) return null
+        val control = host2AgentRef.get() ?: return null
+        val process = processRef.get()
+        if (process == null || !process.isAlive) return null
+        return try {
+            val value = runBlocking {
+                withTimeout(timeoutMs.milliseconds) {
+                    block(control)
+                }
+            }
+            ReadyControlResult(value)
+        } catch (e: Exception) {
+            log.debug("tryWithReadyControl failed", e)
+            null
+        }
+    }
+
     private fun startLocked() {
-        val entry = resolveAgentEntry()
-        val command = mutableListOf(resolveBunCommand())
-        command.addAll(resolveBunInspectArgs())
-        command.add(entry.toString())
-        log.info("Starting vibefly-agent: ${command.joinToString(" ")}")
-
-        val process = ProcessBuilder(command)
-            .directory(entry.parent?.parent?.toFile()) // packages/vibefly-agent
-            .redirectError(ProcessBuilder.Redirect.INHERIT)
-            .start()
-        processRef.set(process)
-
-        val transport = StdioRpcTransport(
-            input = process.inputStream,
-            output = process.outputStream,
-            onClosed = {
-                log.info("Agent stdio closed")
-            },
+        val settings = VibeflyProviderSettingsState.getInstance()
+        val handle = VibeflyAgentProcess.start(
+            agentDir = settings.resolvedAgentDir(),
+            defaultModel = settings.defaultModelSpec().ifEmpty { null },
         )
-        transportRef.set(transport)
-        val session = SimpleRpc.open(transport)
-        sessionRef.set(session)
-        val control = session.proxy(Host2Agent::class.java)
-        host2AgentRef.set(control)
+        processRef.set(handle.process)
+        transportRef.set(handle.transport)
+        sessionRef.set(handle.session)
+        host2AgentRef.set(handle.control)
     }
 
     private fun stopLocked() {
@@ -129,7 +202,9 @@ class VibeflyAgentService(@Suppress("unused") private val project: Project) : Di
         if (control != null) {
             try {
                 runBlocking {
-                    control.shutdown()
+                    withTimeout(3_000.milliseconds) {
+                        control.shutdown()
+                    }
                 }
             } catch (e: Exception) {
                 log.debug("agent shutdown() failed", e)
@@ -164,84 +239,67 @@ class VibeflyAgentService(@Suppress("unused") private val project: Project) : Di
         private val log = logger<VibeflyAgentService>()
 
         const val DEFAULT_COMMIT_MESSAGE_TIMEOUT_MS: Long = 90_000L
+        const val DEFAULT_CONFIG_TIMEOUT_MS: Long = 60_000L
 
         fun getInstance(project: Project): VibeflyAgentService =
             project.getService(VibeflyAgentService::class.java)
 
-        private fun resolveBunCommand(): String {
-            System.getProperty("vibefly.bun")?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
-            System.getenv("VIBEFLY_BUN")?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
-            return "bun"
+        /**
+         * Settings / one-shot control calls: reuse any already-running project agent
+         * (avoids Bun cold start), otherwise spawn a short-lived process.
+         */
+        fun <T> withControlForSettings(
+            agentDir: String? = null,
+            timeoutMs: Long = DEFAULT_CONFIG_TIMEOUT_MS,
+            block: suspend (Host2Agent) -> T,
+        ): T {
+            for (project in ProjectManager.getInstance().openProjects) {
+                if (project.isDisposed) continue
+                val service = try {
+                    project.getService(VibeflyAgentService::class.java)
+                } catch (_: Exception) {
+                    null
+                } ?: continue
+                val reused = service.tryWithReadyControl(timeoutMs, block)
+                if (reused != null) {
+                    log.debug("withControlForSettings reused project agent")
+                    return reused.value
+                }
+            }
+            return VibeflyAgentProcess.withControl(
+                agentDir = agentDir,
+                timeoutMs = timeoutMs,
+                block = block,
+            )
         }
 
         /**
-         * Bun CDP debugger flags for Attach to Node.js/Chrome.
-         *
-         * - `-Dvibefly.agent.inspect=true` → `--inspect` (Bun default port)
-         * - `-Dvibefly.agent.inspect=6499` or `127.0.0.1:6499` → `--inspect=<value>`
-         * - `-Dvibefly.agent.inspect.mode=wait|brk` → `--inspect-wait` / `--inspect-brk`
-         * - env `VIBEFLY_AGENT_INSPECT` / `VIBEFLY_AGENT_INSPECT_MODE` as fallback
+         * Stop agents in all open projects after Settings apply.
+         * Always runs off the EDT to avoid blocking the Settings Apply UI.
          */
-        private fun resolveBunInspectArgs(): List<String> {
-            val raw = System.getProperty("vibefly.agent.inspect")?.trim().orEmpty()
-                .ifEmpty { System.getenv("VIBEFLY_AGENT_INSPECT")?.trim().orEmpty() }
-            if (raw.isEmpty() || raw.equals("false", ignoreCase = true) || raw == "0") {
-                return emptyList()
-            }
-            val mode = System.getProperty("vibefly.agent.inspect.mode")?.trim().orEmpty()
-                .ifEmpty { System.getenv("VIBEFLY_AGENT_INSPECT_MODE")?.trim().orEmpty() }
-                .lowercase()
-            val flag = when (mode) {
-                "wait" -> "--inspect-wait"
-                "brk" -> "--inspect-brk"
-                else -> "--inspect"
-            }
-            return if (raw.equals("true", ignoreCase = true) || raw == "1") {
-                listOf(flag)
-            } else {
-                listOf("$flag=$raw")
-            }
-        }
-
-        private fun resolveAgentEntry(): Path {
-            val explicit = System.getProperty("vibefly.agent.entry")?.trim().orEmpty()
-                .ifEmpty { System.getenv("VIBEFLY_AGENT_ENTRY")?.trim().orEmpty() }
-            if (explicit.isNotEmpty()) {
-                val p = Path.of(explicit)
-                check(Files.isRegularFile(p)) { "vibefly.agent.entry not found: $p" }
-                return p.toAbsolutePath().normalize()
-            }
-            val relativeCandidates = listOf(
-                Path.of("packages/vibefly-agent/src/main.ts"),
-                Path.of("packages/vibefly-agent/dist/main.js"),
-            )
-            // Sandbox IDE often has user.dir under the IDE install or idea-sandbox, not monorepo.
-            val searchRoots = linkedSetOf<Path>()
-            System.getProperty("user.dir")?.let {
-                searchRoots.add(Path.of(it).toAbsolutePath().normalize())
-            }
-            System.getenv("VIBEFLY_REPO_ROOT")?.trim()?.takeIf { it.isNotEmpty() }?.let {
-                searchRoots.add(Path.of(it).toAbsolutePath().normalize())
-            }
-            // Walk up each root looking for monorepo packages/vibefly-agent.
-            for (root in searchRoots) {
-                var dir: Path? = root
-                for (i in 0 until 12) {
-                    if (dir == null) break
-                    for (rel in relativeCandidates) {
-                        val candidate = dir.resolve(rel)
-                        if (Files.isRegularFile(candidate)) {
-                            return candidate.normalize()
+        fun stopAllOpenProjects() {
+            val work = Runnable {
+                for (project in ProjectManager.getInstance().openProjects) {
+                    if (project.isDisposed) continue
+                    try {
+                        val service = project.getService(VibeflyAgentService::class.java) ?: continue
+                        runBlocking {
+                            service.stopIfRunning()
                         }
+                    } catch (e: Exception) {
+                        log.debug("stop agent for project failed", e)
                     }
-                    dir = dir.parent
                 }
             }
-            error(
-                "vibefly-agent entry not found " +
-                    "(set -Dvibefly.agent.entry=... / VIBEFLY_AGENT_ENTRY, " +
-                    "or run :plugin:runIde from monorepo which injects the path)",
-            )
+            val app = ApplicationManager.getApplication()
+            if (app.isDispatchThread) {
+                app.executeOnPooledThread(work)
+            } else {
+                work.run()
+            }
         }
     }
 }
+
+/** Distinguishes a successful ready-control call (value may be null) from "not ready". */
+class ReadyControlResult<T>(val value: T)
