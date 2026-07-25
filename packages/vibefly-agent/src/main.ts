@@ -13,6 +13,7 @@ import {
 } from "@vibefly/uiagent-shared"
 import { generateCommitMessage } from "./commitMessage.js"
 import {
+  createAgent2HostProxy,
   registerHost2AgentService,
   type AgentConnection,
   type Host2AgentService,
@@ -24,6 +25,12 @@ import {
   getProviderCatalog,
   getProvidersSnapshot,
 } from "./providerConfig.js"
+import {
+  cancelActiveLogin,
+  getLoginProviders,
+  loginProvider,
+  logoutProvider,
+} from "./providerLogin.js"
 import {
   createAgentWsServer,
   createTicketStore,
@@ -58,6 +65,8 @@ async function main(): Promise<void> {
       teardown(0)
     },
   })
+
+  const agent2Host = createAgent2HostProxy(peer)
 
   const controlImpl: Host2AgentService = {
     openWebSocketSession(expectedOrigin: string): AgentConnection {
@@ -95,6 +104,36 @@ async function main(): Promise<void> {
         }
       }
       return result
+    },
+    async getLoginProviders(agentDir) {
+      return getLoginProviders(agentDir)
+    },
+    async loginProvider(request) {
+      const result = await loginProvider(request, agent2Host)
+      if (result.ok) {
+        clearOmpRuntimeCache()
+        try {
+          await getOmpRuntime({ forceNew: true, agentDir: request.agentDir })
+        } catch (error) {
+          log.warn("omp reload after login failed", { err: error })
+        }
+      }
+      return result
+    },
+    async logoutProvider(request) {
+      const result = await logoutProvider(request)
+      if (result.ok) {
+        clearOmpRuntimeCache()
+        try {
+          await getOmpRuntime({ forceNew: true, agentDir: request.agentDir })
+        } catch (error) {
+          log.warn("omp reload after logout failed", { err: error })
+        }
+      }
+      return result
+    },
+    cancelProviderLogin() {
+      cancelActiveLogin()
     },
   }
   registerHost2AgentService(peer, controlImpl)

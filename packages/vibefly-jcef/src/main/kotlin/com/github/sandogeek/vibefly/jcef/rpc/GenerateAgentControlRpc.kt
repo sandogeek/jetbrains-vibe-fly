@@ -14,7 +14,7 @@ fun main(args: Array<String>) {
     val output = Path.of(args[0])
     TypeScriptGenerator.generateTo(
         output,
-        listOf(Host2Agent::class.java),
+        listOf(Host2Agent::class.java, Agent2Host::class.java),
         TypeScriptGenerationOptions(runtimeModule = "@sandogeek/simple-rpc"),
     )
     println("Wrote $output")

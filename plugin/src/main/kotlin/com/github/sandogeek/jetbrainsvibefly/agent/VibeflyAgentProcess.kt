@@ -1,5 +1,6 @@
 package com.github.sandogeek.jetbrainsvibefly.agent
 
+import com.github.sandogeek.jetbrainsvibefly.settings.Agent2HostBridge
 import com.github.sandogeek.simplerpc.RpcSession
 import com.github.sandogeek.simplerpc.SimpleRpc
 import com.github.sandogeek.simplerpc.stdio.StdioRpcTransport
@@ -7,13 +8,18 @@ import com.github.sandogeek.vibefly.jcef.rpc.Host2Agent
 import com.intellij.openapi.diagnostic.logger
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.minutes
 
 /**
  * Shared Bun agent process launcher for project lifecycle and one-shot Settings RPC.
  */
 object VibeflyAgentProcess {
     private val log = logger<VibeflyAgentProcess>()
+
+    /** OAuth login can wait on browser callback for several minutes. */
+    val CONTROL_REQUEST_TIMEOUT: Duration = 6.minutes
 
     data class Handle(
         val process: Process,
@@ -78,7 +84,8 @@ object VibeflyAgentProcess {
             output = process.outputStream,
             onClosed = { log.info("Agent stdio closed") },
         )
-        val session = SimpleRpc.open(transport)
+        val session = SimpleRpc.open(transport, requestTimeout = CONTROL_REQUEST_TIMEOUT)
+        session.registerImplementation(Agent2HostBridge)
         val control = session.proxy(Host2Agent::class.java)
         return Handle(process, transport, session, control)
     }

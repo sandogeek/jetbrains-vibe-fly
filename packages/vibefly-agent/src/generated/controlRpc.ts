@@ -70,6 +70,8 @@ export interface ProviderSnapshot {
   auth?: string | null;
   models?: Array<ProviderModelSnapshot>;
   credential?: ProviderCredentialStatus;
+  supportsLogin?: boolean;
+  loginProviderId?: string | null;
 }
 
 export interface ProvidersSnapshot {
@@ -113,6 +115,62 @@ export interface ProvidersPatchResult {
   snapshot?: ProvidersSnapshot | null;
 }
 
+export interface LoginProviderInfo {
+  id: string;
+  name?: string;
+  available?: boolean;
+  storeCredentialsAs?: string | null;
+  authenticated?: boolean;
+}
+
+export interface LoginProvidersList {
+  providers?: Array<LoginProviderInfo>;
+}
+
+export interface ProviderLoginRequest {
+  agentDir: string;
+  providerId: string;
+}
+
+export interface ProviderLoginResult {
+  ok: boolean;
+  error?: string | null;
+  identityType?: string | null;
+  email?: string | null;
+  accountId?: string | null;
+  orgId?: string | null;
+  orgName?: string | null;
+  snapshot?: ProvidersSnapshot | null;
+}
+
+export interface ProviderLogoutRequest {
+  agentDir: string;
+  providerId: string;
+}
+
+export interface ProviderLogoutResult {
+  ok: boolean;
+  error?: string | null;
+  snapshot?: ProvidersSnapshot | null;
+}
+
+export interface LoginOpenUrlRequest {
+  url: string;
+  launchUrl?: string | null;
+  instructions?: string | null;
+}
+
+export interface LoginInputRequest {
+  message: string;
+  placeholder?: string | null;
+  allowEmpty?: boolean;
+}
+
+export interface LoginInputResponse {
+  text?: string;
+  cancelled?: boolean;
+}
+
 export const host2Agent = defineRpcService("Host2Agent", {
   openWebSocketSession: rpcMethod<[expectedOrigin: string], AgentConnection>(1),
   shutdown: rpcMethod<[], void>(2),
@@ -120,11 +178,27 @@ export const host2Agent = defineRpcService("Host2Agent", {
   getProviderCatalog: rpcMethod<[], ProviderCatalog>(4),
   getProvidersSnapshot: rpcMethod<[agentDir: string], ProvidersSnapshot>(5),
   applyProvidersPatch: rpcMethod<[request: ProvidersPatchRequest], ProvidersPatchResult>(6),
+  getLoginProviders: rpcMethod<[agentDir: string], LoginProvidersList>(7),
+  loginProvider: rpcMethod<[request: ProviderLoginRequest], ProviderLoginResult>(8),
+  logoutProvider: rpcMethod<[request: ProviderLogoutRequest], ProviderLogoutResult>(9),
+  cancelProviderLogin: rpcMethod<[], void>(10),
 });
 
 export type Host2AgentService = RpcService<typeof host2Agent>;
 
 export function registerHost2AgentService(peer: SimpleRpcPeer, implementation: Host2AgentService) {
   return host2Agent.register(peer, implementation);
+}
+
+export const agent2Host = defineRpcService("Agent2Host", {
+  openLoginUrl: rpcMethod<[request: LoginOpenUrlRequest], void>(1),
+  requestLoginInput: rpcMethod<[request: LoginInputRequest], LoginInputResponse>(2),
+  reportLoginProgress: rpcMethod<[message: string], void>(3),
+});
+
+export type Agent2Host = RpcClient<typeof agent2Host>;
+
+export function createAgent2HostProxy(peer: SimpleRpcPeer): Agent2Host {
+  return agent2Host.createProxy(peer);
 }
 

@@ -31,6 +31,11 @@ import type {
   ProvidersSnapshot,
 } from "./generated/controlRpc.js"
 import { log } from "./log.js"
+import {
+  allLoginProviderIds,
+  providerSupportsLogin,
+  resolveLoginProviderId,
+} from "./loginProviders.js"
 
 const MANAGED_PROVIDER_KEYS = new Set([
   "baseUrl",
@@ -276,14 +281,21 @@ export async function getProvidersSnapshot(
     const catalogIds = catalogProviderIds()
     const raw = loadRawModelsConfig(agentDir)
     const configured = raw.providers ?? {}
-    const ids = new Set<string>([...catalogIds, ...Object.keys(configured)])
+    // Include OAuth/login-only providers so they appear in Settings even without models.yml.
+    const loginIds = new Set(allLoginProviderIds())
+    const ids = new Set<string>([
+      ...catalogIds,
+      ...Object.keys(configured),
+      ...loginIds,
+    ])
 
     const providers: ProviderSnapshot[] = []
     for (const id of [...ids].sort((a, b) => a.localeCompare(b))) {
-      const isCatalog = catalogIds.has(id)
+      const isCatalog = catalogIds.has(id) || loginIds.has(id)
       const entry = configured[id]
       const isConfigured = entry != null && typeof entry === "object"
       const rec = isConfigured ? (entry as Record<string, unknown>) : undefined
+      const loginId = resolveLoginProviderId(id)
       providers.push({
         id,
         isCatalog,
@@ -291,8 +303,10 @@ export async function getProvidersSnapshot(
         baseUrl: asString(rec?.baseUrl),
         api: asString(rec?.api),
         auth: asString(rec?.auth),
-        models: snapshotModels(id, rec, isCatalog),
+        models: snapshotModels(id, rec, catalogIds.has(id)),
         credential: credentialStatus(auth, id),
+        supportsLogin: providerSupportsLogin(id),
+        loginProviderId: loginId && loginId !== id ? loginId : null,
       })
     }
 
@@ -430,6 +444,16 @@ async function applyCredentialAction(
       if (row.credential.type === "api_key") {
         await auth.removeCredential(provider, row.id)
       }
+    }
+    return
+  }
+
+  if (kind === "logout") {
+    // Remove all credentials (API key + OAuth), same as AuthStorage.logout.
+    await auth.logout(provider)
+    const loginId = resolveLoginProviderId(provider)
+    if (loginId && loginId !== provider) {
+      await auth.logout(loginId)
     }
     return
   }

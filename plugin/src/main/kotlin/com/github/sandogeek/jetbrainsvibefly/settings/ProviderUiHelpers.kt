@@ -209,6 +209,8 @@ object ProviderUiHelpers {
         }
         if (cred.hasOAuth) {
             parts.add(VibeflyBundle.message("provider.credential.oauth.present"))
+        } else if (snap.supportsLogin) {
+            parts.add(VibeflyBundle.message("provider.credential.oauth.available"))
         }
         return parts.joinToString(VibeflyBundle.message("provider.credential.separator"))
     }

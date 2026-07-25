@@ -29,6 +29,10 @@ data class ProviderSnapshot(
     val auth: String? = null,
     val models: List<ProviderModelSnapshot> = emptyList(),
     val credential: ProviderCredentialStatus = ProviderCredentialStatus(),
+    /** True when Oh My Pi exposes a `/login` flow for this provider id. */
+    val supportsLogin: Boolean = false,
+    /** Login registry id when different from [id] (rarely set). */
+    val loginProviderId: String? = null,
 )
 
 @Serializable

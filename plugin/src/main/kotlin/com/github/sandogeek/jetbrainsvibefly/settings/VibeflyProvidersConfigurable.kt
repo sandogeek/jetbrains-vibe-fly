@@ -4,6 +4,8 @@ import com.github.sandogeek.jetbrainsvibefly.VibeflyBundle
 import com.github.sandogeek.jetbrainsvibefly.agent.VibeflyAgentService
 import com.github.sandogeek.vibefly.jcef.rpc.CatalogProvider
 import com.github.sandogeek.vibefly.jcef.rpc.CredentialAction
+import com.github.sandogeek.vibefly.jcef.rpc.ProviderLoginRequest
+import com.github.sandogeek.vibefly.jcef.rpc.ProviderLogoutRequest
 import com.github.sandogeek.vibefly.jcef.rpc.ProviderPatch
 import com.github.sandogeek.vibefly.jcef.rpc.ProviderSnapshot
 import com.github.sandogeek.vibefly.jcef.rpc.ProvidersPatchRequest
@@ -477,6 +479,22 @@ class VibeflyProvidersConfigurable : SearchableConfigurable, Configurable.NoScro
         root ?: createComponent()
 
     private fun onConnect(snap: ProviderSnapshot) {
+        if (snap.supportsLogin) {
+            val dialog = ProviderConnectDialog(parentComponent(), snap, editMode = false)
+            if (!dialog.showAndGet()) return
+            if (dialog.useLogin) {
+                runProviderLogin(snap)
+                return
+            }
+            val key = dialog.apiKey.trim()
+            if (key.isEmpty()) return
+            applyImmediatePatch(
+                credentials = listOf(
+                    CredentialAction(provider = snap.id, action = "set", apiKey = key),
+                ),
+            )
+            return
+        }
         val dialog = ProviderConnectDialog(parentComponent(), snap, editMode = false)
         if (!dialog.showAndGet()) return
         val key = dialog.apiKey.trim()
@@ -489,6 +507,30 @@ class VibeflyProvidersConfigurable : SearchableConfigurable, Configurable.NoScro
     }
 
     private fun onEditCatalog(snap: ProviderSnapshot) {
+        if (snap.supportsLogin) {
+            val choice = Messages.showYesNoCancelDialog(
+                parentComponent(),
+                VibeflyBundle.message(
+                    "settings.providers.edit.choice",
+                    ProviderUiHelpers.displayName(snap.id),
+                ),
+                VibeflyBundle.message("dialog.edit.title", ProviderUiHelpers.displayName(snap.id)),
+                VibeflyBundle.message("dialog.connect.login"),
+                VibeflyBundle.message("dialog.connect.apiKey"),
+                VibeflyBundle.message("dialog.cancel"),
+                Messages.getQuestionIcon(),
+            )
+            when (choice) {
+                Messages.YES -> {
+                    runProviderLogin(snap)
+                    return
+                }
+                Messages.NO -> {
+                    // fall through to API key dialog
+                }
+                else -> return
+            }
+        }
         val dialog = ProviderConnectDialog(parentComponent(), snap, editMode = true)
         if (!dialog.showAndGet()) return
         val key = dialog.apiKey.trim()
@@ -511,11 +553,156 @@ class VibeflyProvidersConfigurable : SearchableConfigurable, Configurable.NoScro
             Messages.getQuestionIcon(),
         )
         if (confirm != Messages.YES) return
-        applyImmediatePatch(
-            credentials = listOf(
-                CredentialAction(provider = snap.id, action = "clear"),
-            ),
+        // Full logout (API key + OAuth), matching Oh My Pi /logout.
+        applyImmediateLogout(snap)
+    }
+
+    private fun runProviderLogin(snap: ProviderSnapshot) {
+        val expanded = currentAgentDirExpanded()
+        val loginId = snap.loginProviderId?.takeIf { it.isNotBlank() } ?: snap.id
+        val name = ProviderUiHelpers.displayName(snap.id)
+        val loginSnapshot = AtomicReference<ProvidersSnapshot?>(null)
+        val controlRef = AtomicReference<com.github.sandogeek.vibefly.jcef.rpc.Host2Agent?>(null)
+        val outcome = ProviderLoginDialog.runLogin(
+            parent = parentComponent(),
+            providerName = name,
+            login = {
+                try {
+                    val result = VibeflyAgentService.withControlForSettings(
+                        agentDir = expanded,
+                        timeoutMs = LOGIN_TIMEOUT_MS,
+                    ) { control ->
+                        controlRef.set(control)
+                        try {
+                            control.loginProvider(
+                                ProviderLoginRequest(
+                                    agentDir = expanded,
+                                    providerId = loginId,
+                                ),
+                            )
+                        } finally {
+                            controlRef.compareAndSet(control, null)
+                        }
+                    }
+                    if (result.ok) {
+                        loginSnapshot.set(result.snapshot)
+                        val who = listOfNotNull(
+                            result.email,
+                            result.orgName ?: result.orgId,
+                        ).joinToString(" / ").ifBlank { null }
+                        ProviderLoginOutcome(
+                            ok = true,
+                            message = who?.let {
+                                VibeflyBundle.message("dialog.login.successWho", it)
+                            },
+                        )
+                    } else {
+                        val err = result.error.orEmpty()
+                        val cancelled = err.contains("cancel", ignoreCase = true) ||
+                            err.contains("abort", ignoreCase = true)
+                        ProviderLoginOutcome(
+                            ok = false,
+                            error = result.error
+                                ?: VibeflyBundle.message("dialog.login.failed"),
+                            cancelled = cancelled,
+                        )
+                    }
+                } catch (e: Exception) {
+                    log.warn("loginProvider failed", e)
+                    ProviderLoginOutcome(ok = false, error = e.message ?: e.toString())
+                }
+            },
+            cancelLogin = {
+                val control = controlRef.get()
+                if (control != null) {
+                    ApplicationManager.getApplication().executeOnPooledThread {
+                        try {
+                            kotlinx.coroutines.runBlocking {
+                                control.cancelProviderLogin()
+                            }
+                        } catch (e: Exception) {
+                            log.debug("cancelProviderLogin failed", e)
+                        }
+                    }
+                }
+            },
         )
+        if (outcome.ok) {
+            clearError()
+            applyLoginSnapshot(expanded, loginSnapshot.get())
+        } else if (!outcome.cancelled && outcome.error != null) {
+            showStatus(outcome.error!!)
+        }
+    }
+
+    private fun applyLoginSnapshot(expanded: String, snapshot: ProvidersSnapshot?) {
+        if (snapshot == null) {
+            scheduleLoad(
+                agentDir = expanded,
+                preferredProvider = parseDefaultModelSelection().first,
+                preferredModel = parseDefaultModelSelection().second,
+                forceNetwork = true,
+            )
+            return
+        }
+        applySnapshot(snapshot)
+        val catalog = ProvidersSettingsCache.getCatalog()
+        if (catalog != null) {
+            ProvidersSettingsCache.put(expanded, catalog, snapshot)
+        } else {
+            ProvidersSettingsCache.invalidateSnapshot(expanded)
+        }
+        rebuildDefaultModelCombo()
+        rebuildSections()
+        pruneOrphanDefaultModel()
+    }
+
+    private fun applyImmediateLogout(snap: ProviderSnapshot) {
+        val expanded = currentAgentDirExpanded()
+        var resultOk = false
+        var snapshot: ProvidersSnapshot? = null
+        var error: Exception? = null
+        val completed = ProgressManager.getInstance().runProcessWithProgressSynchronously(
+            {
+                try {
+                    val result = VibeflyAgentService.withControlForSettings(agentDir = expanded) { control ->
+                        control.logoutProvider(
+                            ProviderLogoutRequest(
+                                agentDir = expanded,
+                                providerId = snap.id,
+                            ),
+                        )
+                    }
+                    resultOk = result.ok
+                    snapshot = result.snapshot
+                    if (!result.ok) {
+                        error = Exception(
+                            result.error
+                                ?: VibeflyBundle.message("settings.providers.updateFailed.message"),
+                        )
+                    }
+                } catch (e: Exception) {
+                    error = e
+                }
+            },
+            VibeflyBundle.message("settings.providers.updating"),
+            true,
+            null,
+        )
+        if (!completed) return
+        val failed = error
+        if (failed != null) {
+            log.warn("logoutProvider failed", failed)
+            Messages.showErrorDialog(
+                parentComponent(),
+                failed.message ?: failed.toString(),
+                VibeflyBundle.message("settings.providers.updateFailed.title"),
+            )
+            return
+        }
+        if (!resultOk) return
+        clearError()
+        applyLoginSnapshot(expanded, snapshot)
     }
 
     private fun onAddCustom() {
@@ -750,6 +937,9 @@ class VibeflyProvidersConfigurable : SearchableConfigurable, Configurable.NoScro
 
     companion object {
         private val log = logger<VibeflyProvidersConfigurable>()
+
+        /** Browser OAuth can wait several minutes for callback. */
+        private const val LOGIN_TIMEOUT_MS: Long = 360_000L
 
         /** Open Providers settings instance, if any (for agent-ready refresh). */
         private val activeInstance = AtomicReference<VibeflyProvidersConfigurable?>(null)

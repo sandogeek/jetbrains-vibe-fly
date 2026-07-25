@@ -29,4 +29,23 @@ interface Host2Agent {
 
     @RpcFun(6)
     suspend fun applyProvidersPatch(request: ProvidersPatchRequest): ProvidersPatchResult
+
+    /** OAuth / API-key login providers from Oh My Pi registry (same as `/login`). */
+    @RpcFun(7)
+    suspend fun getLoginProviders(agentDir: String): LoginProvidersList
+
+    /**
+     * Interactive provider login via AuthStorage.login (browser OAuth or paste API key).
+     * Agent calls [Agent2Host] callbacks while this request is in flight.
+     */
+    @RpcFun(8)
+    suspend fun loginProvider(request: ProviderLoginRequest): ProviderLoginResult
+
+    /** Remove all stored credentials for a provider (API key + OAuth). */
+    @RpcFun(9)
+    suspend fun logoutProvider(request: ProviderLogoutRequest): ProviderLogoutResult
+
+    /** Abort in-flight [loginProvider] (dialog cancel). */
+    @RpcFun(10)
+    suspend fun cancelProviderLogin()
 }
