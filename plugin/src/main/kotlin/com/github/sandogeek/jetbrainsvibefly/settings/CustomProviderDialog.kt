@@ -45,9 +45,6 @@ class CustomProviderDialog(
         "azure-openai-responses",
         "openai-codex-responses",
     )
-    // OMP custom models require auth "none" when apiKey is not inline in models.yml.
-    // Vibe Fly stores keys only in agent.db, so auth is always "none".
-    private val authOptions = listOf("none")
 
     init {
         title = if (isEdit) {
@@ -88,14 +85,6 @@ class CustomProviderDialog(
                     .applyToComponent {
                         apiCombo = this
                         selectedItem = existing?.api.orEmpty()
-                    }
-            }
-            row(VibeflyBundle.message("dialog.auth")) {
-                comboBox(authOptions)
-                    .align(AlignX.FILL)
-                    .applyToComponent {
-                        authCombo = this
-                        selectedItem = existing?.auth?.ifEmpty { "none" } ?: "none"
                     }
             }
             row(VibeflyBundle.message("dialog.models")) {
