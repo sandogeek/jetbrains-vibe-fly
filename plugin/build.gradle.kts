@@ -29,28 +29,6 @@ dependencies {
     }
 }
 
-// Slim pi-catalog JSON for model picker (committed; re-export when upgrading pi-catalog).
-val agentRoot = rootProject.layout.projectDirectory.dir("packages/vibefly-agent")
-val bundledCatalogJson =
-    layout.projectDirectory.file("src/main/resources/catalog/bundled-catalog.json")
-
-val exportBundledCatalog by tasks.registering(ExportBundledCatalogTask::class) {
-    group = "build"
-    description =
-        "Export slim bundled model catalog from agent pi-catalog into plugin resources"
-    bunCommand.set(providers.gradleProperty("vibefly.bun").orElse("bun"))
-    workingDirectory.set(agentRoot)
-    packageJson.set(agentRoot.file("package.json"))
-    exportScript.set(agentRoot.file("scripts/export-bundled-catalog.ts"))
-    // Always register the path: missing file → empty input; install/upgrade → out-of-date.
-    piCatalogInputs.from(agentRoot.file("node_modules/@oh-my-pi/pi-catalog/package.json"))
-    outputFile.set(bundledCatalogJson)
-}
-
-tasks.named("processResources") {
-    dependsOn(exportBundledCatalog)
-}
-
 changelog {
     path.set(rootProject.file("CHANGELOG.md").canonicalPath)
 }

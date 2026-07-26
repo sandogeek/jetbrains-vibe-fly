@@ -7,8 +7,11 @@ import com.intellij.openapi.diagnostic.logger
  *
  * [getAgentConnection] is supplied by the plugin (project-level agent service);
  * the jcef module does not own agent lifecycle.
+ *
+ * Settings RPCs (4–11) default to no-op / empty so chat panels stay lightweight.
+ * Settings hosts use [SettingsUi2Host] in the plugin module.
  */
-class Ui2HostImpl(
+open class Ui2HostImpl(
     private val appVersion: String = DEFAULT_VERSION,
     private val agentConnectionProvider: (suspend () -> AgentConnection?)? = null,
 ) : Ui2Host {
@@ -28,6 +31,32 @@ class Ui2HostImpl(
             log.warn("getAgentConnection failed", e)
             null
         }
+    }
+
+    override suspend fun getIdeSettings(): IdeSettingsDto = IdeSettingsDto()
+
+    override suspend fun saveIdeSettings(settings: IdeSettingsDto) {
+        log.debug("saveIdeSettings ignored on non-settings host")
+    }
+
+    override suspend fun refreshProviders(agentDir: String): ProvidersRefreshResult =
+        ProvidersRefreshResult(ok = false, error = "Settings host only")
+
+    override suspend fun applyProvidersPatch(request: ProvidersPatchRequest): ProvidersPatchResult =
+        ProvidersPatchResult(ok = false, error = "Settings host only")
+
+    override suspend fun loginProvider(request: ProviderLoginRequest): ProviderLoginResult =
+        ProviderLoginResult(ok = false, error = "Settings host only")
+
+    override suspend fun cancelProviderLogin() {
+        log.debug("cancelProviderLogin ignored on non-settings host")
+    }
+
+    override suspend fun logoutProvider(request: ProviderLogoutRequest): ProviderLogoutResult =
+        ProviderLogoutResult(ok = false, error = "Settings host only")
+
+    override suspend fun openExternalUrl(url: String) {
+        log.debug("openExternalUrl ignored on non-settings host: $url")
     }
 
     companion object {

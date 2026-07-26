@@ -22,4 +22,34 @@ interface Ui2Host {
      */
     @RpcFun(3)
     suspend fun getAgentConnection(): AgentConnection?
+
+    /** Read IDE PersistentState snapshot (forms + pin/MRU). No catalog / display names. */
+    @RpcFun(4)
+    suspend fun getIdeSettings(): IdeSettingsDto
+
+    /**
+     * Write full IDE settings DTO (providers + commit + model preferences).
+     * Host replaces pin/MRU lists wholesale; may stop agents when provider form changes.
+     */
+    @RpcFun(5)
+    suspend fun saveIdeSettings(settings: IdeSettingsDto)
+
+    /** Fetch providers snapshot for [agentDir] (empty → resolved default agent dir). */
+    @RpcFun(6)
+    suspend fun refreshProviders(agentDir: String): ProvidersRefreshResult
+
+    @RpcFun(7)
+    suspend fun applyProvidersPatch(request: ProvidersPatchRequest): ProvidersPatchResult
+
+    @RpcFun(8)
+    suspend fun loginProvider(request: ProviderLoginRequest): ProviderLoginResult
+
+    @RpcFun(9)
+    suspend fun cancelProviderLogin()
+
+    @RpcFun(10)
+    suspend fun logoutProvider(request: ProviderLogoutRequest): ProviderLogoutResult
+
+    @RpcFun(11)
+    suspend fun openExternalUrl(url: String)
 }

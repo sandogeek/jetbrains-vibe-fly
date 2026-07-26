@@ -2,7 +2,7 @@ package com.github.sandogeek.jetbrainsvibefly.agent
 
 import com.github.sandogeek.jetbrainsvibefly.settings.ProvidersSettingsLoader
 import com.github.sandogeek.jetbrainsvibefly.settings.VibeflyProviderSettingsState
-import com.github.sandogeek.jetbrainsvibefly.settings.VibeflyProvidersConfigurable
+
 import com.github.sandogeek.simplerpc.RpcSession
 import com.github.sandogeek.simplerpc.stdio.StdioRpcTransport
 import com.github.sandogeek.vibefly.jcef.AgentOrigin
@@ -128,15 +128,10 @@ class VibeflyAgentService(@Suppress("unused") private val project: Project) : Di
     }
 
     /**
-     * Fresh start → READY only.
-     * - Settings page open: [VibeflyProvidersConfigurable.scheduleLoadOnAgentReady] only
-     * - Otherwise: warm providers cache for the next Settings open
+     * Fresh start → READY only: warm providers cache for the next Settings open.
+     * Settings UI reloads via RPC on mount / Reload.
      */
     private fun onAgentBecameReady() {
-        if (VibeflyProvidersConfigurable.onAgentReady()) {
-            log.debug("agent ready: providers settings will scheduleLoad")
-            return
-        }
         val control = host2AgentRef.get() ?: return
         val agentDir = VibeflyProviderSettingsState.getInstance().resolvedAgentDir()
         ApplicationManager.getApplication().executeOnPooledThread {
@@ -147,7 +142,7 @@ class VibeflyAgentService(@Suppress("unused") private val project: Project) : Di
                         ProvidersSettingsLoader.fetchWith(control, agentDir)
                     }
                 }
-                log.debug("providers cache warmed after agent ready (settings closed)")
+                log.debug("providers cache warmed after agent ready")
             } catch (e: Exception) {
                 log.debug("providers cache warmup after agent ready failed", e)
             }

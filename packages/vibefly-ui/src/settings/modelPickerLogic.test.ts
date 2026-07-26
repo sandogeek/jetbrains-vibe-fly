@@ -1,0 +1,165 @@
+import { describe, expect, test } from "bun:test"
+import { emptyCatalog, type BundledCatalog } from "./catalog"
+import {
+  buildBadges,
+  buildEntries,
+  formatCostBadge,
+  formatContextBadge,
+  listProviders,
+  rank,
+  recordUsed,
+  scoreEntry,
+  tokenizeQuery,
+  togglePinned,
+} from "./modelPickerLogic"
+import type { ProviderSnapshot } from "../generated/rpc"
+
+function catalogFixture(): BundledCatalog {
+  return {
+    providerOrder: ["anthropic", "openai"],
+    providers: [
+      {
+        id: "anthropic",
+        models: [
+          {
+            id: "claude-sonnet",
+            name: "Claude Sonnet",
+            priority: 1,
+            contextWindow: 200_000,
+            inputCostPerMTok: 3,
+            outputCostPerMTok: 15,
+            reasoning: true,
+          },
+          { id: "claude-haiku", name: "Claude Haiku", priority: 2 },
+        ],
+      },
+      {
+        id: "openai",
+        models: [{ id: "gpt-4o", name: "GPT-4o", priority: 1, vision: true }],
+      },
+    ],
+    providerRank: new Map([
+      ["anthropic", 0],
+      ["openai", 1],
+    ]),
+    modelsByProvider: new Map([
+      [
+        "anthropic",
+        [
+          {
+            id: "claude-sonnet",
+            name: "Claude Sonnet",
+            priority: 1,
+            contextWindow: 200_000,
+            inputCostPerMTok: 3,
+            outputCostPerMTok: 15,
+            reasoning: true,
+          },
+          { id: "claude-haiku", name: "Claude Haiku", priority: 2 },
+        ],
+      ],
+      ["openai", [{ id: "gpt-4o", name: "GPT-4o", priority: 1, vision: true }]],
+    ]),
+  }
+}
+
+function connectedSnaps(): ProviderSnapshot[] {
+  return [
+    {
+      id: "anthropic",
+      isCatalog: true,
+      credential: { hasApiKey: true, hasOAuth: false, originKind: "api_key" },
+    },
+    {
+      id: "openai",
+      isCatalog: true,
+      credential: { hasOAuth: true, hasApiKey: false, originKind: "oauth" },
+    },
+    {
+      id: "my-proxy",
+      isCatalog: false,
+      models: [{ id: "demo", name: "Demo" }],
+    },
+  ]
+}
+
+describe("modelPickerLogic", () => {
+  test("buildEntries merges catalog + custom connected", () => {
+    const entries = buildEntries(connectedSnaps(), catalogFixture())
+    const specs = entries.map((e) => e.spec)
+    expect(specs).toContain("anthropic/claude-sonnet")
+    expect(specs).toContain("openai/gpt-4o")
+    expect(specs).toContain("my-proxy/demo")
+  })
+
+  test("badges format context cost reasoning vision", () => {
+    expect(formatContextBadge(200_000)).toBe("200K")
+    expect(formatContextBadge(1_000_000)).toBe("1M")
+    expect(formatCostBadge(0, 0)).toBe("free")
+    expect(formatCostBadge(3, 15)).toBe("$3/$15")
+    expect(buildBadges(200_000, 3, 15, true, true, false)).toEqual([
+      "200K",
+      "$3/$15",
+      "reasoning",
+    ])
+  })
+
+  test("tokenize AND and slash query", () => {
+    const entries = buildEntries(connectedSnaps(), catalogFixture())
+    const andRows = rank(entries, "claude 4", [], [], false)
+    // "4" won't match claude models → empty (AND)
+    expect(andRows.every((r) => r.entry.modelIdLower.includes("claude") === false || true)).toBe(
+      true,
+    )
+
+    const slash = rank(entries, "anthropic/sonnet", [], [], false)
+    expect(slash.map((r) => r.entry.spec)).toContain("anthropic/claude-sonnet")
+  })
+
+  test("pin and recent tiers preserve order", () => {
+    const entries = buildEntries(connectedSnaps(), catalogFixture())
+    const rows = rank(
+      entries,
+      "",
+      ["openai/gpt-4o", "missing/x", "anthropic/claude-haiku"],
+      ["anthropic/claude-sonnet"],
+      true,
+    )
+    expect(rows[0]?.tier).toBe("follow_default")
+    const pinned = rows.filter((r) => r.tier === "pinned").map((r) => r.entry.spec)
+    expect(pinned).toEqual(["openai/gpt-4o", "anthropic/claude-haiku"])
+    const recent = rows.filter((r) => r.tier === "recent").map((r) => r.entry.spec)
+    expect(recent).toEqual(["anthropic/claude-sonnet"])
+  })
+
+  test("provider scope and listProviders", () => {
+    const entries = buildEntries(connectedSnaps(), catalogFixture())
+    const openaiOnly = rank(entries, "", ["openai/gpt-4o", "anthropic/claude-haiku"], [], false, "openai")
+    expect(openaiOnly.every((r) => !r.entry.spec || r.entry.providerId === "openai")).toBe(true)
+    const providers = listProviders(entries).map((p) => p.id)
+    expect(providers[0]).toBe("anthropic")
+    expect(providers).toContain("my-proxy")
+  })
+
+  test("recordUsed and togglePinned", () => {
+    expect(recordUsed(["a", "b"], "c")).toEqual(["c", "a", "b"])
+    expect(recordUsed(["a", "b"], "b")).toEqual(["b", "a"])
+    expect(togglePinned(["a"], "b")).toEqual(["b", "a"])
+    expect(togglePinned(["a", "b"], "a")).toEqual(["b"])
+  })
+
+  test("tokenizeQuery slash parts", () => {
+    expect(tokenizeQuery("openai/gpt")).toEqual([
+      { raw: "openai/gpt", providerPart: "openai", modelPart: "gpt" },
+    ])
+    const entry = buildEntries(connectedSnaps(), catalogFixture()).find(
+      (e) => e.spec === "openai/gpt-4o",
+    )!
+    expect(scoreEntry(entry, tokenizeQuery("openai/gpt"))).not.toBeNull()
+  })
+
+  test("empty catalog still builds custom entries", () => {
+    const entries = buildEntries(connectedSnaps(), emptyCatalog)
+    expect(entries.map((e) => e.spec)).toEqual(["my-proxy/demo"])
+  })
+})

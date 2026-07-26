@@ -28,6 +28,8 @@ import javax.swing.JPanel
  */
 class VibeflyBrowserPanel(
     ui2Host: Ui2Host = Ui2HostImpl(),
+    /** Hash path without `#` (e.g. `settings`, `settings/providers`). Empty = chat shell. */
+    route: String = "",
 ) : JPanel(BorderLayout()), Disposable {
 
     private val browser: JBCefBrowser
@@ -39,7 +41,7 @@ class VibeflyBrowserPanel(
     init {
         // Always register so absolute http://vibefly/ assets still work if referenced.
         VibeflyScheme.ensureRegistered()
-        val startUrl = VibeflyUiDev.resolveStartUrl()
+        val startUrl = VibeflyStartUrl.withRoute(VibeflyUiDev.resolveStartUrl(), route)
         if (VibeflyUiDev.isEnabled()) {
             log.info("Vibefly UI dev (Vite HMR): $startUrl")
         }

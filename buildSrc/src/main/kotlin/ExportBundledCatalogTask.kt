@@ -17,7 +17,7 @@ import java.io.File
 import javax.inject.Inject
 
 /**
- * Runs packages/vibefly-agent `bun run export:catalog` → plugin resources catalog JSON.
+ * Runs packages/vibefly-agent `bun run export:catalog` → vibefly-ui public catalog JSON.
  *
  * When agent node_modules is missing, keeps the committed JSON so the plugin can still build.
  * Override bun: -Pvibefly.bun=/path/to/bun

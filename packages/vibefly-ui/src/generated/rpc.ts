@@ -10,10 +10,147 @@ export interface AgentConnection {
   expiresAtEpochMs: number;
 }
 
+export interface ProvidersFormDto {
+  agentDir?: string;
+  defaultProvider?: string;
+  defaultModel?: string;
+}
+
+export interface CommitFormDto {
+  languageMode?: string;
+  commitModelSpec?: string;
+  useCustomPrompt?: boolean;
+  customPrompt?: string;
+}
+
+export interface ModelPreferencesDto {
+  recentModelSpecs?: Array<string>;
+  pinnedModelSpecs?: Array<string>;
+}
+
+export interface IdeSettingsDto {
+  providers?: ProvidersFormDto;
+  commit?: CommitFormDto;
+  modelPreferences?: ModelPreferencesDto;
+}
+
+export interface ProviderModelSnapshot {
+  id: string;
+  name?: string | null;
+  api?: string | null;
+  isCustom?: boolean;
+}
+
+export interface ProviderCredentialStatus {
+  hasApiKey?: boolean;
+  hasOAuth?: boolean;
+  originKind?: string;
+}
+
+export interface ProviderSnapshot {
+  id: string;
+  isCatalog?: boolean;
+  isConfigured?: boolean;
+  baseUrl?: string | null;
+  api?: string | null;
+  auth?: string | null;
+  models?: Array<ProviderModelSnapshot>;
+  credential?: ProviderCredentialStatus;
+  supportsLogin?: boolean;
+  loginProviderId?: string | null;
+}
+
+export interface ProvidersSnapshot {
+  agentDir: string;
+  providers?: Array<ProviderSnapshot>;
+  modelsPath?: string | null;
+}
+
+export interface ProvidersRefreshResult {
+  ok: boolean;
+  error?: string | null;
+  snapshot?: ProvidersSnapshot | null;
+}
+
+export interface ProviderModelPatch {
+  id: string;
+  name?: string | null;
+  api?: string | null;
+}
+
+export interface ProviderPatch {
+  id: string;
+  remove?: boolean;
+  baseUrl?: string | null;
+  api?: string | null;
+  auth?: string | null;
+  models?: Array<ProviderModelPatch> | null;
+  clearBaseUrl?: boolean;
+  clearApi?: boolean;
+}
+
+export interface CredentialAction {
+  provider: string;
+  action: string;
+  apiKey?: string | null;
+}
+
+export interface ProvidersPatchRequest {
+  agentDir: string;
+  providers?: Array<ProviderPatch>;
+  credentials?: Array<CredentialAction>;
+}
+
+export interface ProvidersPatchResult {
+  ok: boolean;
+  error?: string | null;
+  snapshot?: ProvidersSnapshot | null;
+}
+
+export interface ProviderLoginRequest {
+  agentDir: string;
+  providerId: string;
+}
+
+export interface ProviderLoginResult {
+  ok: boolean;
+  error?: string | null;
+  identityType?: string | null;
+  email?: string | null;
+  accountId?: string | null;
+  orgId?: string | null;
+  orgName?: string | null;
+  snapshot?: ProvidersSnapshot | null;
+}
+
+export interface ProviderLogoutRequest {
+  agentDir: string;
+  providerId: string;
+}
+
+export interface ProviderLogoutResult {
+  ok: boolean;
+  error?: string | null;
+  snapshot?: ProvidersSnapshot | null;
+}
+
+export interface LoginInputResponse {
+  text?: string;
+  cancelled?: boolean;
+}
+
 export const ui2Host = defineRpcService("Ui2Host", {
   getAppVersion: rpcMethod<[], string>(1),
   logFromWeb: rpcMethod<[message: string], void>(2),
   getAgentConnection: rpcMethod<[], AgentConnection | null>(3),
+  getIdeSettings: rpcMethod<[], IdeSettingsDto>(4),
+  saveIdeSettings: rpcMethod<[settings: IdeSettingsDto], void>(5),
+  refreshProviders: rpcMethod<[agentDir: string], ProvidersRefreshResult>(6),
+  applyProvidersPatch: rpcMethod<[request: ProvidersPatchRequest], ProvidersPatchResult>(7),
+  loginProvider: rpcMethod<[request: ProviderLoginRequest], ProviderLoginResult>(8),
+  cancelProviderLogin: rpcMethod<[], void>(9),
+  logoutProvider: rpcMethod<[request: ProviderLogoutRequest], ProviderLogoutResult>(10),
+  openExternalUrl: rpcMethod<[url: string], void>(11),
 });
 
 export type Ui2Host = RpcClient<typeof ui2Host>;
@@ -24,6 +161,9 @@ export function createUi2HostProxy(peer: SimpleRpcPeer): Ui2Host {
 
 export const host2Ui = defineRpcService("Host2Ui", {
   setStatus: rpcMethod<[message: string], void>(1),
+  loginOpenUrl: rpcMethod<[url: string, launchUrl: string | null], void>(2),
+  loginProgress: rpcMethod<[message: string], void>(3),
+  requestLoginInput: rpcMethod<[prompt: string, placeholder: string | null], LoginInputResponse>(4),
 });
 
 export type Host2UiService = RpcService<typeof host2Ui>;
@@ -31,3 +171,4 @@ export type Host2UiService = RpcService<typeof host2Ui>;
 export function registerHost2UiService(peer: SimpleRpcPeer, implementation: Host2UiService) {
   return host2Ui.register(peer, implementation);
 }
+

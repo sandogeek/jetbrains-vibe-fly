@@ -1,10 +1,11 @@
 /**
- * Export a slim model catalog JSON for the JetBrains plugin resources.
+ * Export a slim model catalog JSON for the vibefly-ui static assets.
  *
  * Source: same-version `@oh-my-pi/pi-catalog` as this agent package.
- * Output: plugin/src/main/resources/catalog/bundled-catalog.json (committed).
+ * Output: packages/vibefly-ui/public/catalog/bundled-catalog.json (committed).
+ * Packaged into vibefly-jcef web resources by Vite (`public/` → resources/web).
  *
- * Omits default/false/null fields to keep the jar small; Kotlin fills defaults.
+ * Omits default/false/null fields to keep the payload small; UI fills defaults.
  *
  * Usage: bun run scripts/export-bundled-catalog.ts
  * Or:    bun run export:catalog
@@ -109,7 +110,7 @@ function main(): void {
   const repoRoot = path.resolve(here, "../../..")
   const outPath = path.join(
     repoRoot,
-    "plugin/src/main/resources/catalog/bundled-catalog.json",
+    "packages/vibefly-ui/public/catalog/bundled-catalog.json",
   )
   const catalog = buildCatalog()
   fs.mkdirSync(path.dirname(outPath), { recursive: true })

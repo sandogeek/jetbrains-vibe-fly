@@ -32,6 +32,12 @@ export function App() {
       setStatus(message) {
         setHostStatus(message)
       },
+      // Settings-only reverse RPCs; no-op on chat shell.
+      async loginOpenUrl() {},
+      async loginProgress() {},
+      async requestLoginInput() {
+        return { text: "", cancelled: true }
+      },
     })
 
     if (!rpc) {
@@ -46,7 +52,6 @@ export function App() {
 
     void (async () => {
       try {
-        // loglevel → console → bindConsoleToHost → logFromWeb
         log.info("ui ready")
         const v = await rpc.ui2Host.getAppVersion()
         if (cancelled) return
@@ -79,9 +84,7 @@ export function App() {
   return (
     <main class="flex min-h-full flex-col items-center justify-center gap-3 p-6">
       <h1 class="m-0 text-4xl font-semibold tracking-wide text-accent">Vibe Fly</h1>
-      <p class="m-0 text-sm text-muted">
-        SimpleRpc · host CEF · agent WebSocket
-      </p>
+      <p class="m-0 text-sm text-muted">SimpleRpc · host CEF · agent WebSocket</p>
       <p class="m-0 text-sm text-fg">
         host: <span class="font-mono text-accent">{hostStatus()}</span>
       </p>
@@ -90,19 +93,17 @@ export function App() {
       </p>
       <Show when={version()}>
         {(v) => (
-          <p class="m-0 text-sm text-fg">
-            host version: <span class="font-mono text-accent">{v()}</span>
+          <p class="m-0 text-sm text-muted">
+            version: <span class="font-mono">{v()}</span>
           </p>
         )}
       </Show>
       <Show when={lastEvent()}>
-        {(e) => (
-          <p class="m-0 max-w-xl break-all text-xs text-muted font-mono">{e()}</p>
+        {(ev) => (
+          <p class="m-0 max-w-xl truncate font-mono text-xs text-muted">{ev()}</p>
         )}
       </Show>
-      <Show when={error()}>
-        {(e) => <p class="m-0 text-sm text-muted font-mono">{e()}</p>}
-      </Show>
+      <Show when={error()}>{(e) => <p class="m-0 font-mono text-sm text-muted">{e()}</p>}</Show>
     </main>
   )
 }

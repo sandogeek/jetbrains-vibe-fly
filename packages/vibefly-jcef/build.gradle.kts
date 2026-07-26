@@ -52,6 +52,25 @@ val generateVibeflyAgentControlRpc by tasks.registering(JavaExec::class) {
     outputs.file(agentControlRpcTs)
 }
 
+// Slim pi-catalog JSON for model picker (committed under vibefly-ui/public; re-export when upgrading).
+// Vite copies public/ into resources/web on build — host Kotlin never reads this file.
+val agentRoot = rootProject.layout.projectDirectory.dir("packages/vibefly-agent")
+val uiCatalogJson =
+    rootProject.layout.projectDirectory.file("packages/vibefly-ui/public/catalog/bundled-catalog.json")
+
+val exportBundledCatalog by tasks.registering(ExportBundledCatalogTask::class) {
+    group = "build"
+    description =
+        "Export slim bundled model catalog from agent pi-catalog into vibefly-ui public assets"
+    bunCommand.set(providers.gradleProperty("vibefly.bun").orElse("bun"))
+    workingDirectory.set(agentRoot)
+    packageJson.set(agentRoot.file("package.json"))
+    exportScript.set(agentRoot.file("scripts/export-bundled-catalog.ts"))
+    // Always register the path: missing file → empty input; install/upgrade → out-of-date.
+    piCatalogInputs.from(agentRoot.file("node_modules/@oh-my-pi/pi-catalog/package.json"))
+    outputFile.set(uiCatalogJson)
+}
+
 // vibefly-ui (Vite) → src/main/resources/web for ClasspathResourceHandler
 // Dev (-Pvibefly.ui.dev=true / -Pvibefly.ui.dev.url=...): JCEF loads Vite; skip bun run build
 val uiDevMode =
@@ -65,21 +84,26 @@ val buildVibeflyUi by tasks.registering(BuildVibeflyUiTask::class) {
     group = "build"
     description = "Build packages/vibefly-ui into vibefly-jcef web resources"
     // Override: -Pvibefly.bun=/opt/homebrew/bin/bun (IDE Gradle often lacks Homebrew PATH)
+    dependsOn(exportBundledCatalog)
     bunCommand.set(providers.gradleProperty("vibefly.bun").orElse("bun"))
     workingDirectory.set(uiRoot)
     uiSourceDir.set(uiRoot.dir("src"))
     packageJson.set(uiRoot.file("package.json"))
     viteConfig.set(uiRoot.file("vite.config.ts"))
     indexHtml.set(uiRoot.file("index.html"))
+    catalogJson.set(uiCatalogJson)
     outputDir.set(webOut)
 }
 
-// Dev: JCEF loads Vite — do not wire bun run build into processResources
+// Dev: JCEF loads Vite — skip bun run build, but still refresh public catalog for the dev server.
 if (!uiDevMode) {
     tasks.named("processResources") {
         dependsOn(buildVibeflyUi)
     }
 } else {
+    tasks.named("processResources") {
+        dependsOn(exportBundledCatalog)
+    }
     logger.lifecycle(
         "vibefly.ui.dev enabled: skip :vibefly-jcef:buildVibeflyUi " +
             "(JCEF loads Vite; start with ./gradlew runVibeflyUiDev)",
