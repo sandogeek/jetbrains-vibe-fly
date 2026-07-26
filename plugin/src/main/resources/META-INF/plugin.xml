@@ -10,9 +10,10 @@
 
     <depends>com.intellij.modules.platform</depends>
     <depends>com.intellij.modules.vcs</depends>
-    <!-- 2026.2+: JCEF lives in a separate plugin; without this, PluginClassLoader
-         cannot load JBCefBrowser (NoClassDefFoundError). Module exists since 2025.3. -->
-    <depends>com.intellij.modules.jcef</depends>
+    <!-- 2025.3+: module alias when JCEF is bundled. 2026.2+: separate plugin that must
+         be a PluginClassLoader parent for JBCefBrowser. Optional so 2025.2 (252) can load
+         (JCEF is on the platform classpath there without this id). -->
+    <depends optional="true">com.intellij.modules.jcef</depends>
 
 
     <resource-bundle>messages.VibeflyBundle</resource-bundle>
