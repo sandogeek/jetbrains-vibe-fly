@@ -34,20 +34,6 @@ export interface GenerateCommitMessageResult {
   message: string;
 }
 
-export interface CatalogModel {
-  id: string;
-  name?: string;
-}
-
-export interface CatalogProvider {
-  id: string;
-  models?: Array<CatalogModel>;
-}
-
-export interface ProviderCatalog {
-  providers?: Array<CatalogProvider>;
-}
-
 export interface ProviderModelSnapshot {
   id: string;
   name?: string | null;
@@ -175,7 +161,6 @@ export const host2Agent = defineRpcService("Host2Agent", {
   openWebSocketSession: rpcMethod<[expectedOrigin: string], AgentConnection>(1),
   shutdown: rpcMethod<[], void>(2),
   generateCommitMessage: rpcMethod<[request: GenerateCommitMessageRequest], GenerateCommitMessageResult>(3),
-  getProviderCatalog: rpcMethod<[], ProviderCatalog>(4),
   getProvidersSnapshot: rpcMethod<[agentDir: string], ProvidersSnapshot>(5),
   applyProvidersPatch: rpcMethod<[request: ProvidersPatchRequest], ProvidersPatchResult>(6),
   getLoginProviders: rpcMethod<[agentDir: string], LoginProvidersList>(7),

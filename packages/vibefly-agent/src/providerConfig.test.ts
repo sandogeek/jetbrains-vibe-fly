@@ -5,7 +5,6 @@ import * as path from "node:path"
 import { setAgentDir } from "@oh-my-pi/pi-utils"
 import {
   applyProvidersPatch,
-  getProviderCatalog,
   getProvidersSnapshot,
   isManagedProviderField,
   loadRawModelsConfig,
@@ -232,15 +231,6 @@ describe("applyProvidersPatch + AuthStorage", () => {
 })
 
 describe("catalog + snapshot", () => {
-  test("getProviderCatalog returns bundled providers", () => {
-    const catalog = getProviderCatalog()
-    const providers = catalog.providers ?? []
-    expect(providers.length).toBeGreaterThan(5)
-    expect(providers.some((p) => p.id === "openai" || p.id === "anthropic")).toBe(
-      true,
-    )
-  })
-
   test("getProvidersSnapshot merges catalog and configured", async () => {
     const agentDir = tempAgentDir()
     setAgentDir(agentDir)
@@ -264,5 +254,10 @@ describe("catalog + snapshot", () => {
     expect(custom.isConfigured).toBe(true)
     expect(custom.baseUrl).toContain("127.0.0.1")
     expect((custom.models ?? []).some((m) => m.id === "m1")).toBe(true)
+
+    const catalogProvider = providers.find((p) => p.isCatalog)
+    if (catalogProvider) {
+      expect(catalogProvider.models ?? []).toEqual([])
+    }
   })
 })

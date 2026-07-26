@@ -3,6 +3,7 @@ import org.jetbrains.intellij.platform.gradle.tasks.RunIdeTask
 
 plugins {
     id("org.jetbrains.kotlin.jvm")
+    id("org.jetbrains.kotlin.plugin.serialization")
     id("org.jetbrains.intellij.platform")
     id("org.jetbrains.changelog")
 }
@@ -17,6 +18,7 @@ kotlin {
 dependencies {
     implementation(project(":vibefly-simplerpc"))
     implementation(project(":vibefly-jcef"))
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
 
     testImplementation("junit:junit:4.13.2")
 
@@ -25,6 +27,28 @@ dependencies {
         intellijIdea("2025.2.6.2")
         testFramework(TestFrameworkType.Platform)
     }
+}
+
+// Slim pi-catalog JSON for model picker (committed; re-export when upgrading pi-catalog).
+val agentRoot = rootProject.layout.projectDirectory.dir("packages/vibefly-agent")
+val bundledCatalogJson =
+    layout.projectDirectory.file("src/main/resources/catalog/bundled-catalog.json")
+
+val exportBundledCatalog by tasks.registering(ExportBundledCatalogTask::class) {
+    group = "build"
+    description =
+        "Export slim bundled model catalog from agent pi-catalog into plugin resources"
+    bunCommand.set(providers.gradleProperty("vibefly.bun").orElse("bun"))
+    workingDirectory.set(agentRoot)
+    packageJson.set(agentRoot.file("package.json"))
+    exportScript.set(agentRoot.file("scripts/export-bundled-catalog.ts"))
+    // Always register the path: missing file → empty input; install/upgrade → out-of-date.
+    piCatalogInputs.from(agentRoot.file("node_modules/@oh-my-pi/pi-catalog/package.json"))
+    outputFile.set(bundledCatalogJson)
+}
+
+tasks.named("processResources") {
+    dependsOn(exportBundledCatalog)
 }
 
 changelog {

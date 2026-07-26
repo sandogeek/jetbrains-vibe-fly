@@ -1,10 +1,7 @@
 package com.github.sandogeek.jetbrainsvibefly.settings
 
-import com.github.sandogeek.vibefly.jcef.rpc.CatalogProvider
-import com.github.sandogeek.vibefly.jcef.rpc.ProviderCatalog
 import com.github.sandogeek.vibefly.jcef.rpc.ProvidersSnapshot
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
@@ -14,8 +11,6 @@ class ProvidersSettingsCacheTest {
     @Before
     fun clear() {
         ProvidersSettingsCache.invalidateSnapshot()
-        // catalog has no public clear; overwrite with empty then ignore
-        ProvidersSettingsCache.putCatalog(ProviderCatalog(providers = emptyList()))
     }
 
     @Test
@@ -31,14 +26,9 @@ class ProvidersSettingsCacheTest {
     }
 
     @Test
-    fun testPutStoresBoth() {
-        val catalog = ProviderCatalog(
-            providers = listOf(CatalogProvider(id = "openai", models = emptyList())),
-        )
+    fun testPutStoresSnapshot() {
         val snap = ProvidersSnapshot(agentDir = "/x", providers = emptyList())
-        ProvidersSettingsCache.put("/x", catalog, snap)
-        assertNotNull(ProvidersSettingsCache.getCatalog())
-        assertEquals(1, ProvidersSettingsCache.getCatalog()!!.providers.size)
+        ProvidersSettingsCache.put("/x", snap)
         assertEquals(snap, ProvidersSettingsCache.getSnapshot("/x"))
     }
 

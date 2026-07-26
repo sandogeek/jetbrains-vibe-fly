@@ -50,7 +50,6 @@ class VibeflyProviderSettingsStateTest {
         a.agentDir = "/tmp/a"
         a.defaultProvider = "openai"
         a.defaultModel = "gpt-4o"
-        a.lastSelectedProvider = "openai"
 
         val b = a.snapshot()
         assertEquals("/tmp/a", b.agentDir)

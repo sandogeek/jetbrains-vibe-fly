@@ -11,16 +11,11 @@ import {
 } from "@oh-my-pi/pi-coding-agent"
 import { getAgentDbPath, setAgentDir } from "@oh-my-pi/pi-utils"
 import {
-  getBundledModels,
   getBundledProviders,
-  type GeneratedProvider,
 } from "@oh-my-pi/pi-catalog/models"
 import { JSONC, YAML } from "bun"
 import type {
-  CatalogModel,
-  CatalogProvider,
   CredentialAction,
-  ProviderCatalog,
   ProviderCredentialStatus,
   ProviderModelPatch,
   ProviderModelSnapshot,
@@ -173,26 +168,6 @@ export function writeRawModelsConfig(agentDir: string, data: RawModelsFile): str
   return writePath
 }
 
-export function getProviderCatalog(): ProviderCatalog {
-  const providers: CatalogProvider[] = []
-  for (const provider of getBundledProviders()) {
-    const providerId = String(provider)
-    let models: CatalogModel[] = []
-    try {
-      const bundled = getBundledModels(provider as GeneratedProvider)
-      models = bundled.map((m) => ({
-        id: String(m.id),
-        name: String(m.name ?? m.id),
-      }))
-    } catch {
-      models = []
-    }
-    providers.push({ id: providerId, models })
-  }
-  providers.sort((a, b) => a.id.localeCompare(b.id))
-  return { providers }
-}
-
 function catalogProviderIds(): Set<string> {
   return new Set(getBundledProviders().map((p) => String(p)))
 }
@@ -206,7 +181,7 @@ function asString(v: unknown): string | undefined {
 }
 
 function snapshotModels(
-  providerId: string,
+  _providerId: string,
   raw: Record<string, unknown> | undefined,
   isCatalog: boolean,
 ): ProviderModelSnapshot[] {
@@ -228,18 +203,9 @@ function snapshotModels(
       .filter((m): m is ProviderModelSnapshot => m != null)
   }
 
-  if (!isCatalog) return []
+  if (isCatalog) return []
 
-  try {
-    return getBundledModels(providerId as GeneratedProvider).map((m) => ({
-      id: String(m.id),
-      name: String(m.name ?? m.id),
-      api: typeof m.api === "string" ? m.api : undefined,
-      isCustom: false,
-    }))
-  } catch {
-    return []
-  }
+  return []
 }
 
 function credentialStatus(

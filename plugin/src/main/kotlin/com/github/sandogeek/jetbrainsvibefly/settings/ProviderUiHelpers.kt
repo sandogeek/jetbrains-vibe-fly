@@ -1,7 +1,6 @@
 package com.github.sandogeek.jetbrainsvibefly.settings
 
 import com.github.sandogeek.jetbrainsvibefly.VibeflyBundle
-import com.github.sandogeek.vibefly.jcef.rpc.CatalogProvider
 import com.github.sandogeek.vibefly.jcef.rpc.ProviderSnapshot
 
 enum class ProviderBadge {
@@ -128,17 +127,17 @@ object ProviderUiHelpers {
 
     /**
      * Default-model options: only models from connected providers.
-     * Prefer snapshot model lists; fall back to catalog models when empty.
+     * Catalog providers resolve models from [BundledModelCatalog]; custom use snapshot.
      */
     fun connectedModelSpecs(
         providers: List<ProviderSnapshot>,
-        catalogProviders: List<CatalogProvider> = emptyList(),
     ): List<String> {
-        val catalogById = catalogProviders.associate { it.id to it.models.map { m -> m.id } }
         val items = mutableListOf<String>()
         for (snap in classifyProviders(providers).connected) {
-            val modelIds = snap.models.map { it.id }.ifEmpty {
-                catalogById[snap.id].orEmpty()
+            val modelIds = if (snap.isCatalog) {
+                BundledModelCatalog.models(snap.id).map { it.id }
+            } else {
+                snap.models.map { it.id }
             }
             for (modelId in modelIds) {
                 val id = modelId.trim()

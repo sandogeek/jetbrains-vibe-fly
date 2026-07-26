@@ -1,7 +1,5 @@
 package com.github.sandogeek.jetbrainsvibefly.settings
 
-import com.github.sandogeek.vibefly.jcef.rpc.CatalogModel
-import com.github.sandogeek.vibefly.jcef.rpc.CatalogProvider
 import com.github.sandogeek.vibefly.jcef.rpc.ProviderCredentialStatus
 import com.github.sandogeek.vibefly.jcef.rpc.ProviderModelSnapshot
 import com.github.sandogeek.vibefly.jcef.rpc.ProviderSnapshot
@@ -210,53 +208,92 @@ class ProviderUiHelpersTest {
 
     @Test
     fun connectedModelSpecsOnlyFromConnectedProviders() {
-        val connected = ProviderSnapshot(
-            id = "openai",
-            isCatalog = true,
-            credential = ProviderCredentialStatus(hasApiKey = true),
-            models = listOf(
-                ProviderModelSnapshot(id = "gpt-4o"),
-                ProviderModelSnapshot(id = "gpt-4o-mini"),
-            ),
+        BundledModelCatalog.loadFromJsonString(
+            """
+            {
+              "providerOrder": ["openai", "groq"],
+              "providers": [
+                {
+                  "id": "openai",
+                  "models": [
+                    { "id": "gpt-4o" },
+                    { "id": "gpt-4o-mini" }
+                  ]
+                },
+                {
+                  "id": "groq",
+                  "models": [
+                    { "id": "llama-3" }
+                  ]
+                }
+              ]
+            }
+            """.trimIndent(),
         )
-        val popular = ProviderSnapshot(
-            id = "groq",
-            isCatalog = true,
-            models = listOf(ProviderModelSnapshot(id = "llama-3")),
-        )
-        val custom = ProviderSnapshot(
-            id = "my-proxy",
-            isCatalog = false,
-            models = listOf(ProviderModelSnapshot(id = "demo")),
-        )
-        val specs = ProviderUiHelpers.connectedModelSpecs(listOf(connected, popular, custom))
-        assertEquals(
-            listOf("my-proxy/demo", "openai/gpt-4o", "openai/gpt-4o-mini"),
-            specs,
-        )
-        assertFalse(specs.any { it.startsWith("groq/") })
+        try {
+            val connected = ProviderSnapshot(
+                id = "openai",
+                isCatalog = true,
+                credential = ProviderCredentialStatus(hasApiKey = true),
+                models = emptyList(),
+            )
+            val popular = ProviderSnapshot(
+                id = "groq",
+                isCatalog = true,
+                models = emptyList(),
+            )
+            val custom = ProviderSnapshot(
+                id = "my-proxy",
+                isCatalog = false,
+                models = listOf(ProviderModelSnapshot(id = "demo")),
+            )
+            val specs = ProviderUiHelpers.connectedModelSpecs(listOf(connected, popular, custom))
+            assertEquals(
+                listOf("my-proxy/demo", "openai/gpt-4o", "openai/gpt-4o-mini"),
+                specs,
+            )
+            assertFalse(specs.any { it.startsWith("groq/") })
+        } finally {
+            BundledModelCatalog.resetForTests()
+        }
     }
 
     @Test
     fun connectedModelSpecsFallsBackToCatalogWhenSnapshotModelsEmpty() {
-        val connected = ProviderSnapshot(
-            id = "anthropic",
-            isCatalog = true,
-            credential = ProviderCredentialStatus(hasOAuth = true),
-            models = emptyList(),
+        BundledModelCatalog.loadFromJsonString(
+            """
+            {
+              "providerOrder": ["anthropic", "groq"],
+              "providers": [
+                {
+                  "id": "anthropic",
+                  "models": [
+                    { "id": "claude-sonnet" },
+                    { "id": "claude-opus" }
+                  ]
+                },
+                {
+                  "id": "groq",
+                  "models": [
+                    { "id": "llama-3" }
+                  ]
+                }
+              ]
+            }
+            """.trimIndent(),
         )
-        val catalog = listOf(
-            CatalogProvider(
+        try {
+            val connected = ProviderSnapshot(
                 id = "anthropic",
-                models = listOf(CatalogModel(id = "claude-sonnet"), CatalogModel(id = "claude-opus")),
-            ),
-            CatalogProvider(
-                id = "groq",
-                models = listOf(CatalogModel(id = "llama-3")),
-            ),
-        )
-        val specs = ProviderUiHelpers.connectedModelSpecs(listOf(connected), catalog)
-        assertEquals(listOf("anthropic/claude-sonnet", "anthropic/claude-opus"), specs)
+                isCatalog = true,
+                credential = ProviderCredentialStatus(hasOAuth = true),
+                models = emptyList(),
+            )
+            val specs = ProviderUiHelpers.connectedModelSpecs(listOf(connected))
+            assertEquals(listOf("anthropic/claude-sonnet", "anthropic/claude-opus"), specs)
+        } finally {
+            BundledModelCatalog.resetForTests()
+        }
     }
 
     @Test

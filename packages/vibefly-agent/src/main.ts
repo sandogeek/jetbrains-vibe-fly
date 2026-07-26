@@ -22,7 +22,6 @@ import { log } from "./log.js"
 import { applyAgentDirFromEnv, clearOmpRuntimeCache, getOmpRuntime } from "./ompRuntime.js"
 import {
   applyProvidersPatch,
-  getProviderCatalog,
   getProvidersSnapshot,
 } from "./providerConfig.js"
 import {
@@ -86,9 +85,6 @@ async function main(): Promise<void> {
     },
     async generateCommitMessage(request) {
       return generateCommitMessage(request)
-    },
-    getProviderCatalog() {
-      return getProviderCatalog()
     },
     async getProvidersSnapshot(agentDir) {
       return getProvidersSnapshot(agentDir)

@@ -23,6 +23,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "bun run src/main.ts",
     "start:dist": "bun run dist/main.js",
+    "export:catalog": "bun run scripts/export-bundled-catalog.ts",
     "prepublishOnly": "bun run build"
   },
   "dependencies": {

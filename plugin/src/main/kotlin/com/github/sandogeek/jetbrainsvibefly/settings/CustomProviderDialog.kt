@@ -30,7 +30,6 @@ class CustomProviderDialog(
     private lateinit var idField: JBTextField
     private lateinit var baseUrlField: JBTextField
     private lateinit var apiCombo: ComboBox<String>
-    private lateinit var authCombo: ComboBox<String>
     private lateinit var modelsArea: JBTextArea
     private lateinit var apiKeyField: JBPasswordField
 
@@ -153,10 +152,7 @@ class CustomProviderDialog(
             .map { ProviderModelPatch(id = it.id, name = it.name, api = it.api) }
         val baseUrl = baseUrlField.text.trim().ifEmpty { null }
         val api = (apiCombo.selectedItem as? String)?.trim()?.ifEmpty { null }
-        var auth = (authCombo.selectedItem as? String)?.trim()?.ifEmpty { null }
-        if (!isEdit && auth == null) {
-            auth = "none"
-        }
+        val auth = if (isEdit) existing?.auth else "none"
         return ProviderPatch(
             id = providerId,
             baseUrl = baseUrl,

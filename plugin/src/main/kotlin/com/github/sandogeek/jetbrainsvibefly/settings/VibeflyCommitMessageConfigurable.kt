@@ -1,7 +1,6 @@
 package com.github.sandogeek.jetbrainsvibefly.settings
 
 import com.github.sandogeek.jetbrainsvibefly.VibeflyBundle
-import com.github.sandogeek.vibefly.jcef.rpc.ProviderCatalog
 import com.github.sandogeek.vibefly.jcef.rpc.ProvidersSnapshot
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.options.ConfigurationException
@@ -31,7 +30,7 @@ class VibeflyCommitMessageConfigurable : SearchableConfigurable {
 
     private var root: DialogPanel? = null
     private lateinit var languageCombo: ComboBox<LanguageItem>
-    private lateinit var modelCombo: ComboBox<ModelItem>
+    private lateinit var modelField: ModelPickerField
     private lateinit var customPromptCheck: JBCheckBox
     private lateinit var customPromptArea: JBTextArea
     private lateinit var hintLabel: JLabel
@@ -54,10 +53,9 @@ class VibeflyCommitMessageConfigurable : SearchableConfigurable {
                     .applyToComponent { languageCombo = this }
             }
             row(VibeflyBundle.message("settings.commitMessage.model")) {
-                comboBox(emptyList<ModelItem>())
+                cell(ModelPickerField(allowFollowDefault = true).also { modelField = it })
                     .align(AlignX.FILL)
                     .resizableColumn()
-                    .applyToComponent { modelCombo = this }
             }
             row {
                 checkBox(VibeflyBundle.message("settings.commitMessage.useCustomPrompt"))
@@ -90,7 +88,7 @@ class VibeflyCommitMessageConfigurable : SearchableConfigurable {
             }
         }
         rebuildLanguageCombo()
-        rebuildModelCombo(preferredSpec = "")
+        rebuildModelField(preferredSpec = "")
         updateCustomPromptEnabled()
         return root!!
     }
@@ -116,7 +114,11 @@ class VibeflyCommitMessageConfigurable : SearchableConfigurable {
         }
         val settings = VibeflyCommitMessageSettingsState.getInstance()
         settings.languageMode = selectedLanguageMode()
-        settings.commitModelSpec = selectedModelSpec()
+        val modelSpec = selectedModelSpec()
+        settings.commitModelSpec = modelSpec
+        if (modelSpec.isNotEmpty()) {
+            VibeflyModelPreferencesState.getInstance().recordUsed(modelSpec)
+        }
         settings.useCustomPrompt = customPromptCheck.isSelected
         settings.customPrompt = customPromptArea.text
         clearHint()
@@ -133,11 +135,9 @@ class VibeflyCommitMessageConfigurable : SearchableConfigurable {
 
         val painted = paintModelsFromCache(settings.commitModelSpec)
         if (!painted) {
-            rebuildModelCombo(preferredSpec = settings.commitModelSpec)
-            scheduleModelRefresh(settings.commitModelSpec)
-        } else {
-            scheduleModelRefresh(settings.commitModelSpec)
+            rebuildModelField(preferredSpec = settings.commitModelSpec)
         }
+        scheduleModelRefresh(settings.commitModelSpec)
     }
 
     override fun disposeUIResources() {
@@ -147,9 +147,8 @@ class VibeflyCommitMessageConfigurable : SearchableConfigurable {
 
     private fun paintModelsFromCache(preferredSpec: String): Boolean {
         val agentDir = VibeflyProviderSettingsState.getInstance().resolvedAgentDir()
-        val catalog = ProvidersSettingsCache.getCatalog() ?: return false
         val snapshot = ProvidersSettingsCache.getSnapshot(agentDir) ?: return false
-        applyConnectedModels(snapshot, catalog, preferredSpec)
+        applyConnectedModels(snapshot, preferredSpec)
         return true
     }
 
@@ -158,9 +157,10 @@ class VibeflyCommitMessageConfigurable : SearchableConfigurable {
         val gen = loadGeneration.incrementAndGet()
         ApplicationManager.getApplication().executeOnPooledThread {
             try {
+                BundledModelCatalog.ensureLoaded()
                 val result = ProvidersSettingsLoader.fetch(agentDir)
                 runOnEdtIfCurrent(gen) {
-                    applyConnectedModels(result.snapshot, result.catalog, preferredSpec)
+                    applyConnectedModels(result.snapshot, preferredSpec)
                 }
             } catch (_: Exception) {
                 // Keep last painted model list; generation still works with Providers default.
@@ -170,14 +170,13 @@ class VibeflyCommitMessageConfigurable : SearchableConfigurable {
 
     private fun applyConnectedModels(
         snapshot: ProvidersSnapshot,
-        catalog: ProviderCatalog,
         preferredSpec: String,
     ) {
-        connectedModelSpecs = ProviderUiHelpers.connectedModelSpecs(
-            snapshot.providers,
-            catalog.providers,
-        )
-        rebuildModelCombo(preferredSpec = preferredSpec)
+        connectedModelSpecs = ProviderUiHelpers.connectedModelSpecs(snapshot.providers)
+        if (::modelField.isInitialized) {
+            modelField.setEntries(ModelPickerFilter.buildEntries(snapshot.providers))
+        }
+        rebuildModelField(preferredSpec = preferredSpec)
     }
 
     private fun rebuildLanguageCombo() {
@@ -198,23 +197,14 @@ class VibeflyCommitMessageConfigurable : SearchableConfigurable {
         languageCombo.model = DefaultComboBoxModel(items.toTypedArray())
     }
 
-    private fun rebuildModelCombo(preferredSpec: String) {
-        val follow = ModelItem(
-            spec = "",
-            label = VibeflyBundle.message("settings.commitMessage.model.followDefault"),
-        )
-        val items = mutableListOf(follow)
-        for (spec in connectedModelSpecs) {
-            items.add(ModelItem(spec = spec, label = spec))
-        }
-        modelCombo.model = DefaultComboBoxModel(items.toTypedArray())
-
+    private fun rebuildModelField(preferredSpec: String) {
+        if (!::modelField.isInitialized) return
         val wanted = preferredSpec.trim()
         if (wanted.isNotEmpty() && wanted in connectedModelSpecs) {
-            modelCombo.selectedItem = items.first { it.spec == wanted }
+            modelField.setSelectedSpec(wanted)
             clearHint()
         } else {
-            modelCombo.selectedItem = follow
+            modelField.setSelectedSpec("")
             if (wanted.isNotEmpty() && connectedModelSpecs.isNotEmpty()) {
                 showHint(VibeflyBundle.message("settings.commitMessage.model.invalidFallback"))
             } else {
@@ -244,8 +234,8 @@ class VibeflyCommitMessageConfigurable : SearchableConfigurable {
     }
 
     private fun selectedModelSpec(): String {
-        val item = modelCombo.selectedItem as? ModelItem
-        return item?.spec?.trim().orEmpty()
+        if (!::modelField.isInitialized) return ""
+        return modelField.getSelectedSpec().trim()
     }
 
     private fun updateCustomPromptEnabled() {
@@ -282,10 +272,6 @@ class VibeflyCommitMessageConfigurable : SearchableConfigurable {
     }
 
     private data class LanguageItem(val mode: String, val label: String) {
-        override fun toString(): String = label
-    }
-
-    private data class ModelItem(val spec: String, val label: String) {
         override fun toString(): String = label
     }
 }

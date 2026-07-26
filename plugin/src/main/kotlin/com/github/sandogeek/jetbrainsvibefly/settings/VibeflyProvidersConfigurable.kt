@@ -2,7 +2,6 @@ package com.github.sandogeek.jetbrainsvibefly.settings
 
 import com.github.sandogeek.jetbrainsvibefly.VibeflyBundle
 import com.github.sandogeek.jetbrainsvibefly.agent.VibeflyAgentService
-import com.github.sandogeek.vibefly.jcef.rpc.CatalogProvider
 import com.github.sandogeek.vibefly.jcef.rpc.CredentialAction
 import com.github.sandogeek.vibefly.jcef.rpc.ProviderLoginRequest
 import com.github.sandogeek.vibefly.jcef.rpc.ProviderLogoutRequest
@@ -17,7 +16,6 @@ import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.options.Configurable
 import com.intellij.openapi.options.SearchableConfigurable
 import com.intellij.openapi.progress.ProgressManager
-import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.DialogPanel
 import com.intellij.openapi.ui.Messages
 import com.intellij.ui.DocumentAdapter
@@ -39,7 +37,6 @@ import java.awt.BorderLayout
 import java.awt.Font
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
-import javax.swing.DefaultComboBoxModel
 import javax.swing.Icon
 import javax.swing.JButton
 import javax.swing.JComponent
@@ -62,14 +59,13 @@ class VibeflyProvidersConfigurable : SearchableConfigurable, Configurable.NoScro
     private var root: DialogPanel? = null
     private lateinit var agentDirField: JBTextField
     private lateinit var builtinSearchField: SearchTextField
-    private lateinit var defaultModelCombo: ComboBox<String>
+    private lateinit var defaultModelField: ModelPickerField
     private lateinit var errorLabel: JLabel
     /** Connected + add-custom + built-in header/search (outside scroll). */
     private val fixedListsHeader = JPanel(BorderLayout())
     /** Built-in provider rows only (inside scroll). */
     private val builtinListHolder = JPanel(BorderLayout())
 
-    private var catalogProviders: List<CatalogProvider> = emptyList()
     private var snapshots: MutableMap<String, ProviderSnapshot> = linkedMapOf()
     private var loadError: String? = null
     private var loading: Boolean = false
@@ -106,11 +102,10 @@ class VibeflyProvidersConfigurable : SearchableConfigurable, Configurable.NoScro
                     .applyToComponent { agentDirField = this }
             }
             row(VibeflyBundle.message("settings.providers.defaultModel")) {
-                comboBox(listOf(""))
+                cell(ModelPickerField(allowClear = true).also { defaultModelField = it })
                     .align(AlignX.FILL)
                     .resizableColumn()
                     .gap(RightGap.SMALL)
-                    .applyToComponent { defaultModelCombo = this }
                 button(VibeflyBundle.message("settings.providers.reload")) {
                     scheduleLoad(
                         agentDir = currentAgentDirRaw(),
@@ -164,6 +159,10 @@ class VibeflyProvidersConfigurable : SearchableConfigurable, Configurable.NoScro
         settings.agentDir = agentDirField.text.trim()
         settings.defaultProvider = dp
         settings.defaultModel = dm
+        val spec = ProviderUiHelpers.modelSpec(dp, dm)
+        if (spec.isNotEmpty()) {
+            VibeflyModelPreferencesState.getInstance().recordUsed(spec)
+        }
 
         // Single stop path (off-EDT inside stopAllOpenProjects).
         VibeflyAgentService.stopAllOpenProjects()
@@ -185,7 +184,7 @@ class VibeflyProvidersConfigurable : SearchableConfigurable, Configurable.NoScro
             clearError()
             showStatus(VibeflyBundle.message("settings.providers.loading"))
             rebuildSections()
-            rebuildDefaultModelCombo()
+            rebuildDefaultModelField()
         }
 
         scheduleLoad(
@@ -214,7 +213,7 @@ class VibeflyProvidersConfigurable : SearchableConfigurable, Configurable.NoScro
         } else {
             settings.agentDir
         }
-        val (dp, dm) = if (::defaultModelCombo.isInitialized) {
+        val (dp, dm) = if (::defaultModelField.isInitialized) {
             parseDefaultModelSelection()
         } else {
             settings.defaultProvider to settings.defaultModel
@@ -237,7 +236,7 @@ class VibeflyProvidersConfigurable : SearchableConfigurable, Configurable.NoScro
 
     /**
      * Instant paint from session cache so Settings open is not blocked by Bun start.
-     * @return true when both catalog and snapshot were available for [agentDir]
+     * @return true when snapshot was available for [agentDir]
      */
     private fun paintFromCacheIfAvailable(
         agentDir: String,
@@ -247,13 +246,11 @@ class VibeflyProvidersConfigurable : SearchableConfigurable, Configurable.NoScro
         val expanded = VibeflyProviderSettingsState.expandHome(
             agentDir.ifEmpty { VibeflyProviderSettingsState.defaultAgentDir() },
         )
-        val catalog = ProvidersSettingsCache.getCatalog() ?: return false
         val snapshot = ProvidersSettingsCache.getSnapshot(expanded) ?: return false
-        catalogProviders = catalog.providers
         applySnapshot(snapshot)
         loading = false
         clearError()
-        rebuildDefaultModelCombo()
+        rebuildDefaultModelField()
         rebuildSections()
         selectDefaultModel(preferredProvider, preferredModel)
         return true
@@ -276,13 +273,13 @@ class VibeflyProvidersConfigurable : SearchableConfigurable, Configurable.NoScro
 
         ApplicationManager.getApplication().executeOnPooledThread {
             try {
+                BundledModelCatalog.ensureLoaded()
                 val result = ProvidersSettingsLoader.fetch(expanded)
                 runOnEdtIfCurrent(gen) {
-                    catalogProviders = result.catalog.providers
                     applySnapshot(result.snapshot)
                     loading = false
                     clearError()
-                    rebuildDefaultModelCombo()
+                    rebuildDefaultModelField()
                     rebuildSections()
                     selectDefaultModel(preferredProvider, preferredModel)
                 }
@@ -291,7 +288,6 @@ class VibeflyProvidersConfigurable : SearchableConfigurable, Configurable.NoScro
                 runOnEdtIfCurrent(gen) {
                     loading = false
                     if (snapshots.isEmpty()) {
-                        catalogProviders = emptyList()
                         snapshots.clear()
                         showError(
                             VibeflyBundle.message(
@@ -300,7 +296,7 @@ class VibeflyProvidersConfigurable : SearchableConfigurable, Configurable.NoScro
                             ),
                         )
                         rebuildSections()
-                        rebuildDefaultModelCombo()
+                        rebuildDefaultModelField()
                     } else {
                         // Keep last good UI; do not block Connect/Edit.
                         showStatus(
@@ -646,13 +642,8 @@ class VibeflyProvidersConfigurable : SearchableConfigurable, Configurable.NoScro
             return
         }
         applySnapshot(snapshot)
-        val catalog = ProvidersSettingsCache.getCatalog()
-        if (catalog != null) {
-            ProvidersSettingsCache.put(expanded, catalog, snapshot)
-        } else {
-            ProvidersSettingsCache.invalidateSnapshot(expanded)
-        }
-        rebuildDefaultModelCombo()
+        ProvidersSettingsCache.put(expanded, snapshot)
+        rebuildDefaultModelField()
         rebuildSections()
         pruneOrphanDefaultModel()
     }
@@ -705,14 +696,16 @@ class VibeflyProvidersConfigurable : SearchableConfigurable, Configurable.NoScro
         applyLoginSnapshot(expanded, snapshot)
     }
 
+    private fun catalogIds(): Set<String> =
+        BundledModelCatalog.providerIds().toSet() +
+            snapshots.values.filter { it.isCatalog }.map { it.id }.toSet()
+
     private fun onAddCustom() {
-        val catalogIds = snapshots.values.filter { it.isCatalog }.map { it.id }.toSet() +
-            catalogProviders.map { it.id }.toSet()
         val customIds = snapshots.values.filter { !it.isCatalog }.map { it.id }.toSet()
         val dialog = CustomProviderDialog(
             parent = parentComponent(),
             existing = null,
-            catalogIds = catalogIds,
+            catalogIds = catalogIds(),
             existingCustomIds = customIds,
         )
         if (!dialog.showAndGet()) return
@@ -727,8 +720,6 @@ class VibeflyProvidersConfigurable : SearchableConfigurable, Configurable.NoScro
     }
 
     private fun onEditCustom(snap: ProviderSnapshot) {
-        val catalogIds = snapshots.values.filter { it.isCatalog }.map { it.id }.toSet() +
-            catalogProviders.map { it.id }.toSet()
         val customIds = snapshots.values
             .filter { !it.isCatalog && it.id != snap.id }
             .map { it.id }
@@ -736,7 +727,7 @@ class VibeflyProvidersConfigurable : SearchableConfigurable, Configurable.NoScro
         val dialog = CustomProviderDialog(
             parent = parentComponent(),
             existing = snap,
-            catalogIds = catalogIds,
+            catalogIds = catalogIds(),
             existingCustomIds = customIds,
         )
         if (!dialog.showAndGet()) return
@@ -824,13 +815,8 @@ class VibeflyProvidersConfigurable : SearchableConfigurable, Configurable.NoScro
         clearError()
         if (patchResult.snapshot != null) {
             applySnapshot(patchResult.snapshot!!)
-            val catalog = ProvidersSettingsCache.getCatalog()
-            if (catalog != null) {
-                ProvidersSettingsCache.put(expanded, catalog, patchResult.snapshot!!)
-            } else {
-                ProvidersSettingsCache.invalidateSnapshot(expanded)
-            }
-            rebuildDefaultModelCombo()
+            ProvidersSettingsCache.put(expanded, patchResult.snapshot!!)
+            rebuildDefaultModelField()
             rebuildSections()
             pruneOrphanDefaultModel()
         } else {
@@ -844,10 +830,10 @@ class VibeflyProvidersConfigurable : SearchableConfigurable, Configurable.NoScro
     }
 
     private fun connectedDefaultModelOptions(): List<String> =
-        ProviderUiHelpers.connectedModelSpecs(
-            snapshots.values.toList(),
-            catalogProviders,
-        )
+        ProviderUiHelpers.connectedModelSpecs(snapshots.values.toList())
+
+    private fun connectedModelEntries(): List<ModelPickerEntry> =
+        ModelPickerFilter.buildEntries(snapshots.values.toList())
 
     /**
      * When the current default is no longer among connected providers' models,
@@ -858,27 +844,26 @@ class VibeflyProvidersConfigurable : SearchableConfigurable, Configurable.NoScro
         val (dp, dm) = parseDefaultModelSelection()
         val current = ProviderUiHelpers.modelSpec(dp, dm)
         if (current.isEmpty()) {
-            // First connect with no default: smart-pick from connected models.
             val pick = ProviderUiHelpers.resolveDefaultModelSpec("", "", options, autoPick = true)
             if (pick.isNotEmpty()) {
-                defaultModelCombo.selectedItem = pick
+                defaultModelField.setSelectedSpec(pick)
             }
             return
         }
         if (current !in options) {
             val pick = ProviderUiHelpers.resolveDefaultModelSpec("", "", options, autoPick = true)
-            defaultModelCombo.selectedItem = pick.ifEmpty { "" }
+            defaultModelField.setSelectedSpec(pick)
         }
     }
 
-    private fun rebuildDefaultModelCombo() {
+    private fun rebuildDefaultModelField() {
+        if (!::defaultModelField.isInitialized) return
+        val selected = defaultModelField.getSelectedSpec()
+        defaultModelField.setEntries(connectedModelEntries())
         val options = connectedDefaultModelOptions()
-        val items = listOf("") + options
-        val selected = (defaultModelCombo.selectedItem as? String)?.trim().orEmpty()
-        defaultModelCombo.model = DefaultComboBoxModel(items.toTypedArray())
         when {
             selected.isNotEmpty() && selected in options -> {
-                defaultModelCombo.selectedItem = selected
+                defaultModelField.setSelectedSpec(selected)
             }
             else -> {
                 val settings = VibeflyProviderSettingsState.getInstance()
@@ -888,6 +873,8 @@ class VibeflyProvidersConfigurable : SearchableConfigurable, Configurable.NoScro
     }
 
     private fun selectDefaultModel(provider: String, model: String) {
+        if (!::defaultModelField.isInitialized) return
+        defaultModelField.setEntries(connectedModelEntries())
         val options = connectedDefaultModelOptions()
         val resolved = ProviderUiHelpers.resolveDefaultModelSpec(
             preferredProvider = provider,
@@ -895,17 +882,12 @@ class VibeflyProvidersConfigurable : SearchableConfigurable, Configurable.NoScro
             options = options,
             autoPick = false,
         )
-        if (resolved.isNotEmpty()) {
-            defaultModelCombo.selectedItem = resolved
-        } else {
-            // Prefer empty over an orphan from a disconnected provider.
-            defaultModelCombo.selectedIndex = if (defaultModelCombo.itemCount > 0) 0 else -1
-        }
+        defaultModelField.setSelectedSpec(resolved)
     }
 
     private fun parseDefaultModelSelection(): Pair<String, String> {
-        val raw = (defaultModelCombo.selectedItem as? String)?.trim().orEmpty()
-        return ProviderUiHelpers.parseModelSpec(raw)
+        if (!::defaultModelField.isInitialized) return "" to ""
+        return ProviderUiHelpers.parseModelSpec(defaultModelField.getSelectedSpec())
     }
 
     private fun showError(message: String) {

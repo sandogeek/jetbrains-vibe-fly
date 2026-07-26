@@ -28,9 +28,6 @@ class VibeflyProviderSettingsState : PersistentStateComponent<VibeflyProviderSet
     /** Default model id within [defaultProvider]. */
     var defaultModel: String = ""
 
-    /** Last selected provider in the Settings UI (page metadata). */
-    var lastSelectedProvider: String = ""
-
     override fun getState(): VibeflyProviderSettingsState = this
 
     override fun loadState(state: VibeflyProviderSettingsState) {
@@ -56,7 +53,6 @@ class VibeflyProviderSettingsState : PersistentStateComponent<VibeflyProviderSet
         agentDir = other.agentDir
         defaultProvider = other.defaultProvider
         defaultModel = other.defaultModel
-        lastSelectedProvider = other.lastSelectedProvider
     }
 
     fun snapshot(): VibeflyProviderSettingsState {

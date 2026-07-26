@@ -21,9 +21,6 @@ interface Host2Agent {
         request: GenerateCommitMessageRequest,
     ): GenerateCommitMessageResult
 
-    @RpcFun(4)
-    suspend fun getProviderCatalog(): ProviderCatalog
-
     @RpcFun(5)
     suspend fun getProvidersSnapshot(agentDir: String): ProvidersSnapshot
 
