@@ -17,7 +17,6 @@ kotlin {
 
 dependencies {
     implementation(project(":vibefly-simplerpc"))
-    implementation(project(":vibefly-jcef"))
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
 
     testImplementation("junit:junit:4.13.2")
@@ -26,11 +25,69 @@ dependencies {
     intellijPlatform {
         intellijIdea("2025.2.6.2")
         testFramework(TestFrameworkType.Platform)
+        // vibefly-jcef is a platform.module subproject. Plain implementation() packages it under
+        // lib/modules/ only; without a plugin.xml content-module entry that is not on the main
+        // PluginClassLoader (NoClassDefFoundError for AgentOrigin / VibeflyBrowserPanel, etc.).
+        // Compose into the main plugin JAR so host code can reference jcef types directly.
+        pluginComposedModule(implementation(project(":vibefly-jcef")))
     }
 }
 
 changelog {
     path.set(rootProject.file("CHANGELOG.md").canonicalPath)
+}
+
+intellijPlatform {
+    // Headless searchable-options requires a free sandbox IDE lock; skip for local/installable builds.
+    // Settings search still works without the prebuilt index.
+    buildSearchableOptions = false
+    pluginConfiguration {
+        // com.intellij.modules.jcef exists as a product module from 2025.3;
+        // in 2026.2+ it is a separate plugin that must be on PluginClassLoader parents.
+        ideaVersion {
+            sinceBuild = "253"
+        }
+    }
+}
+
+// Production agent runtime staged under plugin/agent/ and copied into the installable zip.
+val vibeflyAgentBundleDir = layout.buildDirectory.dir("bundled-agent")
+
+val buildVibeflyAgent by tasks.registering(BuildVibeflyAgentTask::class) {
+    group = "build"
+    description = "Build and stage production vibefly-agent runtime for the plugin distribution"
+    bunCommand.set(providers.gradleProperty("vibefly.bun").orElse("bun"))
+    agentRootDir.set(rootProject.layout.projectDirectory.dir("packages/vibefly-agent"))
+    agentSourceDir.set(rootProject.layout.projectDirectory.dir("packages/vibefly-agent/src"))
+    agentPackageJson.set(rootProject.layout.projectDirectory.file("packages/vibefly-agent/package.json"))
+    agentTsconfig.set(rootProject.layout.projectDirectory.file("packages/vibefly-agent/tsconfig.json"))
+    simpleRpcTsDir.set(rootProject.layout.projectDirectory.dir("packages/vibefly-simplerpc/typeScript"))
+    simpleRpcBunDir.set(rootProject.layout.projectDirectory.dir("packages/vibefly-simplerpc/typeScript-bun"))
+    uiagentSharedDir.set(rootProject.layout.projectDirectory.dir("packages/vibefly-uiagent-shared"))
+    dependencyMarkers.from(
+        rootProject.layout.projectDirectory.file("packages/vibefly-agent/package.json"),
+        rootProject.layout.projectDirectory.file("packages/vibefly-agent/bun.lock"),
+        rootProject.layout.projectDirectory.file("packages/vibefly-simplerpc/typeScript/package.json"),
+        rootProject.layout.projectDirectory.file("packages/vibefly-simplerpc/typeScript-bun/package.json"),
+        rootProject.layout.projectDirectory.file("packages/vibefly-uiagent-shared/package.json"),
+        rootProject.layout.projectDirectory.dir("packages/vibefly-simplerpc/typeScript/src"),
+        rootProject.layout.projectDirectory.dir("packages/vibefly-simplerpc/typeScript-bun/src"),
+        rootProject.layout.projectDirectory.dir("packages/vibefly-uiagent-shared/src"),
+    )
+    outputDir.set(vibeflyAgentBundleDir)
+}
+
+tasks.named<org.jetbrains.intellij.platform.gradle.tasks.PrepareSandboxTask>("prepareSandbox") {
+    dependsOn(buildVibeflyAgent)
+    from(vibeflyAgentBundleDir) {
+        into(providers.provider {
+            // PrepareSandboxTask copies relative to plugins/<projectName>/
+            val name = project.extensions
+                .getByType(org.jetbrains.intellij.platform.gradle.extensions.IntelliJPlatformExtension::class.java)
+                .projectName.get()
+            "$name/agent"
+        })
+    }
 }
 
 // Vite HMR: ./gradlew :plugin:runIde -Pvibefly.ui.dev=true

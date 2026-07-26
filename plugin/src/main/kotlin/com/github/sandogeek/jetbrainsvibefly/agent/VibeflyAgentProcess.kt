@@ -62,13 +62,17 @@ object VibeflyAgentProcess {
         agentDir: String? = null,
     ): Handle {
         val entry = VibeflyAgentPaths.resolveAgentEntry()
-        val command = mutableListOf(VibeflyAgentPaths.resolveBunCommand())
+        val bun = VibeflyAgentPaths.resolveBunCommand()
+        val workDir = VibeflyAgentPaths.resolveAgentWorkingDirectory(entry)
+        val command = mutableListOf(bun)
         command.addAll(resolveBunInspectArgs())
         command.add(entry.toString())
-        log.info("Starting vibefly-agent: ${command.joinToString(" ")}")
+        log.info(
+            "Starting vibefly-agent: ${command.joinToString(" ")} (cwd=$workDir)",
+        )
 
         val builder = ProcessBuilder(command)
-            .directory(entry.parent?.parent?.toFile()) // packages/vibefly-agent
+            .directory(workDir.toFile())
             .redirectError(ProcessBuilder.Redirect.INHERIT)
 
         val env = builder.environment()
@@ -78,7 +82,15 @@ object VibeflyAgentProcess {
             env["PI_CODING_AGENT_DIR"] = dir
         }
 
-        val process = builder.start()
+        val process = try {
+            builder.start()
+        } catch (e: Exception) {
+            throw IllegalStateException(
+                "Failed to start vibefly-agent with bun=$bun entry=$entry cwd=$workDir. " +
+                    "Install Bun (https://bun.sh) or set -Dvibefly.bun=/path/to/bun.",
+                e,
+            )
+        }
         val transport = StdioRpcTransport(
             input = process.inputStream,
             output = process.outputStream,
