@@ -1,12 +1,15 @@
 /**
- * Single-shot conventional commit message generation via pi-ai complete.
+ * Single-shot conventional commit message generation via pi-ai stream.
  * Logs only via stderr (log.ts); never write to stdout.
  *
  * Model, language, and prompt config come from the RPC request + OMP
  * ModelRegistry only (no commit env-var overrides).
+ *
+ * While the model is generating, optional [onProgress] keep-alives let the host
+ * idle-timeout only when generation is truly silent (not mid-stream).
  */
 import {
-  completeSimple,
+  streamSimple,
   type Api,
   type Context,
   type Model,
@@ -19,6 +22,11 @@ import type {
   GenerateCommitMessageResult,
 } from "./generated/controlRpc.js"
 import { log } from "./log.js"
+
+/** Min gap between progress callbacks during streaming (ms). */
+export const COMMIT_PROGRESS_THROTTLE_MS = 2_000
+/** Heartbeat while waiting for first stream event (ms). */
+export const COMMIT_PROGRESS_HEARTBEAT_MS = 5_000
 
 const SYSTEM_PROMPT = `You are an expert Git commit message generator that creates conventional commit messages based on staged changes. Analyze the provided git diff output and generate an appropriate conventional commit message following the specification.
 
@@ -830,17 +838,34 @@ function logCommitContext(context: Context): void {
   }
 }
 
+export type GenerateCommitMessageOptions = {
+  /** Keep-alive / status for host idle timeout. Best-effort; failures ignored. */
+  onProgress?: (message: string) => void | Promise<void>
+  /** Abort when host cancels the RPC. */
+  signal?: AbortSignal
+}
+
 export async function generateCommitMessage(
   request: GenerateCommitMessageRequest,
+  options: GenerateCommitMessageOptions = {},
 ): Promise<GenerateCommitMessageResult> {
   if (!request.files.length) {
     throw new Error("No changes to describe")
   }
 
+  const { onProgress, signal } = options
+  const report = (message: string) => {
+    if (!onProgress) return
+    void Promise.resolve(onProgress(message)).catch(() => {})
+  }
+
+  report("Resolving model…")
   const { model, apiKey } = await resolveCommitModel({
     commitModel: request.commitModel,
     defaultModel: request.defaultModel,
   })
+  if (signal?.aborted) throw new Error("Commit message generation cancelled")
+
   const language = resolveCommitLanguage(request.language, request.style)
   const contextWindow =
     typeof model.contextWindow === "number" && model.contextWindow > 0
@@ -853,6 +878,7 @@ export async function generateCommitMessage(
     diffBudget: `${diffCharBudget(contextWindow)}chars`,
   })
 
+  report("Building prompt…")
   const context: Context = {
     systemPrompt: [
       buildSystemPrompt({
@@ -873,10 +899,67 @@ export async function generateCommitMessage(
   // Full prompt dump only when VIBEFLY_LOG_LEVEL=debug (or lower).
   logCommitContext(context)
 
-  const response = await completeSimple(model, context, {
+  report("Calling model…")
+  const stream = streamSimple(model, context, {
     apiKey,
     disableReasoning: true,
+    signal,
   })
+
+  let lastProgressAt = 0
+  let sawStreamEvent = false
+  let heartbeat: ReturnType<typeof setInterval> | null = setInterval(() => {
+    if (sawStreamEvent) return
+    report("Waiting for model…")
+  }, COMMIT_PROGRESS_HEARTBEAT_MS)
+
+  const clearHeartbeat = () => {
+    if (heartbeat != null) {
+      clearInterval(heartbeat)
+      heartbeat = null
+    }
+  }
+
+  try {
+    for await (const event of stream) {
+      if (signal?.aborted) {
+        throw new Error("Commit message generation cancelled")
+      }
+      sawStreamEvent = true
+      clearHeartbeat()
+      const now = Date.now()
+      if (now - lastProgressAt >= COMMIT_PROGRESS_THROTTLE_MS) {
+        lastProgressAt = now
+        switch (event.type) {
+          case "start":
+            report("Model started…")
+            break
+          case "text_delta":
+          case "text_start":
+          case "text_end":
+            report("Generating message…")
+            break
+          case "thinking_delta":
+          case "thinking_start":
+          case "thinking_end":
+            report("Model thinking…")
+            break
+          case "done":
+            report("Finalizing…")
+            break
+          case "error":
+            break
+          default:
+            report("Generating…")
+            break
+        }
+      }
+    }
+  } finally {
+    clearHeartbeat()
+  }
+
+  const response = await stream.result()
   if (response.errorMessage) {
     throw new Error(response.errorMessage)
   }

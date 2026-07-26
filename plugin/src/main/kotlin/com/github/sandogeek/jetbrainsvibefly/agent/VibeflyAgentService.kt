@@ -1,5 +1,7 @@
 package com.github.sandogeek.jetbrainsvibefly.agent
 
+import com.github.sandogeek.jetbrainsvibefly.settings.Agent2HostBridge
+import com.github.sandogeek.jetbrainsvibefly.settings.CommitMessageProgressListener
 import com.github.sandogeek.jetbrainsvibefly.settings.ProvidersSettingsLoader
 import com.github.sandogeek.jetbrainsvibefly.settings.VibeflyProviderSettingsState
 
@@ -19,10 +21,16 @@ import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ProjectManager
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -66,17 +74,68 @@ class VibeflyAgentService(@Suppress("unused") private val project: Project) : Di
 
     /**
      * Generate a conventional commit message from included change summaries/diff.
-     * Starts the agent on demand; times out after [timeoutMs].
+     * Starts the agent on demand.
+     *
+     * Timeout is **idle-based**: agent [com.github.sandogeek.vibefly.jcef.rpc.Agent2Host.reportCommitMessageProgress]
+     * keep-alives reset the deadline. Only a quiet gap of [timeoutMs] fails —
+     * ongoing generation (slow models, long streams) is not cut off by wall clock.
      */
     suspend fun generateCommitMessage(
         request: GenerateCommitMessageRequest,
         timeoutMs: Long = DEFAULT_COMMIT_MESSAGE_TIMEOUT_MS,
+        onProgress: (String) -> Unit = {},
     ): GenerateCommitMessageResult {
         ensureStarted()
         val control = host2AgentRef.get()
             ?: error("Agent control API is not available")
-        return withTimeout(timeoutMs.milliseconds) {
+        return withIdleTimeout(
+            idleTimeoutMs = timeoutMs,
+            onProgress = onProgress,
+        ) {
             control.generateCommitMessage(request)
+        }
+    }
+
+    /**
+     * Run [block] while listening for commit-generation progress reverse-RPC.
+     * Each progress event resets the idle deadline; absolute wall-clock is not used.
+     */
+    private suspend fun <T> withIdleTimeout(
+        idleTimeoutMs: Long,
+        onProgress: (String) -> Unit = {},
+        block: suspend () -> T,
+    ): T {
+        val idleMs = idleTimeoutMs.coerceAtLeast(1L)
+        val lastProgressAt = AtomicLong(System.nanoTime())
+        val listener = CommitMessageProgressListener { message ->
+            lastProgressAt.set(System.nanoTime())
+            onProgress(message)
+        }
+        return Agent2HostBridge.withCommitProgressSuspend(listener) {
+            coroutineScope {
+                val work = async { block() }
+                val watchdog = launch {
+                    val idleNanos = idleMs * 1_000_000L
+                    while (isActive) {
+                        val elapsed = System.nanoTime() - lastProgressAt.get()
+                        val remainingMs =
+                            ((idleNanos - elapsed) / 1_000_000L).coerceAtLeast(1L)
+                        delay(remainingMs.coerceAtMost(idleMs).milliseconds)
+                        val quietFor = System.nanoTime() - lastProgressAt.get()
+                        if (quietFor >= idleNanos) {
+                            // TimeoutCancellationException ctor is internal; plain error cancels siblings.
+                            error(
+                                "Timed out waiting for commit message progress after ${idleMs}ms of silence",
+                            )
+                        }
+                    }
+                }
+                try {
+                    work.await()
+                } finally {
+                    watchdog.cancel()
+                }
+            }
         }
     }
 

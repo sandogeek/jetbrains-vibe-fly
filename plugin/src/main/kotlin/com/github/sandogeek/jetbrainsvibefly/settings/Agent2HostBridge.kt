@@ -11,13 +11,15 @@ import java.util.concurrent.atomic.AtomicReference
 import javax.swing.SwingUtilities
 
 /**
- * Reverse RPC (Bun → Kotlin) during provider login.
+ * Reverse RPC (Bun → Kotlin) during provider login and commit generation.
  * Active [ProviderLoginUi] is set while a login dialog is running.
+ * Active [CommitMessageProgressListener] is set while commit generation is in flight.
  */
 object Agent2HostBridge : Agent2Host {
 
     private val log = logger<Agent2HostBridge>()
     private val activeUi = AtomicReference<ProviderLoginUi?>(null)
+    private val commitProgress = AtomicReference<CommitMessageProgressListener?>(null)
 
     fun <T> withUi(ui: ProviderLoginUi, block: () -> T): T {
         val prev = activeUi.getAndSet(ui)
@@ -25,6 +27,27 @@ object Agent2HostBridge : Agent2Host {
             return block()
         } finally {
             activeUi.compareAndSet(ui, prev)
+        }
+    }
+
+    fun <T> withCommitProgress(listener: CommitMessageProgressListener, block: () -> T): T {
+        val prev = commitProgress.getAndSet(listener)
+        try {
+            return block()
+        } finally {
+            commitProgress.compareAndSet(listener, prev)
+        }
+    }
+
+    suspend fun <T> withCommitProgressSuspend(
+        listener: CommitMessageProgressListener,
+        block: suspend () -> T,
+    ): T {
+        val prev = commitProgress.getAndSet(listener)
+        try {
+            return block()
+        } finally {
+            commitProgress.compareAndSet(listener, prev)
         }
     }
 
@@ -54,6 +77,15 @@ object Agent2HostBridge : Agent2Host {
         val ui = activeUi.get() ?: return
         runOnEdt { ui.onProgress(message) }
     }
+
+    override suspend fun reportCommitMessageProgress(message: String) {
+        val listener = commitProgress.get()
+        if (listener == null) {
+            log.debug("commit progress with no listener: $message")
+            return
+        }
+        listener.onProgress(message)
+    }
 }
 
 /**
@@ -65,6 +97,11 @@ interface ProviderLoginUi {
     fun onProgress(message: String)
 
     suspend fun requestInput(request: LoginInputRequest): LoginInputResponse
+}
+
+/** Host-side keep-alive for in-flight commit message generation. */
+fun interface CommitMessageProgressListener {
+    fun onProgress(message: String)
 }
 
 private suspend fun <T> runOnEdt(block: () -> T): T {

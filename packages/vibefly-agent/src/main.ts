@@ -5,6 +5,7 @@
  * WebSocket: UI business SimpleRpc after ticket handshake
  */
 import { createStdioSimpleRpc } from "@sandogeek/simple-rpc-bun"
+import { rpcOptions } from "@sandogeek/simple-rpc"
 import {
   createAgent2UiProxy,
   registerUi2AgentService,
@@ -35,6 +36,9 @@ import {
   createTicketStore,
   isValidOrigin,
 } from "./ws.js"
+
+/** Fire-and-forget reverse RPC; host resets idle timeout on each call. */
+const progressOpts = rpcOptions({ timeoutMs: 5_000 })
 
 async function main(): Promise<void> {
   console.log = (...args: unknown[]) => {
@@ -83,8 +87,15 @@ async function main(): Promise<void> {
       log.info("shutdown requested")
       teardown(0)
     },
-    async generateCommitMessage(request) {
-      return generateCommitMessage(request)
+    async generateCommitMessage(request, ctx) {
+      return generateCommitMessage(request, {
+        signal: ctx?.signal,
+        onProgress: (message) => {
+          void agent2Host
+            .reportCommitMessageProgress(message, progressOpts)
+            .catch(() => {})
+        },
+      })
     },
     async getProvidersSnapshot(agentDir) {
       return getProvidersSnapshot(agentDir)

@@ -42,10 +42,11 @@ intellijPlatform {
     // Settings search still works without the prebuilt index.
     buildSearchableOptions = false
     pluginConfiguration {
-        // com.intellij.modules.jcef exists as a product module from 2025.3;
-        // in 2026.2+ it is a separate plugin that must be on PluginClassLoader parents.
+        // Compile/target: 2025.2 (252). com.intellij.modules.jcef is a real module/plugin
+        // alias only from 2025.3; on 2026.2+ it is a separate plugin that must be a
+        // PluginClassLoader parent (see optional depends in plugin.xml).
         ideaVersion {
-            sinceBuild = "253"
+            sinceBuild = "252"
         }
     }
 }

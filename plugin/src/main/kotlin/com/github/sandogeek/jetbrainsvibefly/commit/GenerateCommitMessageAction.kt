@@ -113,7 +113,11 @@ class GenerateCommitMessageAction : AnAction(), DumbAware {
 
                     val agent = VibeflyAgentService.getInstance(project)
                     val result = runBlocking {
-                        agent.generateCommitMessage(request)
+                        agent.generateCommitMessage(request) { progress ->
+                            if (!indicator.isCanceled) {
+                                indicator.text = progress
+                            }
+                        }
                     }
                     if (indicator.isCanceled) throw ProcessCanceledException()
 

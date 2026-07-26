@@ -179,6 +179,7 @@ export const agent2Host = defineRpcService("Agent2Host", {
   openLoginUrl: rpcMethod<[request: LoginOpenUrlRequest], void>(1),
   requestLoginInput: rpcMethod<[request: LoginInputRequest], LoginInputResponse>(2),
   reportLoginProgress: rpcMethod<[message: string], void>(3),
+  reportCommitMessageProgress: rpcMethod<[message: string], void>(4),
 });
 
 export type Agent2Host = RpcClient<typeof agent2Host>;
