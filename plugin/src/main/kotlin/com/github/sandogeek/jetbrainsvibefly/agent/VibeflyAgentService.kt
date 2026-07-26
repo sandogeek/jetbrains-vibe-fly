@@ -66,10 +66,26 @@ class VibeflyAgentService(@Suppress("unused") private val project: Project) : Di
      * bound to [expectedOrigin] (computed by Kotlin from the panel URL).
      */
     suspend fun openSession(expectedOrigin: String = AgentOrigin.currentPanel()): AgentConnection {
+        val startedAt = System.nanoTime()
+        fun elapsedMs(): Long = (System.nanoTime() - startedAt) / 1_000_000L
+
+        val ensureStartedAt = System.nanoTime()
         ensureStarted()
+        val ensureMs = (System.nanoTime() - ensureStartedAt) / 1_000_000L
+
         val control = host2AgentRef.get()
             ?: error("Agent control API is not available")
-        return control.openWebSocketSession(expectedOrigin)
+
+        val ticketStartedAt = System.nanoTime()
+        val connection = control.openWebSocketSession(expectedOrigin)
+        val ticketMs = (System.nanoTime() - ticketStartedAt) / 1_000_000L
+
+        log.info(
+            "openSession done origin=$expectedOrigin " +
+                "ensureMs=$ensureMs ticketMs=$ticketMs totalMs=${elapsedMs()} " +
+                "url=${connection.url}",
+        )
+        return connection
     }
 
     /**
@@ -170,17 +186,24 @@ class VibeflyAgentService(@Suppress("unused") private val project: Project) : Di
             val existing = processRef.get()
             if (existing != null && existing.isAlive && host2AgentRef.get() != null) {
                 state = State.READY
+                log.debug("ensureStarted reuse alive agent pid=${existing.pid()}")
                 return
             }
+            val startedAt = System.nanoTime()
             stopLocked()
             state = State.STARTING
             try {
                 startLocked()
                 state = State.READY
+                val totalMs = (System.nanoTime() - startedAt) / 1_000_000L
+                val pid = processRef.get()?.pid()
+                log.info("ensureStarted cold start ready pid=$pid totalMs=$totalMs")
                 onAgentBecameReady()
             } catch (e: Exception) {
                 state = State.FAILED
                 stopLocked()
+                val totalMs = (System.nanoTime() - startedAt) / 1_000_000L
+                log.warn("ensureStarted cold start failed totalMs=$totalMs", e)
                 throw e
             }
         }

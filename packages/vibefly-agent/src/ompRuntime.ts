@@ -46,8 +46,13 @@ export async function getOmpRuntime(options?: {
   agentDir?: string | null
   forceNew?: boolean
 }): Promise<OmpRuntime> {
+  const started = performance.now()
   const agentDir = applyAgentDirFromEnv(options?.agentDir)
   if (!options?.forceNew && cached && cached.agentDir === agentDir) {
+    log.info("omp runtime cache hit", {
+      agentDir,
+      elapsedMs: Math.round(performance.now() - started),
+    })
     return cached
   }
 
@@ -67,10 +72,17 @@ export async function getOmpRuntime(options?: {
 
   // Custom models + auth apiKey without inline key fail OMP validation.
   // Normalize before ModelRegistry loads so local/custom providers resolve.
-  repairModelsYmlAuthForOmp(agentDir)
+  const repairStarted = performance.now()
+  const repaired = repairModelsYmlAuthForOmp(agentDir)
+  const repairMs = Math.round(performance.now() - repairStarted)
 
+  const authStarted = performance.now()
   const auth = await openAuthStorage(agentDir)
+  const authMs = Math.round(performance.now() - authStarted)
+
+  const registryStarted = performance.now()
   const registry = new ModelRegistry(auth, registryModelsPath)
+  const registryMs = Math.round(performance.now() - registryStarted)
 
   const runtime: OmpRuntime = {
     agentDir,
@@ -90,7 +102,15 @@ export async function getOmpRuntime(options?: {
     cached = runtime
   }
 
-  log.info("omp runtime ready", { agentDir, models: modelsPath })
+  log.info("omp runtime ready", {
+    agentDir,
+    models: modelsPath,
+    repaired,
+    repairMs,
+    authMs,
+    registryMs,
+    totalMs: Math.round(performance.now() - started),
+  })
   return runtime
 }
 

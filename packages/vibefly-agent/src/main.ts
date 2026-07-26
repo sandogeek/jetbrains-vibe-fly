@@ -41,22 +41,39 @@ import {
 const progressOpts = rpcOptions({ timeoutMs: 5_000 })
 
 async function main(): Promise<void> {
+  const bootStarted = performance.now()
   console.log = (...args: unknown[]) => {
     console.error("[vibefly-agent:stdout-redirect]", ...args)
   }
 
+  const agentDirStarted = performance.now()
   const agentDir = applyAgentDirFromEnv()
-  log.info("agentDir", { agentDir })
+  log.info("agentDir", {
+    agentDir,
+    elapsedMs: Math.round(performance.now() - agentDirStarted),
+  })
+
   // Warm OMP auth + model registry (no secrets in env).
+  const ompWarmStarted = performance.now()
   try {
     await getOmpRuntime()
+    log.info("omp runtime warm done", {
+      elapsedMs: Math.round(performance.now() - ompWarmStarted),
+    })
   } catch (error) {
-    log.warn("omp runtime warm failed", { err: error })
+    log.warn("omp runtime warm failed", {
+      err: error,
+      elapsedMs: Math.round(performance.now() - ompWarmStarted),
+    })
   }
 
+  const wsStarted = performance.now()
   const ticketStore = createTicketStore()
   const wsServer = createAgentWsServer({ ticketStore })
-  log.info("ws listening", { url: wsServer.url })
+  log.info("ws listening", {
+    url: wsServer.url,
+    elapsedMs: Math.round(performance.now() - wsStarted),
+  })
 
   let shuttingDown = false
 
@@ -178,7 +195,9 @@ async function main(): Promise<void> {
     registerUi2AgentService(wsPeer, ui2AgentImpl)
   })
 
-  log.info("agent ready")
+  log.info("agent ready", {
+    totalMs: Math.round(performance.now() - bootStarted),
+  })
 
   function teardown(code: number): void {
     if (shuttingDown) return

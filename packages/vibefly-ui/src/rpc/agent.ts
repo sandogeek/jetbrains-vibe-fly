@@ -64,22 +64,42 @@ export function connectAgentRpc(options: {
 
   const connectOnce = async () => {
     if (stopped || options.isStopped()) return
+    const attemptNo = attempt + 1
+    const started = performance.now()
+    const stageMs = (from: number) => Math.round(performance.now() - from)
     options.onStatus("connecting")
-    log.info("agent connecting")
+    log.info("agent connecting", { attempt: attemptNo })
+
     let connection: AgentConnection | null | undefined
+    const ticketStarted = performance.now()
     try {
       connection = await options.ui2Host.getAgentConnection()
     } catch (e) {
-      log.warn("getAgentConnection failed", e)
+      log.warn("getAgentConnection failed", {
+        attempt: attemptNo,
+        ticketMs: stageMs(ticketStarted),
+        totalMs: stageMs(started),
+        err: e,
+      })
       connection = null
     }
+    const ticketMs = stageMs(ticketStarted)
     if (stopped || options.isStopped()) return
     if (connection == null) {
-      log.warn("agent connection unavailable")
+      log.warn("agent connection unavailable", {
+        attempt: attemptNo,
+        ticketMs,
+        totalMs: stageMs(started),
+      })
       options.onStatus("unavailable")
       schedule()
       return
     }
+    log.info("agent ticket received", {
+      attempt: attemptNo,
+      ticketMs,
+      url: connection.url,
+    })
 
     const agent2Ui: Agent2UiService = {
       onAgentEvent(event) {
@@ -88,17 +108,25 @@ export function connectAgentRpc(options: {
     }
 
     let peer: SimpleRpcPeer
+    const wsStarted = performance.now()
     try {
       peer = createWebSocketSimpleRpc({
         url: connection.url,
         ticket: connection.ticket,
       })
     } catch (e) {
-      log.warn("agent websocket create failed", e)
+      log.warn("agent websocket create failed", {
+        attempt: attemptNo,
+        ticketMs,
+        wsCreateMs: stageMs(wsStarted),
+        totalMs: stageMs(started),
+        err: e,
+      })
       options.onStatus("unavailable")
       schedule()
       return
     }
+    const wsCreateMs = stageMs(wsStarted)
 
     registerAgent2UiService(peer, agent2Ui)
     const ui2Agent = createUi2AgentProxy(peer)
@@ -115,8 +143,10 @@ export function connectAgentRpc(options: {
     }
 
     // Probe ready with ping; transport may still be handshaking.
+    const pingStarted = performance.now()
     try {
       const pong = await ui2Agent.ping("ui")
+      const pingMs = stageMs(pingStarted)
       if (stopped || options.isStopped()) {
         current.close()
         current = null
@@ -125,10 +155,23 @@ export function connectAgentRpc(options: {
       if (typeof pong === "string") {
         attempt = 0
         options.onStatus("ready")
-        log.info("agent ready")
+        log.info("agent ready", {
+          attempt: attemptNo,
+          ticketMs,
+          wsCreateMs,
+          pingMs,
+          totalMs: stageMs(started),
+        })
       }
     } catch (e) {
-      log.warn("agent ping failed", e)
+      log.warn("agent ping failed", {
+        attempt: attemptNo,
+        ticketMs,
+        wsCreateMs,
+        pingMs: stageMs(pingStarted),
+        totalMs: stageMs(started),
+        err: e,
+      })
       current?.close()
       current = null
       if (!stopped && !options.isStopped()) {

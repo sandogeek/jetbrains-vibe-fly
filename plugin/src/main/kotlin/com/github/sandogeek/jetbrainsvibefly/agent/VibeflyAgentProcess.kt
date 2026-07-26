@@ -61,14 +61,20 @@ object VibeflyAgentProcess {
     fun start(
         agentDir: String? = null,
     ): Handle {
+        val startedAt = System.nanoTime()
+        fun elapsedMs(): Long = (System.nanoTime() - startedAt) / 1_000_000L
+
+        val resolveStartedAt = System.nanoTime()
         val entry = VibeflyAgentPaths.resolveAgentEntry()
         val bun = VibeflyAgentPaths.resolveBunCommand()
         val workDir = VibeflyAgentPaths.resolveAgentWorkingDirectory(entry)
+        val resolveMs = (System.nanoTime() - resolveStartedAt) / 1_000_000L
+
         val command = mutableListOf(bun)
         command.addAll(resolveBunInspectArgs())
         command.add(entry.toString())
         log.info(
-            "Starting vibefly-agent: ${command.joinToString(" ")} (cwd=$workDir)",
+            "Starting vibefly-agent: ${command.joinToString(" ")} (cwd=$workDir, resolveMs=$resolveMs)",
         )
 
         val builder = ProcessBuilder(command)
@@ -82,6 +88,7 @@ object VibeflyAgentProcess {
             env["PI_CODING_AGENT_DIR"] = dir
         }
 
+        val spawnStartedAt = System.nanoTime()
         val process = try {
             builder.start()
         } catch (e: Exception) {
@@ -91,6 +98,9 @@ object VibeflyAgentProcess {
                 e,
             )
         }
+        val spawnMs = (System.nanoTime() - spawnStartedAt) / 1_000_000L
+
+        val rpcStartedAt = System.nanoTime()
         val transport = StdioRpcTransport(
             input = process.inputStream,
             output = process.outputStream,
@@ -99,6 +109,13 @@ object VibeflyAgentProcess {
         val session = SimpleRpc.open(transport, requestTimeout = CONTROL_REQUEST_TIMEOUT)
         session.registerImplementation(Agent2HostBridge)
         val control = session.proxy(Host2Agent::class.java)
+        val rpcMs = (System.nanoTime() - rpcStartedAt) / 1_000_000L
+
+        log.info(
+            "vibefly-agent process handle ready " +
+                "(pid=${process.pid()}, resolveMs=$resolveMs, spawnMs=$spawnMs, " +
+                "rpcSetupMs=$rpcMs, totalMs=${elapsedMs()})",
+        )
         return Handle(process, transport, session, control)
     }
 
