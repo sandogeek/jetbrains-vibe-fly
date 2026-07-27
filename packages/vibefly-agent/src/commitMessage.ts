@@ -864,7 +864,10 @@ export async function generateCommitMessage(
     commitModel: request.commitModel,
     defaultModel: request.defaultModel,
   })
-  if (signal?.aborted) throw new Error("Commit message generation cancelled")
+  if (signal?.aborted) {
+    log.info("generateCommitMessage cancelled before model call")
+    throw new Error("Commit message generation cancelled")
+  }
 
   const language = resolveCommitLanguage(request.language, request.style)
   const contextWindow =
@@ -923,6 +926,7 @@ export async function generateCommitMessage(
   try {
     for await (const event of stream) {
       if (signal?.aborted) {
+        log.info("generateCommitMessage cancelled during stream")
         throw new Error("Commit message generation cancelled")
       }
       sawStreamEvent = true

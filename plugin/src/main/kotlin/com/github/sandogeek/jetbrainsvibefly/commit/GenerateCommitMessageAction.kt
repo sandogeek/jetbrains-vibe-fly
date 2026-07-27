@@ -25,8 +25,15 @@ import com.intellij.openapi.vcs.changes.ChangeListManager
 import com.intellij.openapi.vcs.changes.CurrentContentRevision
 import com.intellij.vcs.commit.CommitMessageUi
 import com.intellij.vcs.commit.CommitWorkflowUi
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Commit message area action: generate Conventional Commits English message
@@ -112,14 +119,17 @@ class GenerateCommitMessageAction : AnAction(), DumbAware {
                     )
 
                     val agent = VibeflyAgentService.getInstance(project)
+                    // Progress cancel must cancel the coroutine Job so SimpleRpc sends
+                    // wire cancel and the agent aborts streamSimple via AbortSignal.
                     val result = runBlocking {
-                        agent.generateCommitMessage(request) { progress ->
-                            if (!indicator.isCanceled) {
-                                indicator.text = progress
+                        awaitWithProgressCancel(indicator) {
+                            agent.generateCommitMessage(request) { progress ->
+                                if (!indicator.isCanceled) {
+                                    indicator.text = progress
+                                }
                             }
                         }
                     }
-                    if (indicator.isCanceled) throw ProcessCanceledException()
 
                     val message = result.message.trim()
                     if (message.isEmpty()) {
@@ -168,7 +178,7 @@ class GenerateCommitMessageAction : AnAction(), DumbAware {
     }
 
     companion object {
-        private val log = logger<GenerateCommitMessageAction>()
+        private val log get() = commitMessageLog
     }
 }
 
@@ -206,6 +216,44 @@ internal fun resolveCommitMessageWriter(e: AnActionEvent): CommitMessageWriter? 
     }
     return null
 }
+
+/**
+ * Runs [block] until completion, or cancels it when [indicator] is cancelled.
+ * Cancellation propagates to SimpleRpc so the remote call is aborted.
+ */
+internal suspend fun <T> awaitWithProgressCancel(
+    indicator: ProgressIndicator,
+    block: suspend () -> T,
+): T = coroutineScope {
+    val work = async { block() }
+    val cancelWatch = launch {
+        while (isActive) {
+            if (indicator.isCanceled) {
+                commitMessageLog.info(
+                    "generate commit message: progress cancelled, cancelling remote RPC",
+                )
+                work.cancel(CancellationException("Progress cancelled"))
+                return@launch
+            }
+            delay(PROGRESS_CANCEL_POLL_MS.milliseconds)
+        }
+    }
+    try {
+        work.await()
+    } catch (e: CancellationException) {
+        if (indicator.isCanceled) {
+            commitMessageLog.info("generate commit message: remote cancel completed")
+            throw ProcessCanceledException(e)
+        }
+        throw e
+    } finally {
+        cancelWatch.cancel()
+    }
+}
+
+private const val PROGRESS_CANCEL_POLL_MS = 50L
+
+private val commitMessageLog = logger<GenerateCommitMessageAction>()
 
 private fun notify(
     project: Project,
