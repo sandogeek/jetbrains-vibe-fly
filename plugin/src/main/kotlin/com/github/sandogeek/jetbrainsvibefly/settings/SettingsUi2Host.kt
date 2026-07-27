@@ -1,6 +1,7 @@
 package com.github.sandogeek.jetbrainsvibefly.settings
 
 import com.github.sandogeek.jetbrainsvibefly.agent.VibeflyAgentService
+import com.github.sandogeek.jetbrainsvibefly.util.Edt
 import com.github.sandogeek.vibefly.jcef.rpc.Host2Ui
 import com.github.sandogeek.vibefly.jcef.rpc.IdeSettingsDto
 import com.github.sandogeek.vibefly.jcef.rpc.LoginInputRequest
@@ -21,10 +22,8 @@ import com.github.sandogeek.vibefly.jcef.rpc.Ui2HostImpl
 import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.logger
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.runBlocking
 import java.util.concurrent.atomic.AtomicReference
-import javax.swing.SwingUtilities
 
 /**
  * Settings-panel [com.github.sandogeek.vibefly.jcef.rpc.Ui2Host].
@@ -278,17 +277,4 @@ private class WebProviderLoginUi(
     }
 }
 
-private suspend fun <T> runOnEdt(block: () -> T): T {
-    if (SwingUtilities.isEventDispatchThread()) {
-        return block()
-    }
-    val deferred = CompletableDeferred<T>()
-    SwingUtilities.invokeLater {
-        try {
-            deferred.complete(block())
-        } catch (e: Throwable) {
-            deferred.completeExceptionally(e)
-        }
-    }
-    return deferred.await()
-}
+private suspend fun <T> runOnEdt(block: () -> T): T = Edt.run(block)

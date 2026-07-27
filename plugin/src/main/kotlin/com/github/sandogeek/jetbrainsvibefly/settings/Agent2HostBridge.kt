@@ -4,11 +4,10 @@ import com.github.sandogeek.vibefly.jcef.rpc.Agent2Host
 import com.github.sandogeek.vibefly.jcef.rpc.LoginInputRequest
 import com.github.sandogeek.vibefly.jcef.rpc.LoginInputResponse
 import com.github.sandogeek.vibefly.jcef.rpc.LoginOpenUrlRequest
+import com.github.sandogeek.jetbrainsvibefly.util.Edt
 import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.diagnostic.logger
-import kotlinx.coroutines.CompletableDeferred
 import java.util.concurrent.atomic.AtomicReference
-import javax.swing.SwingUtilities
 
 /**
  * Reverse RPC (Bun → Kotlin) during provider login and commit generation.
@@ -104,17 +103,4 @@ fun interface CommitMessageProgressListener {
     fun onProgress(message: String)
 }
 
-private suspend fun <T> runOnEdt(block: () -> T): T {
-    if (SwingUtilities.isEventDispatchThread()) {
-        return block()
-    }
-    val deferred = CompletableDeferred<T>()
-    SwingUtilities.invokeLater {
-        try {
-            deferred.complete(block())
-        } catch (e: Throwable) {
-            deferred.completeExceptionally(e)
-        }
-    }
-    return deferred.await()
-}
+private suspend fun <T> runOnEdt(block: () -> T): T = Edt.run(block)
