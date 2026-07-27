@@ -13,8 +13,10 @@ import {
   type Api,
   type Context,
   type Model,
+  type SimpleStreamOptions,
 } from "@oh-my-pi/pi-ai"
 import { buildModel } from "@oh-my-pi/pi-catalog/build"
+import { minimumSupportedEffort } from "@oh-my-pi/pi-catalog/model-thinking"
 import type { ModelSpec } from "@oh-my-pi/pi-catalog/types"
 import type {
   CommitFileChange,
@@ -845,6 +847,31 @@ export type GenerateCommitMessageOptions = {
   signal?: AbortSignal
 }
 
+/**
+ * Prefer no reasoning for cheap commit-message calls.
+ * Some OpenRouter endpoints reject `reasoning: { enabled: false }` ("Reasoning
+ * is mandatory…"), so fall back to the lowest supported effort instead.
+ */
+export function commitStreamOptions(
+  model: Model,
+  options: Pick<GenerateCommitMessageOptions, "signal"> & { apiKey: string },
+): SimpleStreamOptions {
+  const base: SimpleStreamOptions = {
+    apiKey: options.apiKey,
+    signal: options.signal,
+  }
+  if (!model.reasoning) {
+    return { ...base, disableReasoning: true }
+  }
+  const floor = minimumSupportedEffort(model)
+  if (floor !== undefined) {
+    return { ...base, reasoning: floor }
+  }
+  // Reasoning model without declared efforts: omit disable so providers keep
+  // their mandatory-on default instead of sending enabled:false.
+  return base
+}
+
 export async function generateCommitMessage(
   request: GenerateCommitMessageRequest,
   options: GenerateCommitMessageOptions = {},
@@ -903,11 +930,11 @@ export async function generateCommitMessage(
   logCommitContext(context)
 
   report("Calling model…")
-  const stream = streamSimple(model, context, {
-    apiKey,
-    disableReasoning: true,
-    signal,
-  })
+  const stream = streamSimple(
+    model,
+    context,
+    commitStreamOptions(model, { apiKey, signal }),
+  )
 
   let lastProgressAt = 0
   let sawStreamEvent = false

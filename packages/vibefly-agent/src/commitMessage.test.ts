@@ -3,6 +3,7 @@ import {
   buildCustomCommitModel,
   buildSystemPrompt,
   buildUserPrompt,
+  commitStreamOptions,
   diffCharBudget,
   DIFF_CONTEXT_RATIO,
   fairQuotas,
@@ -134,6 +135,51 @@ describe("buildCustomCommitModel", () => {
     const model = buildCustomCommitModel("openai", "gpt-test")
     expect(model.api).toBe("openai-responses")
     expect(model.baseUrl).toBe("https://api.openai.com/v1")
+  })
+})
+
+describe("commitStreamOptions", () => {
+  test("disables reasoning for non-reasoning models", () => {
+    const model = buildCustomCommitModel("openai", "gpt-test")
+    expect(model.reasoning).toBe(false)
+    expect(commitStreamOptions(model, { apiKey: "k" })).toEqual({
+      apiKey: "k",
+      signal: undefined,
+      disableReasoning: true,
+    })
+  })
+
+  test("floors reasoning models to lowest supported effort", () => {
+    const model = {
+      ...buildCustomCommitModel("openrouter", "openai/gpt-oss-20b:free", {
+        api: "openrouter" as never,
+        baseUrl: "https://openrouter.ai/api/v1",
+      }),
+      reasoning: true,
+      thinking: {
+        mode: "effort" as const,
+        efforts: ["low", "medium", "high"] as const,
+      },
+    }
+    expect(commitStreamOptions(model, { apiKey: "k" })).toEqual({
+      apiKey: "k",
+      signal: undefined,
+      reasoning: "low",
+    })
+  })
+
+  test("omits disable for reasoning models without efforts", () => {
+    const model = {
+      ...buildCustomCommitModel("openrouter", "openai/gpt-oss-20b:free", {
+        api: "openrouter" as never,
+        baseUrl: "https://openrouter.ai/api/v1",
+      }),
+      reasoning: true,
+    }
+    expect(commitStreamOptions(model, { apiKey: "k" })).toEqual({
+      apiKey: "k",
+      signal: undefined,
+    })
   })
 })
 
