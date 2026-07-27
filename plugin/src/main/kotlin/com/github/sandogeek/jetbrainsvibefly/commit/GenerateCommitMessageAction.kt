@@ -4,12 +4,12 @@ import com.github.sandogeek.jetbrainsvibefly.VibeflyBundle
 import com.github.sandogeek.jetbrainsvibefly.agent.VibeflyAgentService
 import com.github.sandogeek.jetbrainsvibefly.settings.VibeflyCommitMessageSettingsState
 import com.github.sandogeek.jetbrainsvibefly.settings.VibeflyProviderSettingsState
+import com.github.sandogeek.jetbrainsvibefly.util.Edt
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
-import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.progress.ProgressIndicator
@@ -85,7 +85,7 @@ class GenerateCommitMessageAction : AnAction(), DumbAware {
 
                     val collected = CommitDiffCollector.collect(project, changes)
                     if (collected.files.isEmpty()) {
-                        ApplicationManager.getApplication().invokeLater {
+                        Edt.later {
                             notify(
                                 project,
                                 VibeflyBundle.message("commit.generate.error.title"),
@@ -123,7 +123,7 @@ class GenerateCommitMessageAction : AnAction(), DumbAware {
 
                     val message = result.message.trim()
                     if (message.isEmpty()) {
-                        ApplicationManager.getApplication().invokeLater {
+                        Edt.later {
                             notify(
                                 project,
                                 VibeflyBundle.message("commit.generate.error.title"),
@@ -134,7 +134,7 @@ class GenerateCommitMessageAction : AnAction(), DumbAware {
                         return
                     }
 
-                    ApplicationManager.getApplication().invokeLater {
+                    Edt.later {
                         commitMessage.setMessage(message)
                     }
                 } catch (pce: ProcessCanceledException) {
@@ -143,7 +143,7 @@ class GenerateCommitMessageAction : AnAction(), DumbAware {
                     log.warn("generate commit message failed", ex)
                     val detail = ex.message?.takeIf { it.isNotBlank() }
                         ?: VibeflyBundle.message("commit.generate.error.unknown")
-                    ApplicationManager.getApplication().invokeLater {
+                    Edt.later {
                         notify(
                             project,
                             VibeflyBundle.message("commit.generate.error.title"),
