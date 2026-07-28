@@ -333,7 +333,7 @@ export function ProvidersPage(props: ProvidersPageProps) {
   }
 
   return (
-    <div class="flex h-full flex-col gap-4 overflow-auto p-4">
+    <div class="flex h-full min-h-0 flex-col gap-4 overflow-y-auto p-4">
       <header class="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 class="m-0 text-lg font-semibold text-fg">{t("settings.providers")}</h2>

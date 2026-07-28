@@ -157,7 +157,7 @@ export function SettingsShell(props: { children?: JSX.Element }) {
     !search().trim() || label.toLowerCase().includes(search().trim().toLowerCase())
 
   return (
-    <SidebarProvider>
+    <SidebarProvider class="h-full min-h-0 overflow-hidden">
       <Sidebar>
         <SidebarHeader>
           <div class="flex justify-end px-1">
@@ -202,7 +202,7 @@ export function SettingsShell(props: { children?: JSX.Element }) {
           </Show>
         </SidebarFooter>
       </Sidebar>
-      <SidebarInset class="flex h-full min-h-0 flex-col">
+      <SidebarInset class="flex h-full min-h-0 flex-col overflow-hidden">
         <Show when={state().loadError}>
           {(e) => (
             <div class="border-b border-border bg-surface px-4 py-2 text-xs text-muted">{e()}</div>

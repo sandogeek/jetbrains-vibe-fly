@@ -10,6 +10,7 @@ import com.intellij.ui.components.JBLabel
 import com.intellij.ui.jcef.JBCefApp
 import com.intellij.util.ui.JBUI
 import java.awt.BorderLayout
+import java.awt.Dimension
 import javax.swing.JComponent
 import javax.swing.JPanel
 
@@ -48,7 +49,11 @@ class VibeflySettingsConfigurable : SearchableConfigurable, Configurable.NoScrol
         host = SettingsUi2Host(
             host2UiProvider = { browserPanel?.rpc?.host2Ui },
         )
-        val browser = VibeflyBrowserPanel(host, route = "settings")
+        val browser = VibeflyBrowserPanel(host, route = "settings").apply {
+            // IDE Settings dialog is short by default; give the JCEF host a usable minimum.
+            preferredSize = JBUI.size(760, 560)
+            minimumSize = Dimension(JBUI.scale(480), JBUI.scale(360))
+        }
         browserPanel = browser
         Disposer.register(disposable, browser)
         panel = browser
