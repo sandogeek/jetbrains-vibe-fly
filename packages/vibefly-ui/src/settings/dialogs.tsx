@@ -1,5 +1,20 @@
 import type { JSX } from "solid-js"
 import { createSignal, Show } from "solid-js"
+import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import {
+  TextField,
+  TextFieldInput,
+  TextFieldLabel,
+  TextFieldTextArea,
+} from "@/components/ui/text-field"
 import type { ProviderSnapshot } from "../generated/rpc"
 import { useT, type Translator } from "../i18n"
 import {
@@ -90,45 +105,25 @@ export function ConnectDialog(props: ConnectDialogProps) {
       onCancel={() => props.onClose({ kind: "cancel" })}
     >
       <Show when={props.snapshot.supportsLogin}>
-        <p class="m-0 mb-3 text-xs text-muted">{t("dialogs.loginHint")}</p>
+        <DialogDescription class="mb-3 text-xs">{t("dialogs.loginHint")}</DialogDescription>
       </Show>
-      <label class="mb-1 block text-xs text-muted">{t("dialogs.apiKey")}</label>
-      <input
-        type="password"
-        class="mb-2 w-full rounded border border-border bg-surface px-2 py-1.5 text-sm text-fg"
-        value={apiKey()}
-        onInput={(e) => setApiKey(e.currentTarget.value)}
-        placeholder={t("dialogs.keepExistingKey")}
-      />
-      <p class="m-0 mb-3 text-[11px] text-muted">
-        {credentialStatusText(props.snapshot, labels())}
-      </p>
-      <Show when={error()}>{(e) => <p class="m-0 mb-2 text-xs text-red-400">{e()}</p>}</Show>
-      <div class="flex flex-wrap justify-end gap-2">
+      <TextField class="mb-2" value={apiKey()} onChange={setApiKey}>
+        <TextFieldLabel>{t("dialogs.apiKey")}</TextFieldLabel>
+        <TextFieldInput type="password" placeholder={t("dialogs.keepExistingKey")} />
+      </TextField>
+      <p class="m-0 mb-3 text-[11px] text-muted">{credentialStatusText(props.snapshot, labels())}</p>
+      <Show when={error()}>{(e) => <p class="m-0 mb-2 text-xs text-destructive">{e()}</p>}</Show>
+      <DialogFooter>
         <Show when={props.snapshot.supportsLogin && !props.editMode}>
-          <button
-            type="button"
-            class="rounded border border-border px-3 py-1.5 text-sm text-fg hover:border-accent"
-            onClick={() => props.onClose({ kind: "login" })}
-          >
+          <Button variant="outline" onClick={() => props.onClose({ kind: "login" })}>
             {t("common.login")}
-          </button>
+          </Button>
         </Show>
-        <button
-          type="button"
-          class="rounded border border-border px-3 py-1.5 text-sm text-muted"
-          onClick={() => props.onClose({ kind: "cancel" })}
-        >
+        <Button variant="outline" onClick={() => props.onClose({ kind: "cancel" })}>
           {t("common.cancel")}
-        </button>
-        <button
-          type="button"
-          class="rounded bg-accent px-3 py-1.5 text-sm text-bg"
-          onClick={submitKey}
-        >
-          {t("common.ok")}
-        </button>
-      </div>
+        </Button>
+        <Button onClick={submitKey}>{t("common.ok")}</Button>
+      </DialogFooter>
     </ModalShell>
   )
 }
@@ -183,25 +178,18 @@ export function CustomProviderDialog(props: CustomDialogProps) {
       }
       onCancel={() => props.onClose({ kind: "cancel" })}
     >
-      <Field label={t("dialogs.providerId")}>
-        <input
-          class="w-full rounded border border-border bg-surface px-2 py-1.5 font-mono text-sm text-fg disabled:opacity-60"
-          value={id()}
-          disabled={isEdit()}
-          onInput={(e) => setId(e.currentTarget.value)}
-        />
-      </Field>
-      <Field label={t("dialogs.baseUrl")}>
-        <input
-          class="w-full rounded border border-border bg-surface px-2 py-1.5 text-sm text-fg"
-          value={baseUrl()}
-          onInput={(e) => setBaseUrl(e.currentTarget.value)}
-          placeholder="https://api.example.com/v1"
-        />
-      </Field>
-      <Field label={t("dialogs.api")}>
+      <TextField value={id()} onChange={setId} disabled={isEdit()}>
+        <TextFieldLabel>{t("dialogs.providerId")}</TextFieldLabel>
+        <TextFieldInput class="font-mono" />
+      </TextField>
+      <TextField value={baseUrl()} onChange={setBaseUrl}>
+        <TextFieldLabel>{t("dialogs.baseUrl")}</TextFieldLabel>
+        <TextFieldInput placeholder="https://api.example.com/v1" />
+      </TextField>
+      <div class="mb-3">
+        <label class="mb-1 block text-xs text-muted">{t("dialogs.api")}</label>
         <select
-          class="w-full rounded border border-border bg-surface px-2 py-1.5 text-sm text-fg"
+          class="flex h-9 w-full rounded-md border border-input bg-surface px-2 py-1.5 text-sm text-fg"
           value={api()}
           onChange={(e) => setApi(e.currentTarget.value)}
         >
@@ -210,40 +198,22 @@ export function CustomProviderDialog(props: CustomDialogProps) {
           <option value="anthropic-messages">anthropic-messages</option>
           <option value="google-generative-ai">google-generative-ai</option>
         </select>
-      </Field>
-      <Field label={t("dialogs.modelsLine")}>
-        <textarea
-          class="h-28 w-full rounded border border-border bg-surface px-2 py-1.5 font-mono text-xs text-fg"
-          value={modelsText()}
-          onInput={(e) => setModelsText(e.currentTarget.value)}
-        />
-      </Field>
-      <Field label={t("dialogs.apiKey")}>
-        <input
-          type="password"
-          class="w-full rounded border border-border bg-surface px-2 py-1.5 text-sm text-fg"
-          value={apiKey()}
-          onInput={(e) => setApiKey(e.currentTarget.value)}
-          placeholder={t("dialogs.keepExistingKey")}
-        />
-      </Field>
-      <Show when={error()}>{(e) => <p class="m-0 mb-2 text-xs text-red-400">{e()}</p>}</Show>
-      <div class="flex justify-end gap-2">
-        <button
-          type="button"
-          class="rounded border border-border px-3 py-1.5 text-sm text-muted"
-          onClick={() => props.onClose({ kind: "cancel" })}
-        >
-          {t("common.cancel")}
-        </button>
-        <button
-          type="button"
-          class="rounded bg-accent px-3 py-1.5 text-sm text-bg"
-          onClick={submit}
-        >
-          {t("common.save")}
-        </button>
       </div>
+      <TextField value={modelsText()} onChange={setModelsText}>
+        <TextFieldLabel>{t("dialogs.modelsLine")}</TextFieldLabel>
+        <TextFieldTextArea class="h-28" />
+      </TextField>
+      <TextField value={apiKey()} onChange={setApiKey}>
+        <TextFieldLabel>{t("dialogs.apiKey")}</TextFieldLabel>
+        <TextFieldInput type="password" placeholder={t("dialogs.keepExistingKey")} />
+      </TextField>
+      <Show when={error()}>{(e) => <p class="m-0 mb-2 text-xs text-destructive">{e()}</p>}</Show>
+      <DialogFooter>
+        <Button variant="outline" onClick={() => props.onClose({ kind: "cancel" })}>
+          {t("common.cancel")}
+        </Button>
+        <Button onClick={submit}>{t("common.save")}</Button>
+      </DialogFooter>
     </ModalShell>
   )
 }
@@ -267,52 +237,29 @@ export function LoginOverlay(props: LoginOverlayProps) {
       <p class="m-0 mb-2 text-sm text-fg">{props.state.progress || t("common.working")}</p>
       <Show when={props.state.url || props.state.launchUrl}>
         <div class="mb-3 flex flex-wrap gap-2">
-          <button
-            type="button"
-            class="rounded bg-accent px-3 py-1.5 text-sm text-bg"
-            onClick={props.onOpenBrowser}
-          >
-            {t("dialogs.openBrowser")}
-          </button>
+          <Button onClick={props.onOpenBrowser}>{t("dialogs.openBrowser")}</Button>
           <p class="m-0 self-center text-xs text-muted">{t("dialogs.completeSignIn")}</p>
         </div>
       </Show>
       <Show when={props.state.inputPrompt != null}>
         <div class="mb-3">
           <p class="m-0 mb-1 text-sm text-fg">{props.state.inputPrompt}</p>
-          <input
-            class="mb-2 w-full rounded border border-border bg-surface px-2 py-1.5 text-sm text-fg"
-            placeholder={props.state.inputPlaceholder ?? ""}
-            value={input()}
-            onInput={(e) => setInput(e.currentTarget.value)}
-          />
-          <div class="flex justify-end gap-2">
-            <button
-              type="button"
-              class="rounded border border-border px-3 py-1.5 text-sm text-muted"
-              onClick={props.onCancelInput}
-            >
+          <TextField class="mb-2" value={input()} onChange={setInput}>
+            <TextFieldInput placeholder={props.state.inputPlaceholder ?? ""} />
+          </TextField>
+          <DialogFooter>
+            <Button variant="outline" onClick={props.onCancelInput}>
               {t("common.cancel")}
-            </button>
-            <button
-              type="button"
-              class="rounded bg-accent px-3 py-1.5 text-sm text-bg"
-              onClick={() => props.onSubmitInput(input())}
-            >
-              {t("common.submit")}
-            </button>
-          </div>
+            </Button>
+            <Button onClick={() => props.onSubmitInput(input())}>{t("common.submit")}</Button>
+          </DialogFooter>
         </div>
       </Show>
-      <div class="flex justify-end">
-        <button
-          type="button"
-          class="rounded border border-border px-3 py-1.5 text-sm text-muted"
-          onClick={props.onCancel}
-        >
+      <DialogFooter>
+        <Button variant="outline" onClick={props.onCancel}>
           {t("dialogs.cancelLogin")}
-        </button>
-      </div>
+        </Button>
+      </DialogFooter>
     </ModalShell>
   )
 }
@@ -323,22 +270,19 @@ function ModalShell(props: {
   children: JSX.Element
 }) {
   return (
-    <div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
-      <div class="absolute inset-0" onClick={props.onCancel} />
-      <div class="relative z-10 w-full max-w-md rounded-lg border border-border bg-bg p-4 shadow-xl">
-        <h3 class="m-0 mb-3 text-base font-semibold text-fg">{props.title}</h3>
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) props.onCancel()
+      }}
+    >
+      <DialogContent showCloseButton={false}>
+        <DialogHeader>
+          <DialogTitle>{props.title}</DialogTitle>
+        </DialogHeader>
         {props.children}
-      </div>
-    </div>
-  )
-}
-
-function Field(props: { label: string; children: JSX.Element }) {
-  return (
-    <div class="mb-3">
-      <label class="mb-1 block text-xs text-muted">{props.label}</label>
-      {props.children}
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 

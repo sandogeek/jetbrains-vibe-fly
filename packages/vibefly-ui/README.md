@@ -1,6 +1,6 @@
 # @vibefly/ui
 
-Vibe Fly WebView 前端（Vite + SolidJS + Ark UI + Tailwind CSS v4）。
+Vibe Fly WebView 前端（Vite + SolidJS + SolidUI + Tailwind CSS v4）。
 
 构建产物由 `vibefly-jcef` 的自定义 Scheme（`http://vibefly/`）从 classpath 提供给 JCEF，保留 Vite 默认多 chunk / 代码分割，无需 singlefile 内联。
 
@@ -9,7 +9,7 @@ Vibe Fly WebView 前端（Vite + SolidJS + Ark UI + Tailwind CSS v4）。
 - Vite
 - SolidJS
 - TypeScript
-- [Ark UI](https://ark-ui.com/)（`@ark-ui/solid`，无样式 headless 组件）
+- [SolidUI](https://www.solid-ui.com/)（基于 [Kobalte](https://kobalte.dev/) 的 shadcn 风格组件，源码位于 `src/components/ui/`）
 - [Tailwind CSS v4](https://tailwindcss.com/)（`@tailwindcss/vite`）
 
 ## 目录
@@ -22,6 +22,8 @@ packages/vibefly-ui/
     index.tsx
     App.tsx
     styles.css
+    lib/utils.ts           # cn() helper (clsx + tailwind-merge)
+    components/ui/         # SolidUI 组件（Button / Dialog / TextField / …）
     rpc/client.ts          # createCefSimpleRpc + Ui2Host proxy
     generated/rpc.ts       # from Ui2Host/Host2Ui (./gradlew :vibefly-jcef:generateVibeflyUiRpc)
 ```
