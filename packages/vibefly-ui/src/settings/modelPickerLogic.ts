@@ -4,7 +4,21 @@ import { catalogModels, providerRank } from "./catalog"
 import { classifyProviders } from "./providerLogic"
 import { displayName } from "./providerLabels"
 
-export type ModelPickerTier = "follow_default" | "pinned" | "recent" | "normal"
+export type ModelPickerTier = "follow_default" | "clear" | "pinned" | "recent" | "normal"
+
+export type ModelBadgeKind =
+  | "context"
+  | "cost"
+  | "reasoning"
+  | "vision"
+  | "tools_unsupported"
+
+export type ModelBadge = {
+  kind: ModelBadgeKind
+  label: string
+  searchText: string
+  warning: boolean
+}
 
 export type ModelPickerEntry = {
   spec: string
@@ -14,7 +28,7 @@ export type ModelPickerEntry = {
   modelLabel: string
   providerRank: number
   modelPriority: number
-  badges: string[]
+  badges: ModelBadge[]
   haystack: string
   providerIdLower: string
   providerLabelLower: string
@@ -40,7 +54,6 @@ export type QueryToken = {
   modelPart: string | null
 }
 
-export const MAX_RENDERED_ROWS = 500
 export const MAX_RECENT = 8
 
 const WHITESPACE = /\s+/
@@ -94,15 +107,50 @@ export function buildBadges(
   reasoning: boolean,
   vision: boolean,
   toolsUnsupported: boolean,
-): string[] {
-  const badges: string[] = []
+): ModelBadge[] {
+  const badges: ModelBadge[] = []
   const ctx = formatContextBadge(contextWindow)
-  if (ctx) badges.push(ctx)
+  if (ctx) {
+    badges.push({
+      kind: "context",
+      label: ctx,
+      searchText: `context window context length 上下文 ${ctx.toLowerCase()}`,
+      warning: false,
+    })
+  }
   const cost = formatCostBadge(inputCost, outputCost)
-  if (cost && badges.length < 3) badges.push(cost)
-  if (reasoning && badges.length < 3) badges.push("reasoning")
-  if (vision && badges.length < 3) badges.push("vision")
-  if (toolsUnsupported && badges.length < 3) badges.push("no tools")
+  if (cost) {
+    badges.push({
+      kind: "cost",
+      label: cost,
+      searchText: `${cost === "free" ? "free 免费 " : ""}cost price pricing 价格 ${cost.toLowerCase()}`,
+      warning: false,
+    })
+  }
+  if (reasoning) {
+    badges.push({
+      kind: "reasoning",
+      label: "reasoning",
+      searchText: "reasoning thinking 推理 思考",
+      warning: false,
+    })
+  }
+  if (vision) {
+    badges.push({
+      kind: "vision",
+      label: "vision",
+      searchText: "vision image images visual multimodal 视觉 图片 图像 多模态",
+      warning: false,
+    })
+  }
+  if (toolsUnsupported) {
+    badges.push({
+      kind: "tools_unsupported",
+      label: "no tools",
+      searchText: "no tools tools unsupported without tools 不支持工具 无工具",
+      warning: true,
+    })
+  }
   return badges
 }
 
@@ -134,7 +182,7 @@ function entryFromBundled(
     providerRank: rank,
     modelPriority: m.priority ?? Number.MAX_SAFE_INTEGER,
     badges,
-    haystack: `${providerIdLower} ${providerLabelLower} ${modelIdLower} ${modelLabelLower}`,
+    haystack: `${providerIdLower} ${providerLabelLower} ${modelIdLower} ${modelLabelLower} ${badges.map((badge) => badge.searchText).join(" ")}`,
     providerIdLower,
     providerLabelLower,
     modelIdLower,
@@ -249,7 +297,14 @@ function scoreToken(entry: ModelPickerEntry, token: QueryToken): number | null {
       )
     }
   }
-  return matchField(entry.haystack, token.raw)
+  const scores = [
+    matchField(entry.modelIdLower, token.raw),
+    matchField(entry.modelLabelLower, token.raw),
+    matchField(entry.providerIdLower, token.raw),
+    matchField(entry.providerLabelLower, token.raw),
+    matchField(entry.haystack, token.raw),
+  ].filter((score): score is number => score != null)
+  return scores.length > 0 ? Math.max(...scores) : null
 }
 
 export function scoreEntry(entry: ModelPickerEntry, tokens: QueryToken[]): number | null {
@@ -265,7 +320,13 @@ export function scoreEntry(entry: ModelPickerEntry, tokens: QueryToken[]): numbe
 
 function matchesFollowDefault(tokens: QueryToken[]): boolean {
   if (tokens.length === 0) return true
-  const labels = ["follow", "default", "follow default model"]
+  const labels = ["follow", "default", "model", "follow default model", "跟随", "默认", "默认模型", "跟随默认模型"]
+  return tokens.every((t) => labels.some((label) => label.includes(t.raw)))
+}
+
+function matchesNoDefault(tokens: QueryToken[]): boolean {
+  if (tokens.length === 0) return true
+  const labels = ["none", "no default", "no default model", "无默认", "无默认模型", "清除"]
   return tokens.every((t) => labels.some((label) => label.includes(t.raw)))
 }
 
@@ -287,6 +348,24 @@ function followDefaultEntry(): ModelPickerEntry {
   }
 }
 
+function noDefaultEntry(): ModelPickerEntry {
+  return {
+    spec: "",
+    providerId: "",
+    providerLabel: "",
+    modelId: "",
+    modelLabel: "No default model",
+    providerRank: Number.MIN_SAFE_INTEGER,
+    modelPriority: Number.MIN_SAFE_INTEGER,
+    badges: [],
+    haystack: "no default none",
+    providerIdLower: "",
+    providerLabelLower: "",
+    modelIdLower: "",
+    modelLabelLower: "no default model",
+  }
+}
+
 export function rank(
   entries: ModelPickerEntry[],
   query: string,
@@ -294,6 +373,7 @@ export function rank(
   recentSpecs: string[],
   includeFollowDefault: boolean,
   providerId: string | null = null,
+  includeClear = false,
 ): ModelPickerRow[] {
   const scopedProvider = providerId?.trim() || null
   const scoped = scopedProvider ? entries.filter((e) => e.providerId === scopedProvider) : entries
@@ -337,13 +417,37 @@ export function rank(
 
   const rows: ModelPickerRow[] = []
 
-  if (includeFollowDefault && matchesFollowDefault(tokens)) {
+  if (!scopedProvider && includeFollowDefault && matchesFollowDefault(tokens)) {
     rows.push({
       entry: followDefaultEntry(),
       tier: "follow_default",
       groupLabel: "Default",
       isFirstInGroup: true,
     })
+  }
+  if (!scopedProvider && includeClear && matchesNoDefault(tokens)) {
+    rows.push({
+      entry: noDefaultEntry(),
+      tier: "clear",
+      groupLabel: "Default",
+      isFirstInGroup: true,
+    })
+  }
+
+  if (hasQuery) {
+    const matched = scoped.filter((entry) => scored?.has(entry.spec))
+    matched.sort((a, b) => {
+      const scoreDelta = (scored?.get(b.spec) ?? 0) - (scored?.get(a.spec) ?? 0)
+      if (scoreDelta) return scoreDelta
+      const pinDelta = Number(pinnedSet.has(b.spec)) - Number(pinnedSet.has(a.spec))
+      if (pinDelta) return pinDelta
+      const recentDelta = Number(recentSet.has(b.spec)) - Number(recentSet.has(a.spec))
+      return recentDelta || normalCompare(a, b)
+    })
+    for (const entry of matched) {
+      rows.push({ entry, tier: "normal", groupLabel: "", isFirstInGroup: false })
+    }
+    return rows
   }
 
   const appendTier = (
@@ -360,41 +464,21 @@ export function rank(
   }
 
   appendTier(
-    scored ? pinnedInEntries.filter((e) => scored.has(e.spec)) : pinnedInEntries,
+    pinnedInEntries,
     "pinned",
     "Pinned",
   )
   appendTier(
-    scored ? recentInEntries.filter((e) => scored.has(e.spec)) : recentInEntries,
+    recentInEntries,
     "recent",
     "Recent",
   )
 
   const normal: ModelPickerEntry[] = []
-  if (!scored) {
-    for (const e of scoped) {
-      if (!pinnedSet.has(e.spec) && !recentSet.has(e.spec)) normal.push(e)
-    }
-    normal.sort(normalCompare)
-  } else {
-    for (const e of scoped) {
-      if (pinnedSet.has(e.spec) || recentSet.has(e.spec)) continue
-      if (!scored.has(e.spec)) continue
-      normal.push(e)
-    }
-    normal.sort((a, b) => {
-      const sa = scored.get(a.spec) ?? 0
-      const sb = scored.get(b.spec) ?? 0
-      return (
-        sb - sa ||
-        a.providerRank - b.providerRank ||
-        a.providerLabelLower.localeCompare(b.providerLabelLower) ||
-        a.modelPriority - b.modelPriority ||
-        a.modelLabelLower.localeCompare(b.modelLabelLower) ||
-        a.modelIdLower.localeCompare(b.modelIdLower)
-      )
-    })
+  for (const e of scoped) {
+    if (!pinnedSet.has(e.spec) && !recentSet.has(e.spec)) normal.push(e)
   }
+  normal.sort(normalCompare)
 
   const hideProviderGroups = scopedProvider != null
   let lastGroup: string | null = null

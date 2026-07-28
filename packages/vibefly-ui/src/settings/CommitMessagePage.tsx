@@ -1,3 +1,4 @@
+import { useNavigate } from "@solidjs/router"
 import type { IdeSettingsDto, ProviderSnapshot, ProvidersSnapshot } from "../generated/rpc"
 import { useT } from "../i18n"
 import type { BundledCatalog } from "./catalog"
@@ -14,9 +15,15 @@ export type CommitMessagePageProps = {
 
 export function CommitMessagePage(props: CommitMessagePageProps) {
   const t = useT()
+  const navigate = useNavigate()
   let saveTimer: ReturnType<typeof setTimeout> | undefined
 
   const providers = (): ProviderSnapshot[] => props.snapshot?.providers ?? []
+  const defaultModelSpec = () => {
+    const provider = props.settings.providers?.defaultProvider?.trim()
+    const model = props.settings.providers?.defaultModel?.trim()
+    return provider && model ? `${provider}/${model}` : ""
+  }
 
   const debounceSave = (next: IdeSettingsDto) => {
     props.onSettings(next)
@@ -82,15 +89,14 @@ export function CommitMessagePage(props: CommitMessagePageProps) {
           pinnedSpecs={props.settings.modelPreferences?.pinnedModelSpecs ?? []}
           recentSpecs={props.settings.modelPreferences?.recentModelSpecs ?? []}
           allowFollowDefault
+          ariaLabel={t("commit.model")}
+          followDefaultSpec={defaultModelSpec()}
+          onConfigureProviders={() => navigate("/settings/providers")}
           disabled={props.busy}
           onChange={onModel}
         />
         <p class="m-0 mt-1 text-[11px] text-muted">
           {t("commit.followDefaultHint")}
-          {props.settings.providers?.defaultProvider
-            ? ` (${props.settings.providers.defaultProvider}/${props.settings.providers.defaultModel})`
-            : ""}
-          .
         </p>
       </section>
 

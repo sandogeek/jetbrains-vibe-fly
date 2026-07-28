@@ -97,23 +97,52 @@ describe("modelPickerLogic", () => {
     expect(formatContextBadge(1_000_000)).toBe("1M")
     expect(formatCostBadge(0, 0)).toBe("free")
     expect(formatCostBadge(3, 15)).toBe("$3/$15")
-    expect(buildBadges(200_000, 3, 15, true, true, false)).toEqual([
-      "200K",
-      "$3/$15",
+    const badges = buildBadges(200_000, 3, 15, true, true, true)
+    expect(badges.map((badge) => badge.kind)).toEqual([
+      "context",
+      "cost",
       "reasoning",
+      "vision",
+      "tools_unsupported",
     ])
+    expect(badges.find((badge) => badge.kind === "tools_unsupported")?.warning).toBe(true)
   })
 
   test("tokenize AND and slash query", () => {
     const entries = buildEntries(connectedSnaps(), catalogFixture())
     const andRows = rank(entries, "claude 4", [], [], false)
-    // "4" won't match claude models → empty (AND)
-    expect(andRows.every((r) => r.entry.modelIdLower.includes("claude") === false || true)).toBe(
-      true,
-    )
+    expect(andRows).toEqual([])
 
     const slash = rank(entries, "anthropic/sonnet", [], [], false)
     expect(slash.map((r) => r.entry.spec)).toContain("anthropic/claude-sonnet")
+  })
+
+  test("search uses a single relevance-ranked result tier", () => {
+    const entries = buildEntries(connectedSnaps(), catalogFixture())
+    const rows = rank(
+      entries,
+      "claude",
+      ["anthropic/claude-haiku"],
+      ["anthropic/claude-sonnet"],
+      false,
+    )
+    expect(rows.map((row) => row.entry.spec)).toEqual([
+      "anthropic/claude-haiku",
+      "anthropic/claude-sonnet",
+    ])
+    expect(rows.every((row) => row.tier === "normal")).toBe(true)
+  })
+
+  test("capabilities and localized default actions are searchable", () => {
+    const entries = buildEntries(connectedSnaps(), catalogFixture())
+    expect(rank(entries, "reasoning", [], [], false).map((row) => row.entry.spec)).toEqual([
+      "anthropic/claude-sonnet",
+    ])
+    expect(rank(entries, "视觉", [], [], false).map((row) => row.entry.spec)).toEqual([
+      "openai/gpt-4o",
+    ])
+    expect(rank(entries, "默认", [], [], true)[0]?.tier).toBe("follow_default")
+    expect(rank(entries, "无默认", [], [], false, null, true)[0]?.tier).toBe("clear")
   })
 
   test("pin and recent tiers preserve order", () => {

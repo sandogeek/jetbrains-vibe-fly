@@ -376,6 +376,7 @@ export function ProvidersPage(props: ProvidersPageProps) {
             pinnedSpecs={props.settings.modelPreferences?.pinnedModelSpecs ?? []}
             recentSpecs={props.settings.modelPreferences?.recentModelSpecs ?? []}
             allowClear
+            ariaLabel={t("providers.defaultModel")}
             disabled={props.busy}
             onChange={onDefaultModel}
           />
