@@ -59,6 +59,14 @@ export const dict: RawDictionary = {
     hostUnavailableShort: "Host RPC 不可用",
     refreshFailed: "刷新失败",
   },
+  sidebar: {
+    integrations: "集成",
+    tools: "工具",
+    resources: "资源",
+    search: "搜索设置",
+    searchShortcut: "⌘F",
+    providers: "模型提供商",
+  },
   providers: {
     subtitle: "API 密钥与 OAuth 令牌保存在 Oh My Pi agent.db 中（不会写入 IDE XML）。",
     reload: "从磁盘重新加载",

@@ -57,6 +57,14 @@ export const dict = {
     hostUnavailableShort: "Host RPC unavailable",
     refreshFailed: "Refresh failed",
   },
+  sidebar: {
+    integrations: "Integrations",
+    tools: "Tools",
+    resources: "Resources",
+    search: "Search settings",
+    searchShortcut: "⌘F",
+    providers: "Providers",
+  },
   providers: {
     subtitle: "API keys and OAuth tokens stay in Oh My Pi agent.db (never IDE XML).",
     reload: "Reload from disk",
