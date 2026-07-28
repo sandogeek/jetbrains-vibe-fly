@@ -50,31 +50,49 @@ export function primaryBadge(snap: ProviderSnapshot): ProviderBadge {
   return "configured"
 }
 
-export function badgeLabel(badge: ProviderBadge): string {
+export type ProviderUiLabels = {
+  badgeCustom: string
+  badgeApiKey: string
+  badgeOauth: string
+  badgeConfigured: string
+  credApiKeySet: (origin: string) => string
+  credNoApiKey: string
+  credOauthPresent: string
+  credLoginAvailable: string
+  idRequired: string
+  idCatalogConflict: string
+  idCustomConflict: string
+  idInvalid: string
+}
+
+export function badgeLabel(badge: ProviderBadge, labels?: ProviderUiLabels): string {
   switch (badge) {
     case "custom":
-      return "CUSTOM"
+      return labels?.badgeCustom ?? "CUSTOM"
     case "api_key":
-      return "API KEY"
+      return labels?.badgeApiKey ?? "API KEY"
     case "oauth":
-      return "OAUTH"
+      return labels?.badgeOauth ?? "OAUTH"
     case "configured":
-      return "CONFIGURED"
+      return labels?.badgeConfigured ?? "CONFIGURED"
   }
 }
 
-export function credentialStatusText(snap: ProviderSnapshot): string {
+export function credentialStatusText(snap: ProviderSnapshot, labels?: ProviderUiLabels): string {
   const parts: string[] = []
   const cred = snap.credential
   if (cred?.hasApiKey) {
-    parts.push(`API key set (${cred.originKind ?? "unknown"})`)
+    parts.push(
+      labels?.credApiKeySet(cred.originKind ?? "unknown") ??
+        `API key set (${cred.originKind ?? "unknown"})`,
+    )
   } else {
-    parts.push("No API key")
+    parts.push(labels?.credNoApiKey ?? "No API key")
   }
   if (cred?.hasOAuth) {
-    parts.push("OAuth session present")
+    parts.push(labels?.credOauthPresent ?? "OAuth session present")
   } else if (snap.supportsLogin) {
-    parts.push("Login available")
+    parts.push(labels?.credLoginAvailable ?? "Login available")
   }
   return parts.join(" · ")
 }
@@ -113,14 +131,17 @@ export function validateProviderId(
   catalogIds: Set<string>,
   existingCustomIds: Set<string>,
   isEdit: boolean,
+  labels?: ProviderUiLabels,
 ): string | null {
   const trimmed = id.trim()
-  if (!trimmed) return "Provider id is required"
+  if (!trimmed) return labels?.idRequired ?? "Provider id is required"
   if (isEdit) return null
-  if (catalogIds.has(trimmed)) return "Id conflicts with a catalog provider"
-  if (existingCustomIds.has(trimmed)) return "A custom provider with this id already exists"
+  if (catalogIds.has(trimmed)) return labels?.idCatalogConflict ?? "Id conflicts with a catalog provider"
+  if (existingCustomIds.has(trimmed)) {
+    return labels?.idCustomConflict ?? "A custom provider with this id already exists"
+  }
   if (!ID_PATTERN.test(trimmed)) {
-    return "Use letters, digits, '.', '_' or '-' (must start with letter/digit)"
+    return labels?.idInvalid ?? "Use letters, digits, '.', '_' or '-' (must start with letter/digit)"
   }
   return null
 }

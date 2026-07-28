@@ -14,6 +14,7 @@
   "dependencies": {
     "@ark-ui/solid": "^5.37.1",
     "@sandogeek/simple-rpc": "file:../vibefly-simplerpc/typeScript",
+    "@solid-primitives/i18n": "^2.2.1",
     "@solidjs/router": "0.15.3",
     "@vibefly/uiagent-shared": "file:../vibefly-uiagent-shared",
     "dompurify": "^3.4.12",

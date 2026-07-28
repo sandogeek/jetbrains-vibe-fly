@@ -1,11 +1,13 @@
 import type { JSX } from "solid-js"
 import { createSignal, Show } from "solid-js"
 import type { ProviderSnapshot } from "../generated/rpc"
+import { useT, type Translator } from "../i18n"
 import {
   credentialStatusText,
   formatModelsText,
   parseModelsText,
   validateProviderId,
+  type ProviderUiLabels,
 } from "./providerLogic"
 import { displayName } from "./providerLabels"
 
@@ -35,6 +37,23 @@ export type LoginOverlayState = {
   resolveInput?: (value: { text: string; cancelled: boolean }) => void
 }
 
+export function providerUiLabels(t: Translator): ProviderUiLabels {
+  return {
+    badgeCustom: t("providers.badgeCustom"),
+    badgeApiKey: t("providers.badgeApiKey"),
+    badgeOauth: t("providers.badgeOauth"),
+    badgeConfigured: t("providers.badgeConfigured"),
+    credApiKeySet: (origin) => t("providers.credApiKeySet", { origin }),
+    credNoApiKey: t("providers.credNoApiKey"),
+    credOauthPresent: t("providers.credOauthPresent"),
+    credLoginAvailable: t("providers.credLoginAvailable"),
+    idRequired: t("providers.idRequired"),
+    idCatalogConflict: t("providers.idCatalogConflict"),
+    idCustomConflict: t("providers.idCustomConflict"),
+    idInvalid: t("providers.idInvalid"),
+  }
+}
+
 type ConnectDialogProps = {
   snapshot: ProviderSnapshot
   editMode: boolean
@@ -42,6 +61,8 @@ type ConnectDialogProps = {
 }
 
 export function ConnectDialog(props: ConnectDialogProps) {
+  const t = useT()
+  const labels = () => providerUiLabels(t)
   const [apiKey, setApiKey] = createSignal("")
   const [error, setError] = createSignal<string | null>(null)
   const name = () => displayName(props.snapshot.id)
@@ -49,11 +70,11 @@ export function ConnectDialog(props: ConnectDialogProps) {
   const submitKey = () => {
     const key = apiKey().trim()
     if (!props.editMode && !key && !props.snapshot.supportsLogin) {
-      setError("API key is required to connect")
+      setError(t("dialogs.apiKeyRequired"))
       return
     }
     if (!props.editMode && !key && props.snapshot.supportsLogin) {
-      setError("Enter an API key, or use Login")
+      setError(t("dialogs.apiKeyOrLogin"))
       return
     }
     props.onClose({ kind: "apiKey", apiKey: key })
@@ -61,24 +82,27 @@ export function ConnectDialog(props: ConnectDialogProps) {
 
   return (
     <ModalShell
-      title={props.editMode ? `Edit ${name()}` : `Connect ${name()}`}
+      title={
+        props.editMode
+          ? t("dialogs.editProvider", { name: name() })
+          : t("dialogs.connectProvider", { name: name() })
+      }
       onCancel={() => props.onClose({ kind: "cancel" })}
     >
       <Show when={props.snapshot.supportsLogin}>
-        <p class="m-0 mb-3 text-xs text-muted">
-          Prefer Login for browser OAuth or provider paste-key flows. You can still save an API key
-          manually below.
-        </p>
+        <p class="m-0 mb-3 text-xs text-muted">{t("dialogs.loginHint")}</p>
       </Show>
-      <label class="mb-1 block text-xs text-muted">API key</label>
+      <label class="mb-1 block text-xs text-muted">{t("dialogs.apiKey")}</label>
       <input
         type="password"
         class="mb-2 w-full rounded border border-border bg-surface px-2 py-1.5 text-sm text-fg"
         value={apiKey()}
         onInput={(e) => setApiKey(e.currentTarget.value)}
-        placeholder="Leave empty to keep the existing key"
+        placeholder={t("dialogs.keepExistingKey")}
       />
-      <p class="m-0 mb-3 text-[11px] text-muted">{credentialStatusText(props.snapshot)}</p>
+      <p class="m-0 mb-3 text-[11px] text-muted">
+        {credentialStatusText(props.snapshot, labels())}
+      </p>
       <Show when={error()}>{(e) => <p class="m-0 mb-2 text-xs text-red-400">{e()}</p>}</Show>
       <div class="flex flex-wrap justify-end gap-2">
         <Show when={props.snapshot.supportsLogin && !props.editMode}>
@@ -87,7 +111,7 @@ export function ConnectDialog(props: ConnectDialogProps) {
             class="rounded border border-border px-3 py-1.5 text-sm text-fg hover:border-accent"
             onClick={() => props.onClose({ kind: "login" })}
           >
-            Login
+            {t("common.login")}
           </button>
         </Show>
         <button
@@ -95,14 +119,14 @@ export function ConnectDialog(props: ConnectDialogProps) {
           class="rounded border border-border px-3 py-1.5 text-sm text-muted"
           onClick={() => props.onClose({ kind: "cancel" })}
         >
-          Cancel
+          {t("common.cancel")}
         </button>
         <button
           type="button"
           class="rounded bg-accent px-3 py-1.5 text-sm text-bg"
           onClick={submitKey}
         >
-          OK
+          {t("common.ok")}
         </button>
       </div>
     </ModalShell>
@@ -117,6 +141,7 @@ type CustomDialogProps = {
 }
 
 export function CustomProviderDialog(props: CustomDialogProps) {
+  const t = useT()
   const isEdit = () => props.existing != null
   const [id, setId] = createSignal(props.existing?.id ?? "")
   const [baseUrl, setBaseUrl] = createSignal(props.existing?.baseUrl ?? "")
@@ -128,7 +153,13 @@ export function CustomProviderDialog(props: CustomDialogProps) {
   const [error, setError] = createSignal<string | null>(null)
 
   const submit = () => {
-    const err = validateProviderId(id(), props.catalogIds, props.existingCustomIds, isEdit())
+    const err = validateProviderId(
+      id(),
+      props.catalogIds,
+      props.existingCustomIds,
+      isEdit(),
+      providerUiLabels(t),
+    )
     if (err) {
       setError(err)
       return
@@ -145,10 +176,14 @@ export function CustomProviderDialog(props: CustomDialogProps) {
 
   return (
     <ModalShell
-      title={isEdit() ? `Edit ${props.existing!.id}` : "Add Custom Provider"}
+      title={
+        isEdit()
+          ? t("dialogs.editProvider", { name: props.existing!.id })
+          : t("dialogs.addCustomProvider")
+      }
       onCancel={() => props.onClose({ kind: "cancel" })}
     >
-      <Field label="Provider id">
+      <Field label={t("dialogs.providerId")}>
         <input
           class="w-full rounded border border-border bg-surface px-2 py-1.5 font-mono text-sm text-fg disabled:opacity-60"
           value={id()}
@@ -156,7 +191,7 @@ export function CustomProviderDialog(props: CustomDialogProps) {
           onInput={(e) => setId(e.currentTarget.value)}
         />
       </Field>
-      <Field label="Base URL">
+      <Field label={t("dialogs.baseUrl")}>
         <input
           class="w-full rounded border border-border bg-surface px-2 py-1.5 text-sm text-fg"
           value={baseUrl()}
@@ -164,7 +199,7 @@ export function CustomProviderDialog(props: CustomDialogProps) {
           placeholder="https://api.example.com/v1"
         />
       </Field>
-      <Field label="API">
+      <Field label={t("dialogs.api")}>
         <select
           class="w-full rounded border border-border bg-surface px-2 py-1.5 text-sm text-fg"
           value={api()}
@@ -176,20 +211,20 @@ export function CustomProviderDialog(props: CustomDialogProps) {
           <option value="google-generative-ai">google-generative-ai</option>
         </select>
       </Field>
-      <Field label="Models (one per line: id | name | api)">
+      <Field label={t("dialogs.modelsLine")}>
         <textarea
           class="h-28 w-full rounded border border-border bg-surface px-2 py-1.5 font-mono text-xs text-fg"
           value={modelsText()}
           onInput={(e) => setModelsText(e.currentTarget.value)}
         />
       </Field>
-      <Field label="API key">
+      <Field label={t("dialogs.apiKey")}>
         <input
           type="password"
           class="w-full rounded border border-border bg-surface px-2 py-1.5 text-sm text-fg"
           value={apiKey()}
           onInput={(e) => setApiKey(e.currentTarget.value)}
-          placeholder="Leave empty to keep the existing key"
+          placeholder={t("dialogs.keepExistingKey")}
         />
       </Field>
       <Show when={error()}>{(e) => <p class="m-0 mb-2 text-xs text-red-400">{e()}</p>}</Show>
@@ -199,14 +234,14 @@ export function CustomProviderDialog(props: CustomDialogProps) {
           class="rounded border border-border px-3 py-1.5 text-sm text-muted"
           onClick={() => props.onClose({ kind: "cancel" })}
         >
-          Cancel
+          {t("common.cancel")}
         </button>
         <button
           type="button"
           class="rounded bg-accent px-3 py-1.5 text-sm text-bg"
           onClick={submit}
         >
-          Save
+          {t("common.save")}
         </button>
       </div>
     </ModalShell>
@@ -222,10 +257,14 @@ type LoginOverlayProps = {
 }
 
 export function LoginOverlay(props: LoginOverlayProps) {
+  const t = useT()
   const [input, setInput] = createSignal("")
   return (
-    <ModalShell title={`Login to ${props.state.providerName}`} onCancel={props.onCancel}>
-      <p class="m-0 mb-2 text-sm text-fg">{props.state.progress || "Working…"}</p>
+    <ModalShell
+      title={t("dialogs.loginTo", { name: props.state.providerName })}
+      onCancel={props.onCancel}
+    >
+      <p class="m-0 mb-2 text-sm text-fg">{props.state.progress || t("common.working")}</p>
       <Show when={props.state.url || props.state.launchUrl}>
         <div class="mb-3 flex flex-wrap gap-2">
           <button
@@ -233,11 +272,9 @@ export function LoginOverlay(props: LoginOverlayProps) {
             class="rounded bg-accent px-3 py-1.5 text-sm text-bg"
             onClick={props.onOpenBrowser}
           >
-            Open browser
+            {t("dialogs.openBrowser")}
           </button>
-          <p class="m-0 self-center text-xs text-muted">
-            Complete sign-in in the browser, then return here.
-          </p>
+          <p class="m-0 self-center text-xs text-muted">{t("dialogs.completeSignIn")}</p>
         </div>
       </Show>
       <Show when={props.state.inputPrompt != null}>
@@ -255,14 +292,14 @@ export function LoginOverlay(props: LoginOverlayProps) {
               class="rounded border border-border px-3 py-1.5 text-sm text-muted"
               onClick={props.onCancelInput}
             >
-              Cancel
+              {t("common.cancel")}
             </button>
             <button
               type="button"
               class="rounded bg-accent px-3 py-1.5 text-sm text-bg"
               onClick={() => props.onSubmitInput(input())}
             >
-              Submit
+              {t("common.submit")}
             </button>
           </div>
         </div>
@@ -273,7 +310,7 @@ export function LoginOverlay(props: LoginOverlayProps) {
           class="rounded border border-border px-3 py-1.5 text-sm text-muted"
           onClick={props.onCancel}
         >
-          Cancel login
+          {t("dialogs.cancelLogin")}
         </button>
       </div>
     </ModalShell>

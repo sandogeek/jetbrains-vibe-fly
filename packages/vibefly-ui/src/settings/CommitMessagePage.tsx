@@ -1,4 +1,5 @@
 import type { IdeSettingsDto, ProviderSnapshot, ProvidersSnapshot } from "../generated/rpc"
+import { useT } from "../i18n"
 import type { BundledCatalog } from "./catalog"
 import { ModelPicker } from "./ModelPicker"
 import { withCommit, withModelPreferences } from "./settingsStore"
@@ -12,6 +13,7 @@ export type CommitMessagePageProps = {
 }
 
 export function CommitMessagePage(props: CommitMessagePageProps) {
+  const t = useT()
   let saveTimer: ReturnType<typeof setTimeout> | undefined
 
   const providers = (): ProviderSnapshot[] => props.snapshot?.providers ?? []
@@ -40,20 +42,18 @@ export function CommitMessagePage(props: CommitMessagePageProps) {
   return (
     <div class="flex h-full flex-col gap-4 overflow-auto p-4">
       <header>
-        <h2 class="m-0 text-lg font-semibold text-fg">Commit Message</h2>
-        <p class="m-0 mt-1 text-xs text-muted">
-          Language, model, and optional custom prompt for VCS commit generation.
-        </p>
+        <h2 class="m-0 text-lg font-semibold text-fg">{t("settings.commitMessage")}</h2>
+        <p class="m-0 mt-1 text-xs text-muted">{t("commit.subtitle")}</p>
       </header>
 
       <section>
-        <label class="mb-1 block text-xs text-muted">Commit message language</label>
+        <label class="mb-1 block text-xs text-muted">{t("commit.language")}</label>
         <div class="flex flex-wrap gap-2">
           {(
             [
-              ["follow_ide", "Follow IDE"],
-              ["en", "English"],
-              ["zh", "简体中文"],
+              ["follow_ide", t("commit.followIde")],
+              ["en", t("commit.english")],
+              ["zh", t("commit.simplifiedChinese")],
             ] as const
           ).map(([value, label]) => (
             <button
@@ -74,7 +74,7 @@ export function CommitMessagePage(props: CommitMessagePageProps) {
       </section>
 
       <section>
-        <label class="mb-1 block text-xs text-muted">Commit model</label>
+        <label class="mb-1 block text-xs text-muted">{t("commit.model")}</label>
         <ModelPicker
           value={props.settings.commit?.commitModelSpec ?? ""}
           providers={providers()}
@@ -86,7 +86,7 @@ export function CommitMessagePage(props: CommitMessagePageProps) {
           onChange={onModel}
         />
         <p class="m-0 mt-1 text-[11px] text-muted">
-          Empty selection follows the Providers default model
+          {t("commit.followDefaultHint")}
           {props.settings.providers?.defaultProvider
             ? ` (${props.settings.providers.defaultProvider}/${props.settings.providers.defaultModel})`
             : ""}
@@ -105,13 +105,13 @@ export function CommitMessagePage(props: CommitMessagePageProps) {
               )
             }
           />
-          Use custom system prompt
+          {t("commit.useCustomPrompt")}
         </label>
         <textarea
           class="h-40 w-full rounded border border-border bg-surface px-2 py-1.5 font-mono text-xs text-fg disabled:opacity-50"
           disabled={!props.settings.commit?.useCustomPrompt}
           value={props.settings.commit?.customPrompt ?? ""}
-          placeholder="Replaces the built-in Conventional Commits prompt. Language constraints still apply."
+          placeholder={t("commit.customPromptPlaceholder")}
           onInput={(e) =>
             debounceSave(withCommit(props.settings, { customPrompt: e.currentTarget.value }))
           }
@@ -120,4 +120,3 @@ export function CommitMessagePage(props: CommitMessagePageProps) {
     </div>
   )
 }
-

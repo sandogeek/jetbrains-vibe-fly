@@ -7,6 +7,7 @@ import type {
   ProvidersSnapshot,
   Ui2Host,
 } from "../generated/rpc"
+import { useT } from "../i18n"
 import { createUiRpc } from "../rpc/client"
 import { bindConsoleToHost } from "../rpc/console"
 import { loadBundledCatalog } from "./catalog"
@@ -24,6 +25,7 @@ type LoginHandlers = {
  * Shared settings layout + data. Mounted as HashRouter root for /settings/*.
  */
 export function SettingsShell(props: { children?: JSX.Element }) {
+  const t = useT()
   const [state, setState] = createSignal<SettingsState>(initialState())
   const [ui2Host, setUi2Host] = createSignal<Ui2Host | null>(null)
   let peerClose: (() => void) | null = null
@@ -83,13 +85,13 @@ export function SettingsShell(props: { children?: JSX.Element }) {
         if (refresh.ok) {
           snapshot = refresh.snapshot ?? null
         } else {
-          loadError = loadError ?? refresh.error ?? "Refresh failed"
+          loadError = loadError ?? refresh.error ?? t("settings.refreshFailed")
         }
       } catch (e) {
         loadError = loadError ?? (e instanceof Error ? e.message : String(e))
       }
     } else {
-      loadError = "Host RPC unavailable (open inside IDE JCEF)"
+      loadError = t("settings.hostUnavailable")
     }
 
     setState((s) => ({
@@ -127,11 +129,11 @@ export function SettingsShell(props: { children?: JSX.Element }) {
       <aside class="flex w-52 shrink-0 flex-col border-r border-border bg-surface/30">
         <div class="border-b border-border px-4 py-3">
           <div class="text-sm font-semibold tracking-wide text-fg">Vibe Fly</div>
-          <div class="text-[11px] text-muted">Settings</div>
+          <div class="text-[11px] text-muted">{t("settings.title")}</div>
         </div>
         <nav class="flex flex-col gap-0.5 p-2">
-          <NavLink href="/settings/providers" label="Providers" />
-          <NavLink href="/settings/commit-message" label="Commit Message" />
+          <NavLink href="/settings/providers" label={t("settings.providers")} />
+          <NavLink href="/settings/commit-message" label={t("settings.commitMessage")} />
         </nav>
         <Show when={state().status}>
           {(msg) => (

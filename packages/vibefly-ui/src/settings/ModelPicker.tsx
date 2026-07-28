@@ -1,5 +1,6 @@
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js"
 import type { ProviderSnapshot } from "../generated/rpc"
+import { useT } from "../i18n"
 import type { BundledCatalog } from "./catalog"
 import {
   buildEntries,
@@ -27,6 +28,7 @@ export type ModelPickerProps = {
 }
 
 export function ModelPicker(props: ModelPickerProps) {
+  const t = useT()
   const [open, setOpen] = createSignal(false)
   const [query, setQuery] = createSignal("")
   const [providerFilter, setProviderFilter] = createSignal("")
@@ -74,13 +76,25 @@ export function ModelPicker(props: ModelPickerProps) {
 
   const buttonLabel = () => {
     if (!props.value) {
-      if (props.allowFollowDefault) return "Follow default model"
-      if (props.allowClear) return props.placeholder ?? "No default model"
-      return props.placeholder ?? "Select model"
+      if (props.allowFollowDefault) return t("modelPicker.followDefault")
+      if (props.allowClear) return props.placeholder ?? t("modelPicker.noDefault")
+      return props.placeholder ?? t("modelPicker.selectModel")
     }
     const entry = selectedEntry()
-    if (entry) return displayLabel(entry, Boolean(props.allowFollowDefault))
+    if (entry) {
+      if (!entry.spec) {
+        return props.allowFollowDefault ? t("modelPicker.followDefault") : t("modelPicker.noDefault")
+      }
+      return displayLabel(entry, Boolean(props.allowFollowDefault))
+    }
     return props.value
+  }
+
+  const groupLabel = (row: ModelPickerRow) => {
+    if (row.tier === "follow_default") return t("modelPicker.groupDefault")
+    if (row.tier === "pinned") return t("modelPicker.groupPinned")
+    if (row.tier === "recent") return t("modelPicker.groupRecent")
+    return row.groupLabel
   }
 
   const select = (spec: string) => {
@@ -119,7 +133,7 @@ export function ModelPicker(props: ModelPickerProps) {
           <div class="flex flex-col gap-2 border-b border-border p-2">
             <input
               class="w-full rounded border border-border bg-surface px-2 py-1.5 text-sm text-fg outline-none focus:border-accent"
-              placeholder="Search models…"
+              placeholder={t("modelPicker.searchModels")}
               value={query()}
               onInput={(e) => setQuery(e.currentTarget.value)}
             />
@@ -127,9 +141,9 @@ export function ModelPicker(props: ModelPickerProps) {
               class="w-full rounded border border-border bg-surface px-2 py-1.5 text-sm text-fg"
               value={providerFilter()}
               onChange={(e) => setProviderFilter(e.currentTarget.value)}
-              title="Limit results to one provider"
+              title={t("modelPicker.limitProvider")}
             >
-              <option value="">All providers</option>
+              <option value="">{t("modelPicker.allProviders")}</option>
               <For each={providerOptions()}>
                 {(p) => <option value={p.id}>{p.label}</option>}
               </For>
@@ -143,16 +157,16 @@ export function ModelPicker(props: ModelPickerProps) {
                 class="flex w-full items-center px-3 py-1.5 text-left text-sm text-muted hover:bg-surface"
                 onClick={() => select("")}
               >
-                No default model
+                {t("modelPicker.noDefault")}
               </button>
             </Show>
 
             <For each={visibleRows()}>
               {(row) => (
                 <>
-                  <Show when={row.isFirstInGroup && row.groupLabel}>
+                  <Show when={row.isFirstInGroup && groupLabel(row)}>
                     <div class="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-muted">
-                      {row.groupLabel}
+                      {groupLabel(row)}
                     </div>
                   </Show>
                   <div
@@ -166,7 +180,11 @@ export function ModelPicker(props: ModelPickerProps) {
                       <button
                         type="button"
                         class="shrink-0 px-1 text-sm text-muted hover:text-accent"
-                        title={livePinned().includes(row.entry.spec) ? "Unpin" : "Pin"}
+                        title={
+                          livePinned().includes(row.entry.spec)
+                            ? t("modelPicker.unpin")
+                            : t("modelPicker.pin")
+                        }
                         onClick={(e) => onTogglePin(row.entry.spec, e)}
                       >
                         {livePinned().includes(row.entry.spec) ? "★" : "☆"}
@@ -175,7 +193,7 @@ export function ModelPicker(props: ModelPickerProps) {
                     <div class="min-w-0 flex-1">
                       <div class="truncate text-sm text-fg">
                         {row.tier === "follow_default"
-                          ? "Follow default model"
+                          ? t("modelPicker.followDefault")
                           : row.entry.modelLabel}
                       </div>
                       <Show when={row.tier !== "follow_default"}>
@@ -201,11 +219,14 @@ export function ModelPicker(props: ModelPickerProps) {
             </For>
 
             <Show when={visibleRows().length === 0}>
-              <div class="px-3 py-4 text-center text-sm text-muted">No models match</div>
+              <div class="px-3 py-4 text-center text-sm text-muted">{t("modelPicker.noMatch")}</div>
             </Show>
             <Show when={truncated()}>
               <div class="px-3 py-2 text-center text-[11px] text-muted">
-                Showing {MAX_RENDERED_ROWS} of {rows().length} models. Refine search to see more.
+                {t("modelPicker.showing", {
+                  shown: String(MAX_RENDERED_ROWS),
+                  total: String(rows().length),
+                })}
               </div>
             </Show>
           </div>

@@ -53,6 +53,7 @@ import type {
   UserInputResponse,
 } from "@vibefly/uiagent-shared"
 import type { Ui2Host } from "./generated/rpc"
+import { useT } from "./i18n"
 import { log } from "./log"
 import { connectAgentRpc, type AgentStatus } from "./rpc/agent"
 import { createUiRpc } from "./rpc/client"
@@ -121,8 +122,8 @@ function textPart(message: ChatMessage): string {
     .join("")
 }
 
-function modelLabel(modelId?: string): string {
-  if (!modelId) return "Default model"
+function modelLabel(modelId: string | undefined, fallback: string): string {
+  if (!modelId) return fallback
   const slash = modelId.indexOf("/")
   return slash >= 0 ? modelId.slice(slash + 1) : modelId
 }
@@ -204,8 +205,7 @@ function demoTab(): ChatTab {
 }
 
 export function App() {
-  const isZh = navigator.language.toLowerCase().startsWith("zh")
-  const t = (zh: string, en: string) => (isZh ? zh : en)
+  const t = useT()
   const [hostStatus, setHostStatus] = createSignal("connecting")
   const [agentStatus, setAgentStatus] = createSignal<AgentStatus>("idle")
   const [tabs, setTabs] = createSignal<ChatTab[]>([])
@@ -388,7 +388,7 @@ export function App() {
       // The connection helper exposes the proxy through its ready callback below.
       if (agentStatus() === "ready") agent = currentAgentProxy
     }
-    if (!agent) throw new Error(t("Agent 连接超时", "Agent connection timed out"))
+    if (!agent) throw new Error(t("chat.agentTimeout"))
   }
 
   let currentAgentProxy: Ui2Agent | null = null
@@ -554,7 +554,7 @@ export function App() {
   const newSession = async () => {
     setRecentOpen(false)
     if (tabs().length >= MAX_OPEN_TABS) {
-      setError(t("最多同时打开 8 个会话，请先关闭一个。", "A maximum of 8 sessions can be open."))
+      setError(t("chat.maxSessions"))
       return
     }
     if (offline()) {
@@ -562,7 +562,7 @@ export function App() {
       const tab: ChatTab = {
         summary: {
           sessionId: id,
-          title: t("新会话", "New session"),
+          title: t("chat.newSession"),
           state: "idle",
           unread: false,
           updatedAt: Date.now(),
@@ -589,7 +589,7 @@ export function App() {
     const tab = tabs().find((item) => item.summary.sessionId === sessionId)
     if (!tab) return
     const running = ["running", "waiting_permission", "waiting_input"].includes(tab.summary.state)
-    if (running && !window.confirm(t("该会话仍在运行。终止并关闭？", "This session is running. Stop and close it?"))) return
+    if (running && !window.confirm(t("chat.closeRunning"))) return
     try {
       if (running && agent) await agent.abortChatTurn(sessionId)
       if (agent && !offline()) await agent.releaseChatSession(sessionId)
@@ -624,7 +624,7 @@ export function App() {
       return
     }
     if (tabs().length >= MAX_OPEN_TABS || !agent) {
-      setError(t("请先关闭一个会话。", "Close a session first."))
+      setError(t("chat.closeSessionFirst"))
       return
     }
     try {
@@ -840,7 +840,7 @@ export function App() {
                 <span
                   class="tab-close"
                   role="button"
-                  title={t("关闭会话", "Close session")}
+                  title={t("chat.closeSession")}
                   onClick={(event) => void closeSession(tab.summary.sessionId, event)}
                 >
                   <X size={13} stroke-width={1.8} />
@@ -850,18 +850,18 @@ export function App() {
           </For>
         </div>
         <div class="session-actions">
-          <button class="icon-button" title={t("新会话", "New session")} onClick={() => void newSession()}>
+          <button class="icon-button" title={t("chat.newSession")} onClick={() => void newSession()}>
             <Plus size={17} />
           </button>
-          <button class="icon-button" title={t("最近会话", "Recent sessions")} onClick={() => void refreshRecent()}>
+          <button class="icon-button" title={t("chat.recentSessions")} onClick={() => void refreshRecent()}>
             <History size={16} />
           </button>
           <span class="connection-dot" classList={{ ready: agentStatus() === "ready", offline: offline() }} title={`${hostStatus()} / ${agentStatus()}`} />
         </div>
         <Show when={recentOpen()}>
           <div class="recent-menu">
-            <div class="recent-menu-title">{t("最近会话", "Recent sessions")}</div>
-            <Show when={recent().length > 0} fallback={<div class="empty-menu">{t("暂无历史", "No recent sessions")}</div>}>
+            <div class="recent-menu-title">{t("chat.recentSessions")}</div>
+            <Show when={recent().length > 0} fallback={<div class="empty-menu">{t("chat.noRecent")}</div>}>
               <For each={recent()}>
                 {(session) => (
                   <button class="recent-item" onClick={() => void openRecent(session)}>
@@ -881,15 +881,15 @@ export function App() {
       <Show when={pendingPermission() && pendingPermission()!.request.sessionId !== activeId()}>
         <button class="attention-bar" onClick={() => void activate(pendingPermission()!.request.sessionId)}>
           <ShieldCheck size={15} />
-          <span>{t("后台会话正在等待工具审批", "A background session needs tool approval")}</span>
-          <span>{t("查看", "Open")}</span>
+          <span>{t("chat.backgroundPermission")}</span>
+          <span>{t("common.open")}</span>
         </button>
       </Show>
       <Show when={pendingInput() && pendingInput()!.request.sessionId !== activeId()}>
         <button class="attention-bar" onClick={() => void activate(pendingInput()!.request.sessionId)}>
           <MessageSquareText size={15} />
-          <span>{t("后台会话正在等待回复", "A background session is waiting for input")}</span>
-          <span>{t("查看", "Open")}</span>
+          <span>{t("chat.backgroundInput")}</span>
+          <span>{t("common.open")}</span>
         </button>
       </Show>
 
@@ -899,7 +899,7 @@ export function App() {
           fallback={
             <div class="empty-state">
               <LoaderCircle class="spin" size={22} />
-              <span>{t("正在载入会话", "Loading session")}</span>
+              <span>{t("chat.loadingSession")}</span>
             </div>
           }
         >
@@ -908,18 +908,18 @@ export function App() {
               <Show when={tab().messages.length === 0}>
                 <div class="new-session-state">
                   <div class="new-session-mark"><Sparkles size={22} /></div>
-                  <h1>{t("开始一个 Vibe Coding 会话", "Start a Vibe Coding session")}</h1>
-                  <p>{modelLabel(tab().summary.modelId)}</p>
+                  <h1>{t("chat.startSession")}</h1>
+                  <p>{modelLabel(tab().summary.modelId, t("chat.defaultModel"))}</p>
                 </div>
               </Show>
-              <For each={tab().messages}>{(message) => <MessageView message={message} openLocation={openLocation} showDiff={showDiff} zh={isZh} />}</For>
+              <For each={tab().messages}>{(message) => <MessageView message={message} openLocation={openLocation} showDiff={showDiff} />}</For>
 
               <Show when={pendingPermission()?.request.sessionId === tab().summary.sessionId ? pendingPermission() : null}>
                 {(pending) => (
                   <div class="interaction-card permission-card">
                     <div class="interaction-heading">
                       <ShieldCheck size={17} />
-                      <span>{t("需要工具审批", "Tool approval required")}</span>
+                      <span>{t("chat.toolApproval")}</span>
                     </div>
                     <strong>{pending().request.title}</strong>
                     <Show when={pending().request.command}>
@@ -935,10 +935,10 @@ export function App() {
                       </For>
                     </Show>
                     <div class="permission-actions">
-                      <button class="secondary-button" onClick={() => respondPermission("reject_once")}>{t("拒绝", "Reject")}</button>
-                      <button class="secondary-button" onClick={() => respondPermission("reject_always")}>{t("本会话始终拒绝", "Always reject")}</button>
-                      <button class="secondary-button" onClick={() => respondPermission("allow_always")}>{t("本会话始终允许", "Always allow")}</button>
-                      <button class="primary-button" onClick={() => respondPermission("allow_once")}>{t("允许一次", "Allow once")}</button>
+                      <button class="secondary-button" onClick={() => respondPermission("reject_once")}>{t("common.reject")}</button>
+                      <button class="secondary-button" onClick={() => respondPermission("reject_always")}>{t("chat.alwaysReject")}</button>
+                      <button class="secondary-button" onClick={() => respondPermission("allow_always")}>{t("chat.alwaysAllow")}</button>
+                      <button class="primary-button" onClick={() => respondPermission("allow_once")}>{t("chat.allowOnce")}</button>
                     </div>
                   </div>
                 )}
@@ -949,7 +949,7 @@ export function App() {
                   <div class="interaction-card input-card">
                     <div class="interaction-heading">
                       <MessageSquareText size={17} />
-                      <span>{t("Agent 需要你的回复", "Agent needs your input")}</span>
+                      <span>{t("chat.agentNeedsInput")}</span>
                     </div>
                     <p>{pending().request.prompt}</p>
                     <textarea
@@ -958,8 +958,8 @@ export function App() {
                       onInput={(event) => setInputReply(event.currentTarget.value)}
                     />
                     <div class="permission-actions">
-                      <button class="secondary-button" onClick={() => respondInput(true)}>{t("取消", "Cancel")}</button>
-                      <button class="primary-button" onClick={() => respondInput(false)}>{t("提交", "Submit")}</button>
+                      <button class="secondary-button" onClick={() => respondInput(true)}>{t("common.cancel")}</button>
+                      <button class="primary-button" onClick={() => respondInput(false)}>{t("common.submit")}</button>
                     </div>
                   </div>
                 )}
@@ -975,7 +975,7 @@ export function App() {
           <div class="error-banner">
             <AlertTriangle size={15} />
             <span>{message()}</span>
-            <button class="icon-button" title={t("关闭", "Dismiss")} onClick={() => setError(null)}><X size={14} /></button>
+            <button class="icon-button" title={t("common.dismiss")} onClick={() => setError(null)}><X size={14} /></button>
           </div>
         )}
       </Show>
@@ -989,7 +989,7 @@ export function App() {
                   <FileCode2 size={13} />
                   <span>{context.path}</span>
                   <button
-                    title={t("移除上下文", "Remove context")}
+                    title={t("chat.removeContext")}
                     onClick={() =>
                       setContexts((current) => ({
                         ...current,
@@ -1007,32 +1007,32 @@ export function App() {
         <textarea
           class="composer-input"
           value={activeDraft()}
-          placeholder={t("输入消息...", "Type a message...")}
+          placeholder={t("chat.typeMessage")}
           onInput={(event) => setDraft(activeId(), event.currentTarget.value)}
           onKeyDown={onComposerKeyDown}
         />
         <div class="composer-toolbar">
           <div class="composer-selectors">
-            <button class="toolbar-button" title={t("添加文件上下文", "Add file context")} disabled={offline()} onClick={() => void chooseContextFiles()}>
+            <button class="toolbar-button" title={t("chat.addFileContext")} disabled={offline()} onClick={() => void chooseContextFiles()}>
               <Paperclip size={15} />
             </button>
             <select
-              aria-label={t("模型", "Model")}
+              aria-label={t("chat.model")}
               value={activeTab()?.summary.modelId ?? ""}
               disabled={isBusy() || isQueued() || offline()}
               onChange={(event) => void setModel(event.currentTarget.value)}
             >
-              <Show when={(models()[activeId()] ?? []).length > 0} fallback={<option value={activeTab()?.summary.modelId ?? ""}>{modelLabel(activeTab()?.summary.modelId)}</option>}>
+              <Show when={(models()[activeId()] ?? []).length > 0} fallback={<option value={activeTab()?.summary.modelId ?? ""}>{modelLabel(activeTab()?.summary.modelId, t("chat.defaultModel"))}</option>}>
                 <For each={models()[activeId()] ?? []}>{(option) => <option value={option.id}>{option.label}</option>}</For>
               </Show>
             </select>
             <select
-              aria-label={t("思考级别", "Thinking level")}
+              aria-label={t("chat.thinkingLevel")}
               value={activeTab()?.summary.thinkingLevel ?? "off"}
               disabled={isBusy() || isQueued() || offline()}
               onChange={(event) => void setThinking(event.currentTarget.value)}
             >
-              <option value="off">{t("关闭思考", "Thinking off")}</option>
+              <option value="off">{t("chat.thinkingOff")}</option>
               <option value="low">Low</option>
               <option value="medium">Medium</option>
               <option value="high">High</option>
@@ -1041,16 +1041,16 @@ export function App() {
             </select>
           </div>
           <div class="composer-actions">
-            <button class="toolbar-button" title={t("更多", "More")}><MoreHorizontal size={16} /></button>
+            <button class="toolbar-button" title={t("common.more")}><MoreHorizontal size={16} /></button>
             <Show
               when={isBusy() || isQueued()}
               fallback={
-                <button class="send-button" title={t("发送", "Send")} disabled={!activeDraft().trim()} onClick={() => void sendMessage()}>
+                <button class="send-button" title={t("chat.send")} disabled={!activeDraft().trim()} onClick={() => void sendMessage()}>
                   <Send size={17} fill="currentColor" />
                 </button>
               }
             >
-              <button class="stop-button" title={isQueued() ? t("取消排队", "Cancel queued") : t("停止", "Stop")} onClick={() => void stopOrCancel()}>
+              <button class="stop-button" title={isQueued() ? t("chat.cancelQueued") : t("chat.stop")} onClick={() => void stopOrCancel()}>
                 <CircleStop size={18} />
               </button>
             </Show>
@@ -1077,8 +1077,8 @@ function MessageView(props: {
   message: ChatMessage
   openLocation: (path: string, line?: number) => void
   showDiff: (path: string) => void
-  zh: boolean
 }) {
+  const t = useT()
   const [thinkingOpen, setThinkingOpen] = createSignal(true)
   const isUser = () => props.message.role === "user"
   return (
@@ -1099,7 +1099,7 @@ function MessageView(props: {
                   <div class="thinking-block" classList={{ open: thinkingOpen() }}>
                     <button class="thinking-toggle" onClick={() => setThinkingOpen((open) => !open)}>
                       <Brain size={15} />
-                      <span>{props.zh ? "推理" : "Reasoning"}</span>
+                      <span>{t("chat.reasoning")}</span>
                       <ChevronDown size={14} />
                     </button>
                     <Show when={thinkingOpen()}>
@@ -1116,7 +1116,7 @@ function MessageView(props: {
             <span class="streaming-caret" />
           </Show>
           <Show when={props.message.status === "error"}>
-            <button class="retry-button"><RotateCcw size={13} /> {props.zh ? "重试" : "Retry"}</button>
+            <button class="retry-button"><RotateCcw size={13} /> {t("chat.retry")}</button>
           </Show>
         </div>
       </Show>
@@ -1148,6 +1148,7 @@ function ToolPart(props: {
   openLocation: (path: string, line?: number) => void
   showDiff: (path: string) => void
 }) {
+  const t = useT()
   const [expanded, setExpanded] = createSignal(false)
   return (
     <div class="tool-part" classList={{ failed: props.part.status === "failed" }}>
@@ -1181,7 +1182,7 @@ function ToolPart(props: {
             <span
               class="tool-diff"
               role="button"
-              title="Show Diff"
+              title={t("chat.showDiff")}
               onClick={(event) => {
                 event.stopPropagation()
                 props.showDiff(location().path)

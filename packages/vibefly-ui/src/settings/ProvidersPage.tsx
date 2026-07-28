@@ -7,6 +7,7 @@ import type {
   ProvidersSnapshot,
   Ui2Host,
 } from "../generated/rpc"
+import { useT } from "../i18n"
 import type { BundledCatalog } from "./catalog"
 import { catalogProviderIds } from "./catalog"
 import {
@@ -14,6 +15,7 @@ import {
   CustomProviderDialog,
   LoginOverlay,
   parseModelsText,
+  providerUiLabels,
   type ConnectResult,
   type CustomResult,
   type LoginOverlayState,
@@ -61,6 +63,7 @@ type DialogState =
   | { kind: "login"; state: LoginOverlayState }
 
 export function ProvidersPage(props: ProvidersPageProps) {
+  const t = useT()
   const [search, setSearch] = createSignal("")
   const [dialog, setDialog] = createSignal<DialogState>({ kind: "none" })
   let agentDirTimer: ReturnType<typeof setTimeout> | undefined
@@ -72,7 +75,12 @@ export function ProvidersPage(props: ProvidersPageProps) {
           if (prev.kind !== "login") return prev
           return {
             kind: "login",
-            state: { ...prev.state, url, launchUrl, progress: "Waiting for browser authorization…" },
+            state: {
+              ...prev.state,
+              url,
+              launchUrl,
+              progress: t("providers.waitingAuth"),
+            },
           }
         })
       },
@@ -151,7 +159,7 @@ export function ProvidersPage(props: ProvidersPageProps) {
 
   const reload = async () => {
     if (!props.ui2Host) {
-      props.onStatus("Host RPC unavailable (open inside IDE JCEF)")
+      props.onStatus(t("settings.hostUnavailable"))
       return
     }
     props.onBusy(true)
@@ -160,7 +168,7 @@ export function ProvidersPage(props: ProvidersPageProps) {
       const agentDir = props.settings.providers?.agentDir ?? ""
       const result = await props.ui2Host.refreshProviders(agentDir)
       if (!result.ok) {
-        props.onStatus(result.error ?? "Refresh failed")
+        props.onStatus(result.error ?? t("settings.refreshFailed"))
         return
       }
       props.onSnapshot(result.snapshot ?? null)
@@ -176,7 +184,7 @@ export function ProvidersPage(props: ProvidersPageProps) {
     credentials: CredentialAction[] = [],
   ) => {
     if (!props.ui2Host) {
-      props.onStatus("Host RPC unavailable")
+      props.onStatus(t("settings.hostUnavailableShort"))
       return
     }
     props.onBusy(true)
@@ -188,7 +196,7 @@ export function ProvidersPage(props: ProvidersPageProps) {
         credentials,
       })
       if (!result.ok) {
-        props.onStatus(result.error ?? "Failed to save provider config")
+        props.onStatus(result.error ?? t("providers.saveFailed"))
         return
       }
       if (result.snapshot) props.onSnapshot(result.snapshot)
@@ -207,7 +215,7 @@ export function ProvidersPage(props: ProvidersPageProps) {
       kind: "login",
       state: {
         providerName: name,
-        progress: `Starting login for ${name}…`,
+        progress: t("providers.startingLogin", { name }),
         url: null,
         launchUrl: null,
         inputPrompt: null,
@@ -223,9 +231,9 @@ export function ProvidersPage(props: ProvidersPageProps) {
       if (result.ok) {
         if (result.snapshot) props.onSnapshot(result.snapshot)
         const who = [result.email, result.orgName ?? result.orgId].filter(Boolean).join(" / ")
-        props.onStatus(who ? `Logged in as ${who}` : "Login successful")
+        props.onStatus(who ? t("providers.loggedInAs", { who }) : t("providers.loginSuccess"))
       } else {
-        const err = result.error ?? "Login failed"
+        const err = result.error ?? t("providers.loginFailed")
         const cancelled =
           err.toLowerCase().includes("cancel") || err.toLowerCase().includes("abort")
         if (!cancelled) props.onStatus(err)
@@ -280,7 +288,11 @@ export function ProvidersPage(props: ProvidersPageProps) {
   }
 
   const disconnect = async (snap: ProviderSnapshot) => {
-    if (!confirm(`Disconnect ${displayName(snap.id)}? This removes stored API keys and OAuth sessions from agent.db.`)) {
+    if (
+      !confirm(
+        t("providers.disconnectConfirm", { name: displayName(snap.id) }),
+      )
+    ) {
       return
     }
     if (!props.ui2Host) return
@@ -291,7 +303,7 @@ export function ProvidersPage(props: ProvidersPageProps) {
         providerId: snap.id,
       })
       if (!result.ok) {
-        props.onStatus(result.error ?? "Logout failed")
+        props.onStatus(result.error ?? t("providers.logoutFailed"))
         return
       }
       if (result.snapshot) props.onSnapshot(result.snapshot)
@@ -303,7 +315,7 @@ export function ProvidersPage(props: ProvidersPageProps) {
   }
 
   const deleteCustom = async (snap: ProviderSnapshot) => {
-    if (!confirm(`Delete custom provider "${snap.id}"? This removes it from models.yml and clears its API key.`)) {
+    if (!confirm(t("providers.deleteConfirm", { id: snap.id }))) {
       return
     }
     await applyPatch(
@@ -324,10 +336,8 @@ export function ProvidersPage(props: ProvidersPageProps) {
     <div class="flex h-full flex-col gap-4 overflow-auto p-4">
       <header class="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 class="m-0 text-lg font-semibold text-fg">Providers</h2>
-          <p class="m-0 mt-1 text-xs text-muted">
-            API keys and OAuth tokens stay in Oh My Pi agent.db (never IDE XML).
-          </p>
+          <h2 class="m-0 text-lg font-semibold text-fg">{t("settings.providers")}</h2>
+          <p class="m-0 mt-1 text-xs text-muted">{t("providers.subtitle")}</p>
         </div>
         <button
           type="button"
@@ -335,21 +345,21 @@ export function ProvidersPage(props: ProvidersPageProps) {
           disabled={props.busy}
           onClick={() => void reload()}
         >
-          {props.busy ? "Loading…" : "Reload from disk"}
+          {props.busy ? t("common.loading") : t("providers.reload")}
         </button>
       </header>
 
       <Show when={props.catalogError}>
         {(e) => (
           <p class="m-0 rounded border border-border bg-surface px-3 py-2 text-xs text-muted">
-            Catalog load failed: {e()}. Custom snapshot models still work.
+            {t("providers.catalogLoadFailed", { error: e() })}
           </p>
         )}
       </Show>
 
       <section class="grid gap-3 sm:grid-cols-2">
         <div>
-          <label class="mb-1 block text-xs text-muted">Agent directory</label>
+          <label class="mb-1 block text-xs text-muted">{t("providers.agentDirectory")}</label>
           <input
             class="w-full rounded border border-border bg-surface px-2 py-1.5 font-mono text-sm text-fg"
             value={props.settings.providers?.agentDir ?? ""}
@@ -358,7 +368,7 @@ export function ProvidersPage(props: ProvidersPageProps) {
           />
         </div>
         <div>
-          <label class="mb-1 block text-xs text-muted">Default model</label>
+          <label class="mb-1 block text-xs text-muted">{t("providers.defaultModel")}</label>
           <ModelPicker
             value={defaultSpec()}
             providers={providers()}
@@ -374,18 +384,18 @@ export function ProvidersPage(props: ProvidersPageProps) {
 
       <section>
         <div class="mb-2 flex items-center justify-between">
-          <h3 class="m-0 text-sm font-semibold text-fg">Connected Providers</h3>
+          <h3 class="m-0 text-sm font-semibold text-fg">{t("providers.connectedProviders")}</h3>
           <button
             type="button"
             class="text-xs text-accent hover:underline"
             onClick={() => setDialog({ kind: "custom", existing: null })}
           >
-            + Add Custom Provider
+            {t("providers.addCustom")}
           </button>
         </div>
         <Show
           when={classified().connected.length > 0}
-          fallback={<p class="m-0 text-sm text-muted">No connected providers</p>}
+          fallback={<p class="m-0 text-sm text-muted">{t("providers.noConnected")}</p>}
         >
           <ul class="m-0 list-none space-y-2 p-0">
             <For each={classified().connected}>
@@ -410,10 +420,10 @@ export function ProvidersPage(props: ProvidersPageProps) {
       </section>
 
       <section>
-        <h3 class="m-0 mb-2 text-sm font-semibold text-fg">Built-in Providers</h3>
+        <h3 class="m-0 mb-2 text-sm font-semibold text-fg">{t("providers.builtInProviders")}</h3>
         <input
           class="mb-2 w-full rounded border border-border bg-surface px-2 py-1.5 text-sm text-fg"
-          placeholder="Search by name or description…"
+          placeholder={t("providers.searchPlaceholder")}
           value={search()}
           onInput={(e) => setSearch(e.currentTarget.value)}
         />
@@ -421,9 +431,7 @@ export function ProvidersPage(props: ProvidersPageProps) {
           when={builtIn().length > 0}
           fallback={
             <p class="m-0 text-sm text-muted">
-              {search().trim()
-                ? "No built-in providers match the search"
-                : "No built-in providers available"}
+              {search().trim() ? t("providers.noMatch") : t("providers.noBuiltIn")}
             </p>
           }
         >
@@ -512,6 +520,8 @@ function ProviderRow(props: {
   onDisconnect: () => void
   onDelete: () => void
 }) {
+  const t = useT()
+  const labels = () => providerUiLabels(t)
   const badge = () => primaryBadge(props.snap)
   const connected = () =>
     !props.snap.isCatalog ||
@@ -523,7 +533,7 @@ function ProviderRow(props: {
         <div class="flex flex-wrap items-center gap-2">
           <span class="font-medium text-fg">{displayName(props.snap.id)}</span>
           <span class="rounded bg-bg px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted">
-            {badgeLabel(badge())}
+            {badgeLabel(badge(), labels())}
           </span>
           <span class="font-mono text-[11px] text-muted">{props.snap.id}</span>
         </div>
@@ -536,7 +546,7 @@ function ProviderRow(props: {
             class="rounded border border-border px-2 py-1 text-xs text-fg hover:border-accent"
             onClick={props.onConnect}
           >
-            Connect
+            {t("common.connect")}
           </button>
         </Show>
         <Show when={connected()}>
@@ -545,14 +555,14 @@ function ProviderRow(props: {
             class="rounded border border-border px-2 py-1 text-xs text-fg hover:border-accent"
             onClick={props.onEdit}
           >
-            Edit
+            {t("common.edit")}
           </button>
           <button
             type="button"
             class="rounded border border-border px-2 py-1 text-xs text-muted hover:border-accent"
             onClick={props.onDisconnect}
           >
-            Disconnect
+            {t("common.disconnect")}
           </button>
         </Show>
         <Show when={!props.snap.isCatalog}>
@@ -561,7 +571,7 @@ function ProviderRow(props: {
             class="rounded border border-border px-2 py-1 text-xs text-red-400 hover:border-red-400"
             onClick={props.onDelete}
           >
-            Delete
+            {t("common.delete")}
           </button>
         </Show>
       </div>
