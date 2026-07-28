@@ -10,6 +10,7 @@ import type {
 import { useT } from "../i18n"
 import { createUiRpc } from "../rpc/client"
 import { bindConsoleToHost } from "../rpc/console"
+import { applyJbTheme } from "../theme"
 import { loadBundledCatalog } from "./catalog"
 import { CommitMessagePage } from "./CommitMessagePage"
 import { ProvidersPage } from "./ProvidersPage"
@@ -55,6 +56,9 @@ export function SettingsShell(props: { children?: JSX.Element }) {
         return loginHandlers.onRequestInput(prompt, placeholder)
       },
       async addChatContexts() {},
+      async setTheme(mode: string) {
+        applyJbTheme(mode)
+      },
     }
 
     const rpc = createUiRpc(host2Ui)

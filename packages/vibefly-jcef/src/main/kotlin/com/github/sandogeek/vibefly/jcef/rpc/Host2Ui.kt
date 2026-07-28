@@ -27,4 +27,11 @@ interface Host2Ui {
     /** Native file chooser / drag-and-drop delivery into the currently active chat tab. */
     @RpcFun(5)
     suspend fun addChatContexts(sessionId: String, contexts: List<HostChatContextItem>)
+
+    /**
+     * Switch WebView theme to match the IDE LAF.
+     * [mode] is `"dark"` or `"light"`; UI applies built-in tokens (no host CSS batch).
+     */
+    @RpcFun(6)
+    suspend fun setTheme(mode: String)
 }

@@ -55,6 +55,7 @@ class VibeflyToolWindowFactory : ToolWindowFactory {
         val workspaceState = ChatWorkspaceState.getInstance(project)
         val contextDelivery = ChatContextDeliveryService.getInstance(project)
         val expectedOrigin = AgentOrigin.currentPanel()
+        var panel: VibeflyBrowserPanel? = null
         val ui2Host = Ui2HostImpl(
             agentConnectionProvider = {
                 try {
@@ -85,9 +86,13 @@ class VibeflyToolWindowFactory : ToolWindowFactory {
                     selectContextFiles(project, projectRoot)
                 }
             },
-            chatUiReadyHandler = { contextDelivery.retry() },
+            chatUiReadyHandler = {
+                contextDelivery.retry()
+                // Host2Ui is registered; push current LAF mode (no CSS batch).
+                panel?.applyTheme(retry = false)
+            },
         )
-        val panel = VibeflyBrowserPanel(
+        panel = VibeflyBrowserPanel(
             ui2Host,
             onFilesDropped = { paths ->
                 val relativePaths = projectRelativeFiles(projectRoot, paths)
@@ -104,11 +109,12 @@ class VibeflyToolWindowFactory : ToolWindowFactory {
                 }
             },
         )
+        val browserPanel = panel!!
         contextDelivery.bind { sessionId, contexts ->
-            panel.rpc.host2Ui.addChatContexts(sessionId, contexts)
+            browserPanel.rpc.host2Ui.addChatContexts(sessionId, contexts)
         }
-        val content = contentFactory.createContent(panel, null, false)
-        Disposer.register(content, panel)
+        val content = contentFactory.createContent(browserPanel, null, false)
+        Disposer.register(content, browserPanel)
         toolWindow.contentManager.addContent(content)
     }
 

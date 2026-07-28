@@ -58,6 +58,7 @@ import { log } from "./log"
 import { connectAgentRpc, type AgentStatus } from "./rpc/agent"
 import { createUiRpc } from "./rpc/client"
 import { bindConsoleToHost } from "./rpc/console"
+import { applyJbTheme } from "./theme"
 
 type ChatTab = ChatSessionSnapshot
 
@@ -279,6 +280,9 @@ export function App() {
             endLine: item.endLine ?? undefined,
           })),
         )
+      },
+      async setTheme(mode) {
+        applyJbTheme(mode)
       },
     })
 

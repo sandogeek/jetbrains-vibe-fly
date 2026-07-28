@@ -187,6 +187,7 @@ export const host2Ui = defineRpcService("Host2Ui", {
   loginProgress: rpcMethod<[message: string], void>(3),
   requestLoginInput: rpcMethod<[prompt: string, placeholder: string | null], LoginInputResponse>(4),
   addChatContexts: rpcMethod<[sessionId: string, contexts: Array<HostChatContextItem>], void>(5),
+  setTheme: rpcMethod<[mode: string], void>(6),
 });
 
 export type Host2UiService = RpcService<typeof host2Ui>;

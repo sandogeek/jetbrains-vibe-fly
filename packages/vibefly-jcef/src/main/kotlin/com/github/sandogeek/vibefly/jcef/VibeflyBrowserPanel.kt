@@ -6,11 +6,16 @@ import com.github.sandogeek.vibefly.jcef.rpc.VibeflyUiRpc
 import com.intellij.ide.ui.LafManagerListener
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.util.Disposer
 import com.intellij.ui.jcef.JBCefBrowser
 import com.intellij.util.ui.UIUtil
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import org.cef.browser.CefBrowser
 import org.cef.browser.CefFrame
 import org.cef.handler.CefLoadHandlerAdapter
@@ -30,7 +35,8 @@ import javax.swing.JPanel
  * Production: [VibeflyScheme.INDEX_URL] via classpath.
  * Dev (Vite HMR): [VibeflyUiDev] → e.g. `http://127.0.0.1:5173/`.
  *
- * Dark/light tokens follow the current JetBrains LAF ([VibeflyTheme]).
+ * Dark/light mode follows the current JetBrains LAF via Host2Ui.setTheme RPC
+ * ([VibeflyTheme]); the UI applies built-in CSS tokens.
  * WebView ↔ Kotlin: SimpleRpc over CefMessageRouter ([VibeflyUiRpc]).
  *
  * Optional [onFilesDropped] receives absolute local file paths from OS / Project View drops.
@@ -48,6 +54,7 @@ class VibeflyBrowserPanel(
 
     private val browser: JBCefBrowser
     private val uiRpc: VibeflyUiRpc
+    private val themeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     @Volatile
     private var disposed: Boolean = false
@@ -78,7 +85,8 @@ class VibeflyBrowserPanel(
                     httpStatusCode: Int,
                 ) {
                     if (frame == null || !frame.isMain) return
-                    applyTheme()
+                    // Host2Ui may not be registered until Solid mounts; retry briefly.
+                    applyTheme(retry = true)
                 }
             },
             browser.cefBrowser,
@@ -90,13 +98,13 @@ class VibeflyBrowserPanel(
                 LafManagerListener.TOPIC,
                 LafManagerListener {
                     background = UIUtil.getPanelBackground()
-                    applyTheme()
+                    applyTheme(retry = false)
                 },
             )
 
         installFileDropHandler()
 
-        // Theme is applied in onLoadEnd (document ready); skip pre-load JS no-op.
+        // Theme is pushed over RPC after load / LAF change.
         browser.loadURL(startUrl)
     }
 
@@ -162,24 +170,33 @@ class VibeflyBrowserPanel(
         }
     }
 
-    private fun applyTheme() {
-        // Resolve tokens on the later EDT pass so UIManager colors match the new LAF
-        // (listener can fire while named colors are still settling).
-        // executeJavaScript must run on EDT; any() keeps LAF updates working under modals.
-        ApplicationManager.getApplication().invokeLater(
-            {
-                if (disposed) return@invokeLater
-                val script = VibeflyTheme.applyScript()
-                val cef = browser.cefBrowser
-                val url = cef.url?.takeIf { it.isNotBlank() } ?: VibeflyScheme.INDEX_URL
-                cef.executeJavaScript(script, url, 0)
-            },
-            ModalityState.any(),
-        )
+    /**
+     * Push current LAF mode to the WebView via [com.github.sandogeek.vibefly.jcef.rpc.Host2Ui.setTheme].
+     * When [retry] is true (page load), retries until Host2Ui is registered or attempts run out.
+     */
+    fun applyTheme(retry: Boolean = false) {
+        val mode = VibeflyTheme.currentMode().value
+        themeScope.launch {
+            val attempts = if (retry) 20 else 1
+            repeat(attempts) { attempt ->
+                if (disposed) return@launch
+                try {
+                    uiRpc.host2Ui.setTheme(mode)
+                    return@launch
+                } catch (e: Exception) {
+                    if (attempt == attempts - 1) {
+                        log.debug("setTheme($mode) failed", e)
+                    } else {
+                        delay(150)
+                    }
+                }
+            }
+        }
     }
 
     override fun dispose() {
         disposed = true
+        themeScope.cancel()
         // uiRpc + browser disposed via Disposer parent-child link.
     }
 
