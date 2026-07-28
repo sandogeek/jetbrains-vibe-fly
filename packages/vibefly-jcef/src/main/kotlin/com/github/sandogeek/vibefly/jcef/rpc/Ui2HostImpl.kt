@@ -14,6 +14,14 @@ import com.intellij.openapi.diagnostic.logger
 open class Ui2HostImpl(
     private val appVersion: String = DEFAULT_VERSION,
     private val agentConnectionProvider: (suspend () -> AgentConnection?)? = null,
+    private val projectRootProvider: () -> String = { "" },
+    private val workspaceStateProvider: () -> ChatWorkspaceStateDto = { ChatWorkspaceStateDto() },
+    private val workspaceStateSaver: (suspend (ChatWorkspaceStateDto) -> Unit)? = null,
+    private val openProjectFileHandler: (suspend (String, Int?) -> Unit)? = null,
+    private val refreshProjectFilesHandler: (suspend (List<String>) -> Unit)? = null,
+    private val showProjectDiffHandler: (suspend (String) -> Unit)? = null,
+    private val selectChatContextFilesHandler: (suspend () -> List<String>)? = null,
+    private val chatUiReadyHandler: (suspend () -> Unit)? = null,
 ) : Ui2Host {
 
     override suspend fun getAppVersion(): String = appVersion
@@ -57,6 +65,36 @@ open class Ui2HostImpl(
 
     override suspend fun openExternalUrl(url: String) {
         log.debug("openExternalUrl ignored on non-settings host: $url")
+    }
+
+    override suspend fun getProjectRoot(): String = projectRootProvider()
+
+    override suspend fun getChatWorkspaceState(): ChatWorkspaceStateDto = workspaceStateProvider()
+
+    override suspend fun saveChatWorkspaceState(state: ChatWorkspaceStateDto) {
+        workspaceStateSaver?.invoke(state) ?: log.debug("saveChatWorkspaceState ignored on non-project host")
+    }
+
+    override suspend fun openProjectFile(relativePath: String, line: Int?) {
+        openProjectFileHandler?.invoke(relativePath, line)
+            ?: log.debug("openProjectFile ignored on non-project host: $relativePath")
+    }
+
+    override suspend fun refreshProjectFiles(relativePaths: List<String>) {
+        refreshProjectFilesHandler?.invoke(relativePaths)
+            ?: log.debug("refreshProjectFiles ignored on non-project host")
+    }
+
+    override suspend fun showProjectDiff(relativePath: String) {
+        showProjectDiffHandler?.invoke(relativePath)
+            ?: log.debug("showProjectDiff ignored on non-project host: $relativePath")
+    }
+
+    override suspend fun selectChatContextFiles(): List<String> =
+        selectChatContextFilesHandler?.invoke().orEmpty()
+
+    override suspend fun chatUiReady() {
+        chatUiReadyHandler?.invoke()
     }
 
     companion object {

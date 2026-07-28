@@ -23,4 +23,8 @@ interface Host2Ui {
     /** Web login overlay: collect pasted key/code. */
     @RpcFun(4)
     suspend fun requestLoginInput(prompt: String, placeholder: String?): LoginInputResponse
+
+    /** Native file chooser / drag-and-drop delivery into the currently active chat tab. */
+    @RpcFun(5)
+    suspend fun addChatContexts(sessionId: String, contexts: List<HostChatContextItem>)
 }

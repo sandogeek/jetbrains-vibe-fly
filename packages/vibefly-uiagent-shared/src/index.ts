@@ -1,8 +1,4 @@
-export type {
-  AgentEvent,
-  StartTaskRequest,
-  TaskId,
-} from "./types.js"
+export type * from "./types.js"
 export type { Agent2Ui, Ui2Agent } from "./contracts.js"
 export { rpcId, rpcService } from "./rpc-annotations.js"
 

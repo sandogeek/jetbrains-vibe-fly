@@ -23,7 +23,7 @@ export type SessionTicketStore = {
 export type AgentWsServer = {
   readonly port: number
   readonly url: string
-  setSessionFactory(factory: (peer: SimpleRpcPeer) => void): void
+  setSessionFactory(factory: (peer: SimpleRpcPeer) => void | (() => void)): void
   close(): void
 }
 
@@ -61,8 +61,9 @@ export function createAgentWsServer(options: {
   ticketStore: SessionTicketStore
   hostname?: string
 }): AgentWsServer {
-  let sessionFactory: ((peer: SimpleRpcPeer) => void) | null = null
+  let sessionFactory: ((peer: SimpleRpcPeer) => void | (() => void)) | null = null
   let active: BunServerWebSocketRpcSession | null = null
+  let activeCleanup: (() => void) | null = null
 
   const server = createBunServerWebSocketRpc({
     hostname: options.hostname,
@@ -87,12 +88,14 @@ export function createAgentWsServer(options: {
     onSession(session) {
       // MVP: single active UI session
       if (active) {
+        activeCleanup?.()
+        activeCleanup = null
         active.close(1000, "replaced")
         active = null
       }
       active = session
       try {
-        sessionFactory?.(session.peer)
+        activeCleanup = sessionFactory?.(session.peer) ?? null
       } catch (e) {
         log.warn("session factory failed", { err: e })
         session.close(4000, "session setup failed")
@@ -103,6 +106,8 @@ export function createAgentWsServer(options: {
     },
     onSessionClosed(session) {
       if (active === session) {
+        activeCleanup?.()
+        activeCleanup = null
         active = null
       }
     },
@@ -116,6 +121,8 @@ export function createAgentWsServer(options: {
     },
     close() {
       if (active) {
+        activeCleanup?.()
+        activeCleanup = null
         active.close(1000, "server close")
         active = null
       }

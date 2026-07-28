@@ -7,6 +7,11 @@ import {
   registerAgent2UiService,
   type Agent2UiService,
   type AgentEvent,
+  type ChatEventBatch,
+  type ToolPermissionRequest,
+  type ToolPermissionResponse,
+  type UserInputRequest,
+  type UserInputResponse,
   type Ui2Agent,
 } from "@vibefly/uiagent-shared"
 import { log } from "../log"
@@ -33,7 +38,11 @@ const BACKOFF_MS = [250, 500, 1000, 2000] as const
  */
 export function connectAgentRpc(options: {
   ui2Host: Ui2Host
-  onEvent: (event: AgentEvent) => void
+  onEvent?: (event: AgentEvent) => void
+  onChatEvents: (batch: ChatEventBatch) => void
+  requestToolPermission: (request: ToolPermissionRequest) => Promise<ToolPermissionResponse>
+  requestUserInput: (request: UserInputRequest) => Promise<UserInputResponse>
+  onReady?: (agent: Ui2Agent | null) => void
   onStatus: (status: AgentStatus) => void
   isStopped: () => boolean
 }): { stop(): void } {
@@ -50,6 +59,7 @@ export function connectAgentRpc(options: {
     }
     current?.close()
     current = null
+    options.onReady?.(null)
   }
 
   const schedule = () => {
@@ -103,7 +113,16 @@ export function connectAgentRpc(options: {
 
     const agent2Ui: Agent2UiService = {
       onAgentEvent(event) {
-        options.onEvent(event)
+        options.onEvent?.(event)
+      },
+      onChatEvents(batch) {
+        options.onChatEvents(batch)
+      },
+      requestToolPermission(request) {
+        return options.requestToolPermission(request)
+      },
+      requestUserInput(request) {
+        return options.requestUserInput(request)
       },
     }
 
@@ -155,6 +174,7 @@ export function connectAgentRpc(options: {
       if (typeof pong === "string") {
         attempt = 0
         options.onStatus("ready")
+        options.onReady?.(ui2Agent)
         log.info("agent ready", {
           attempt: attemptNo,
           ticketMs,
@@ -174,6 +194,7 @@ export function connectAgentRpc(options: {
       })
       current?.close()
       current = null
+      options.onReady?.(null)
       if (!stopped && !options.isStopped()) {
         options.onStatus("unavailable")
         schedule()

@@ -52,6 +52,7 @@ export function SettingsShell(props: { children?: JSX.Element }) {
         if (!loginHandlers) return { text: "", cancelled: true }
         return loginHandlers.onRequestInput(prompt, placeholder)
       },
+      async addChatContexts() {},
     }
 
     const rpc = createUiRpc(host2Ui)

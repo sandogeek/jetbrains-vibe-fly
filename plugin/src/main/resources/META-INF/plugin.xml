@@ -44,5 +44,11 @@
                 description="Open Vibe Fly settings in an editor tab">
             <add-to-group group-id="ToolsMenu" anchor="last"/>
         </action>
+        <action id="VibeFly.AddSelectionToChat"
+                class="com.github.sandogeek.jetbrainsvibefly.chat.AddSelectionToVibeflyAction"
+                text="Add to Vibe Fly"
+                description="Add the current editor selection to the active Vibe Fly session">
+            <add-to-group group-id="Floating.CodeToolbar" anchor="last"/>
+        </action>
     </actions>
 </idea-plugin>

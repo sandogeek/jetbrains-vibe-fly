@@ -60,6 +60,8 @@ object VibeflyAgentProcess {
 
     fun start(
         agentDir: String? = null,
+        projectRoot: String? = null,
+        defaultModel: String? = null,
     ): Handle {
         val startedAt = System.nanoTime()
         fun elapsedMs(): Long = (System.nanoTime() - startedAt) / 1_000_000L
@@ -86,6 +88,12 @@ object VibeflyAgentProcess {
         if (dir.isNotEmpty()) {
             // Internal process param for OMP agent dir (not commit config).
             env["PI_CODING_AGENT_DIR"] = dir
+        }
+        projectRoot?.trim()?.takeIf { it.isNotEmpty() }?.let {
+            env["VIBEFLY_PROJECT_ROOT"] = java.nio.file.Path.of(it).toAbsolutePath().normalize().toString()
+        }
+        defaultModel?.trim()?.takeIf { it.isNotEmpty() }?.let {
+            env["VIBEFLY_DEFAULT_MODEL"] = it
         }
 
         val spawnStartedAt = System.nanoTime()

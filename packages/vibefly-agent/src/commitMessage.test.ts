@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { Effort } from "@oh-my-pi/pi-catalog/effort"
 import {
   buildCustomCommitModel,
   buildSystemPrompt,
@@ -158,13 +159,13 @@ describe("commitStreamOptions", () => {
       reasoning: true,
       thinking: {
         mode: "effort" as const,
-        efforts: ["low", "medium", "high"] as const,
+        efforts: [Effort.Low, Effort.Medium, Effort.High] as const,
       },
     }
     expect(commitStreamOptions(model, { apiKey: "k" })).toEqual({
       apiKey: "k",
       signal: undefined,
-      reasoning: "low",
+      reasoning: Effort.Low,
     })
   })
 

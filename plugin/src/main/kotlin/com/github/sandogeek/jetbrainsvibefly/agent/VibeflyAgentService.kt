@@ -39,7 +39,7 @@ import kotlin.time.Duration.Companion.milliseconds
  * UI business traffic uses a separate authenticated WebSocket (not stdio).
  */
 @Service(Service.Level.PROJECT)
-class VibeflyAgentService(@Suppress("unused") private val project: Project) : Disposable {
+class VibeflyAgentService(private val project: Project) : Disposable {
 
     private val mutex = Mutex()
     private val processRef = AtomicReference<Process?>(null)
@@ -266,6 +266,8 @@ class VibeflyAgentService(@Suppress("unused") private val project: Project) : Di
         val settings = VibeflyProviderSettingsState.getInstance()
         val handle = VibeflyAgentProcess.start(
             agentDir = settings.resolvedAgentDir(),
+            projectRoot = project.basePath,
+            defaultModel = settings.defaultModelSpec(),
         )
         processRef.set(handle.process)
         transportRef.set(handle.transport)

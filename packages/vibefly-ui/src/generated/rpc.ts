@@ -134,9 +134,23 @@ export interface ProviderLogoutResult {
   snapshot?: ProvidersSnapshot | null;
 }
 
+export interface ChatWorkspaceStateDto {
+  sessionIds?: Array<string>;
+  activeSessionId?: string;
+}
+
 export interface LoginInputResponse {
   text?: string;
   cancelled?: boolean;
+}
+
+export interface HostChatContextItem {
+  id: string;
+  kind: string;
+  path: string;
+  text?: string | null;
+  startLine?: number | null;
+  endLine?: number | null;
 }
 
 export const ui2Host = defineRpcService("Ui2Host", {
@@ -151,6 +165,14 @@ export const ui2Host = defineRpcService("Ui2Host", {
   cancelProviderLogin: rpcMethod<[], void>(9),
   logoutProvider: rpcMethod<[request: ProviderLogoutRequest], ProviderLogoutResult>(10),
   openExternalUrl: rpcMethod<[url: string], void>(11),
+  getProjectRoot: rpcMethod<[], string>(12),
+  getChatWorkspaceState: rpcMethod<[], ChatWorkspaceStateDto>(13),
+  saveChatWorkspaceState: rpcMethod<[state: ChatWorkspaceStateDto], void>(14),
+  openProjectFile: rpcMethod<[relativePath: string, line: number | null], void>(15),
+  refreshProjectFiles: rpcMethod<[relativePaths: Array<string>], void>(16),
+  showProjectDiff: rpcMethod<[relativePath: string], void>(17),
+  selectChatContextFiles: rpcMethod<[], Array<string>>(18),
+  chatUiReady: rpcMethod<[], void>(19),
 });
 
 export type Ui2Host = RpcClient<typeof ui2Host>;
@@ -164,6 +186,7 @@ export const host2Ui = defineRpcService("Host2Ui", {
   loginOpenUrl: rpcMethod<[url: string, launchUrl: string | null], void>(2),
   loginProgress: rpcMethod<[message: string], void>(3),
   requestLoginInput: rpcMethod<[prompt: string, placeholder: string | null], LoginInputResponse>(4),
+  addChatContexts: rpcMethod<[sessionId: string, contexts: Array<HostChatContextItem>], void>(5),
 });
 
 export type Host2UiService = RpcService<typeof host2Ui>;

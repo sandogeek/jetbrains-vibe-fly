@@ -20,6 +20,7 @@ import {
   type Host2AgentService,
 } from "./generated/controlRpc.js"
 import { log } from "./log.js"
+import { ChatSessionRegistry } from "./chatSessionRegistry.js"
 import { applyAgentDirFromEnv, clearOmpRuntimeCache, getOmpRuntime } from "./ompRuntime.js"
 import {
   applyProvidersPatch,
@@ -76,6 +77,10 @@ async function main(): Promise<void> {
   })
 
   let shuttingDown = false
+  const chatSessions = new ChatSessionRegistry(
+    process.env.VIBEFLY_PROJECT_ROOT,
+    process.env.VIBEFLY_DEFAULT_MODEL,
+  )
 
   const peer = createStdioSimpleRpc({
     input: process.stdin,
@@ -165,6 +170,7 @@ async function main(): Promise<void> {
   let taskSeq = 0
   wsServer.setSessionFactory((wsPeer) => {
     const agent2Ui: Agent2Ui = createAgent2UiProxy(wsPeer)
+    chatSessions.attach(agent2Ui)
     const ui2AgentImpl: Ui2AgentService = {
       ping(text: string) {
         return `pong:${text}`
@@ -191,8 +197,47 @@ async function main(): Promise<void> {
         })
         return taskId
       },
+      listChatSessions(request) {
+        return chatSessions.listChatSessions(request)
+      },
+      listRecentChatSessions(request) {
+        return chatSessions.listRecentChatSessions(request)
+      },
+      openChatSession(request) {
+        return chatSessions.openChatSession(request)
+      },
+      createChatSession(request) {
+        return chatSessions.createChatSession(request)
+      },
+      releaseChatSession(sessionId) {
+        return chatSessions.releaseChatSession(sessionId)
+      },
+      sendChatMessage(request) {
+        return chatSessions.sendChatMessage(request)
+      },
+      cancelQueuedTurn(sessionId) {
+        chatSessions.cancelQueuedTurn(sessionId)
+      },
+      abortChatTurn(sessionId) {
+        return chatSessions.abortChatTurn(sessionId)
+      },
+      listChatModels(sessionId) {
+        return chatSessions.listChatModels(sessionId)
+      },
+      setChatModel(sessionId, modelId) {
+        return chatSessions.setChatModel(sessionId, modelId)
+      },
+      setChatThinkingLevel(sessionId, level) {
+        return chatSessions.setChatThinkingLevel(sessionId, level)
+      },
+      markChatSessionRead(sessionId) {
+        chatSessions.markChatSessionRead(sessionId)
+      },
     }
     registerUi2AgentService(wsPeer, ui2AgentImpl)
+    return () => {
+      void chatSessions.disconnect()
+    }
   })
 
   log.info("agent ready", {
@@ -202,6 +247,11 @@ async function main(): Promise<void> {
   function teardown(code: number): void {
     if (shuttingDown) return
     shuttingDown = true
+    try {
+      void chatSessions.dispose()
+    } catch {
+      // ignore
+    }
     try {
       clearOmpRuntimeCache()
     } catch {

@@ -52,4 +52,35 @@ interface Ui2Host {
 
     @RpcFun(11)
     suspend fun openExternalUrl(url: String)
+
+    /** Canonical project root used by the project-level Agent registry. */
+    @RpcFun(12)
+    suspend fun getProjectRoot(): String
+
+    /** Workspace-local open tab order and active tab. */
+    @RpcFun(13)
+    suspend fun getChatWorkspaceState(): ChatWorkspaceStateDto
+
+    @RpcFun(14)
+    suspend fun saveChatWorkspaceState(state: ChatWorkspaceStateDto)
+
+    /** Open a project-relative path in the IDE editor. */
+    @RpcFun(15)
+    suspend fun openProjectFile(relativePath: String, line: Int?)
+
+    /** Refresh VFS after an Agent write. */
+    @RpcFun(16)
+    suspend fun refreshProjectFiles(relativePaths: List<String>)
+
+    /** Host may choose native VCS diff in a later implementation. */
+    @RpcFun(17)
+    suspend fun showProjectDiff(relativePath: String)
+
+    /** JetBrains native multi-file chooser. Returns project-relative regular files only. */
+    @RpcFun(18)
+    suspend fun selectChatContextFiles(): List<String>
+
+    /** Signals that Host -> UI context delivery can be retried after page load/reload. */
+    @RpcFun(19)
+    suspend fun chatUiReady()
 }

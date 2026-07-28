@@ -48,12 +48,27 @@ describe("generated UI-Agent contracts", () => {
       methods: {
         ping: 1,
         startTask: 2,
+        listChatSessions: 3,
+        listRecentChatSessions: 4,
+        openChatSession: 5,
+        createChatSession: 6,
+        releaseChatSession: 7,
+        sendChatMessage: 8,
+        cancelQueuedTurn: 9,
+        abortChatTurn: 10,
+        listChatModels: 11,
+        setChatModel: 12,
+        setChatThinkingLevel: 13,
+        markChatSessionRead: 14,
       },
     })
     assert.deepEqual(agent2Ui.descriptor, {
       service: "Agent2Ui",
       methods: {
         onAgentEvent: 1,
+        onChatEvents: 2,
+        requestToolPermission: 3,
+        requestUserInput: 4,
       },
     })
   })
@@ -69,6 +84,34 @@ describe("generated UI-Agent contracts", () => {
       startTask() {
         return "task-1"
       },
+      listChatSessions() {
+        return []
+      },
+      listRecentChatSessions() {
+        return []
+      },
+      openChatSession() {
+        throw new Error("not used")
+      },
+      createChatSession() {
+        throw new Error("not used")
+      },
+      releaseChatSession() {},
+      sendChatMessage() {
+        return { turnId: "turn-1", state: "running" }
+      },
+      cancelQueuedTurn() {},
+      abortChatTurn() {},
+      listChatModels() {
+        return []
+      },
+      setChatModel() {
+        throw new Error("not used")
+      },
+      setChatThinkingLevel() {
+        throw new Error("not used")
+      },
+      markChatSessionRead() {},
     })
 
     const proxy = createUi2AgentProxy(clientPeer)
