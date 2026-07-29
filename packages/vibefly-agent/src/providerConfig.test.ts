@@ -231,6 +231,18 @@ describe("applyProvidersPatch + AuthStorage", () => {
 })
 
 describe("catalog + snapshot", () => {
+  test("coalesces concurrent snapshots for the same agent dir", async () => {
+    const agentDir = tempAgentDir()
+    const [first, second, third] = await Promise.all([
+      getProvidersSnapshot(agentDir),
+      getProvidersSnapshot(agentDir),
+      getProvidersSnapshot(agentDir),
+    ])
+
+    expect(second).toBe(first)
+    expect(third).toBe(first)
+  })
+
   test("getProvidersSnapshot merges catalog and configured", async () => {
     const agentDir = tempAgentDir()
     setAgentDir(agentDir)

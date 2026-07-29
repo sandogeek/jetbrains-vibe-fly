@@ -119,8 +119,8 @@ async function main(): Promise<void> {
         },
       })
     },
-    async getProvidersSnapshot(agentDir) {
-      return getProvidersSnapshot(agentDir)
+    async getProvidersSnapshot(agentDir, ctx) {
+      return getProvidersSnapshot(agentDir, { requestId: ctx?.requestId })
     },
     async applyProvidersPatch(request) {
       const result = await applyProvidersPatch(request)

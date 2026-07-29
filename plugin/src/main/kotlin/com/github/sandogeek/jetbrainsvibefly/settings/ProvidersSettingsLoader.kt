@@ -5,7 +5,7 @@ import com.github.sandogeek.vibefly.jcef.rpc.Host2Agent
 import com.github.sandogeek.vibefly.jcef.rpc.ProvidersSnapshot
 
 /**
- * Shared providers snapshot fetch used by Settings UI and agent-ready warmup.
+ * Providers snapshot fetch used by the Settings UI.
  */
 internal object ProvidersSettingsLoader {
 
@@ -14,7 +14,10 @@ internal object ProvidersSettingsLoader {
     )
 
     fun fetch(expandedAgentDir: String): Result =
-        VibeflyAgentService.withControlForSettings(agentDir = expandedAgentDir) { control ->
+        VibeflyAgentService.withControlForSettings(
+            agentDir = expandedAgentDir,
+            operation = "getProvidersSnapshot",
+        ) { control ->
             fetchWith(control, expandedAgentDir)
         }
 

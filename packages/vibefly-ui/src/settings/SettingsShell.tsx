@@ -19,6 +19,7 @@ import { applyJbTheme } from "../theme"
 import { loadBundledCatalog } from "./catalog"
 import { CommitMessagePage } from "./CommitMessagePage"
 import { ProvidersPage } from "./ProvidersPage"
+import { PROVIDER_CONFIG_RPC_OPTIONS } from "./rpcOptions"
 import { emptySettings, initialState, normalizeSettings, type SettingsState } from "./settingsStore"
 import {
   Sidebar,
@@ -109,7 +110,7 @@ export function SettingsShell(props: { children?: JSX.Element }) {
         loadError = e instanceof Error ? e.message : String(e)
       }
       try {
-        const refresh = await host.refreshProviders("")
+        const refresh = await host.refreshProviders("", PROVIDER_CONFIG_RPC_OPTIONS)
         if (refresh.ok) {
           snapshot = refresh.snapshot ?? null
         } else {

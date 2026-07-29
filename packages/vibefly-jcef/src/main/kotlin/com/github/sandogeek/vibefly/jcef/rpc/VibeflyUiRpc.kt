@@ -7,6 +7,11 @@ import com.intellij.openapi.Disposable
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.util.Disposer
 import com.intellij.ui.jcef.JBCefBrowser
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.cef.browser.CefBrowser
 import org.cef.browser.CefFrame
 import org.cef.browser.CefMessageRouter
@@ -56,6 +61,7 @@ class VibeflyUiRpc(
                     callback: CefQueryCallback?,
                 ): Boolean {
                     if (request == null || callback == null) return false
+                    logProvidersRequest(request)
                     return transport.handleQuery(
                         queryId,
                         request,
@@ -92,8 +98,22 @@ class VibeflyUiRpc(
         session.close()
     }
 
+    private fun logProvidersRequest(request: String) {
+        val message = try {
+            Json.parseToJsonElement(request).jsonObject
+        } catch (_: Exception) {
+            return
+        }
+        if (message["t"]?.jsonPrimitive?.contentOrNull != "req") return
+        if (message["s"]?.jsonPrimitive?.contentOrNull != "Ui2Host") return
+        if (message["i"]?.jsonPrimitive?.intOrNull != REFRESH_PROVIDERS_METHOD_ID) return
+        val wireId = message["id"]?.jsonPrimitive?.contentOrNull ?: return
+        log.info("refreshProviders JCEF query received wireId=$wireId")
+    }
+
     companion object {
         private val log = logger<VibeflyUiRpc>()
+        private const val REFRESH_PROVIDERS_METHOD_ID = 6
 
         /**
          * Attach SimpleRpc to [browser] and register disposal on [parent].

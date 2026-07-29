@@ -23,6 +23,7 @@ import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.logger
 import kotlinx.coroutines.runBlocking
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 /**
@@ -40,6 +41,10 @@ class SettingsUi2Host(
 
     private val log = logger<SettingsUi2Host>()
     private val activeControl = AtomicReference<Host2Agent?>(null)
+
+    override suspend fun logFromWeb(message: String) {
+        log.info("WebView: $message")
+    }
 
     override suspend fun getIdeSettings(): IdeSettingsDto {
         val providers = VibeflyProviderSettingsState.getInstance()
@@ -109,24 +114,35 @@ class SettingsUi2Host(
 
     override suspend fun refreshProviders(agentDir: String): ProvidersRefreshResult {
         val expanded = expandAgentDir(agentDir)
+        val requestId = providerRequestSequence.incrementAndGet()
+        val startedAt = System.nanoTime()
+        fun elapsedMs(): Long = (System.nanoTime() - startedAt) / 1_000_000L
+        log.info("refreshProviders start request=$requestId agentDir=$expanded")
         return try {
             val result = ProvidersSettingsLoader.fetch(expanded)
+            log.info(
+                "refreshProviders done request=$requestId elapsedMs=${elapsedMs()} " +
+                    "providers=${result.snapshot.providers.size}",
+            )
             ProvidersRefreshResult(ok = true, snapshot = result.snapshot)
         } catch (e: Exception) {
-            log.warn("refreshProviders failed for $expanded", e)
+            log.warn(
+                "refreshProviders failed request=$requestId agentDir=$expanded " +
+                    "elapsedMs=${elapsedMs()}",
+                e,
+            )
             ProvidersRefreshResult(ok = false, error = e.message ?: e.toString())
         }
     }
 
     override suspend fun applyProvidersPatch(request: ProvidersPatchRequest): ProvidersPatchResult {
         val expanded = expandAgentDir(request.agentDir)
-        val effective = if (request.agentDir.trim().isEmpty()) {
-            request.copy(agentDir = expanded)
-        } else {
-            request.copy(agentDir = expanded)
-        }
+        val effective = request.copy(agentDir = expanded)
         return try {
-            VibeflyAgentService.withControlForSettings(agentDir = expanded) { control ->
+            VibeflyAgentService.withControlForSettings(
+                agentDir = expanded,
+                operation = "applyProvidersPatch",
+            ) { control ->
                 control.applyProvidersPatch(effective)
             }
         } catch (e: Exception) {
@@ -144,6 +160,7 @@ class SettingsUi2Host(
                 VibeflyAgentService.withControlForSettings(
                     agentDir = expanded,
                     timeoutMs = LOGIN_TIMEOUT_MS,
+                    operation = "loginProvider",
                 ) { control ->
                     activeControl.set(control)
                     try {
@@ -176,7 +193,10 @@ class SettingsUi2Host(
         val expanded = expandAgentDir(request.agentDir)
         val effective = request.copy(agentDir = expanded)
         return try {
-            VibeflyAgentService.withControlForSettings(agentDir = expanded) { control ->
+            VibeflyAgentService.withControlForSettings(
+                agentDir = expanded,
+                operation = "logoutProvider",
+            ) { control ->
                 control.logoutProvider(effective)
             }
         } catch (e: Exception) {
@@ -207,6 +227,8 @@ class SettingsUi2Host(
     }
 
     companion object {
+        private val providerRequestSequence = AtomicLong()
+
         /** Browser OAuth can wait several minutes for callback. */
         private const val LOGIN_TIMEOUT_MS: Long = 360_000L
     }

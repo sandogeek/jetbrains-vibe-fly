@@ -9,7 +9,7 @@ import {
   AuthStorage,
   type AuthCredential,
 } from "@oh-my-pi/pi-coding-agent"
-import { getAgentDbPath, setAgentDir } from "@oh-my-pi/pi-utils"
+import { getAgentDbPath } from "@oh-my-pi/pi-utils"
 import {
   getBundledProviders,
 } from "@oh-my-pi/pi-catalog/models"
@@ -51,6 +51,14 @@ type RawModelEntry = {
   api?: unknown
   [key: string]: unknown
 }
+
+type ProvidersSnapshotOptions = {
+  requestId?: string
+}
+
+const providersSnapshotFlights = new Map<string, Promise<ProvidersSnapshot>>()
+const providersMutationTails = new Map<string, Promise<void>>()
+let providersSnapshotSequence = 0
 
 export function defaultAgentDir(): string {
   return path.join(os.homedir(), ".omp", "agent")
@@ -235,15 +243,86 @@ function credentialStatus(
   }
 }
 
-export async function getProvidersSnapshot(
+export function getProvidersSnapshot(
   agentDirInput?: string | null,
+  options: ProvidersSnapshotOptions = {},
 ): Promise<ProvidersSnapshot> {
   const agentDir = resolveAgentDir(agentDirInput)
-  setAgentDir(agentDir)
-  fs.mkdirSync(agentDir, { recursive: true })
+  const requestId =
+    options.requestId ?? `local-${++providersSnapshotSequence}`
+  const mutation = providersMutationTails.get(agentDir)
+  if (mutation) {
+    log.info("providers snapshot waiting for mutation", {
+      requestId,
+      agentDir,
+    })
+    return mutation.then(() =>
+      getProvidersSnapshot(agentDir, { ...options, requestId }),
+    )
+  }
+  const existing = providersSnapshotFlights.get(agentDir)
+  if (existing) {
+    log.info("providers snapshot joined in-flight request", {
+      requestId,
+      agentDir,
+    })
+    return existing
+  }
 
-  const auth = await openAuthStorage(agentDir)
+  const flight = buildProvidersSnapshot(agentDir, requestId).finally(() => {
+    if (providersSnapshotFlights.get(agentDir) === flight) {
+      providersSnapshotFlights.delete(agentDir)
+    }
+  })
+  providersSnapshotFlights.set(agentDir, flight)
+  return flight
+}
+
+function queueProvidersMutation<T>(
+  agentDir: string,
+  block: () => Promise<T>,
+): Promise<T> {
+  const previous = providersMutationTails.get(agentDir) ?? Promise.resolve()
+  const operation = previous.then(async () => {
+    const snapshot = providersSnapshotFlights.get(agentDir)
+    if (snapshot) {
+      await snapshot.catch(() => undefined)
+    }
+    return block()
+  })
+  const tail = operation.then(
+    () => undefined,
+    () => undefined,
+  )
+  providersMutationTails.set(agentDir, tail)
+  void tail.then(() => {
+    if (providersMutationTails.get(agentDir) === tail) {
+      providersMutationTails.delete(agentDir)
+    }
+  })
+  return operation
+}
+
+async function buildProvidersSnapshot(
+  agentDir: string,
+  requestId: string,
+): Promise<ProvidersSnapshot> {
+  const startedAt = performance.now()
+  let phase = "prepare"
+  let authOpenedAt = 0
+  let auth: AuthStorage | null = null
+  log.info("providers snapshot start", { requestId, agentDir })
+  const authStartedAt = performance.now()
   try {
+    fs.mkdirSync(agentDir, { recursive: true })
+    auth = await openAuthStorage(agentDir)
+    authOpenedAt = performance.now()
+    log.info("providers snapshot auth storage ready", {
+      requestId,
+      agentDir,
+      elapsedMs: Math.round(authOpenedAt - authStartedAt),
+    })
+
     const catalogIds = catalogProviderIds()
     const raw = loadRawModelsConfig(agentDir)
     const configured = raw.providers ?? {}
@@ -276,13 +355,31 @@ export async function getProvidersSnapshot(
       })
     }
 
-    return {
+    const snapshot = {
       agentDir,
       providers,
       modelsPath: resolveModelsReadPath(agentDir) ?? modelsYmlPath(agentDir),
     }
+    log.info("providers snapshot done", {
+      requestId,
+      agentDir,
+      providers: providers.length,
+      authMs: Math.round(authOpenedAt - authStartedAt),
+      buildMs: Math.round(performance.now() - authOpenedAt),
+      totalMs: Math.round(performance.now() - startedAt),
+    })
+    return snapshot
+  } catch (error) {
+    log.warn("providers snapshot failed", {
+      requestId,
+      agentDir,
+      phase,
+      elapsedMs: Math.round(performance.now() - startedAt),
+      err: error,
+    })
+    throw error
   } finally {
-    auth.close()
+    auth?.close()
   }
 }
 
@@ -432,44 +529,48 @@ export async function applyProvidersPatch(
 ): Promise<ProvidersPatchResult> {
   try {
     const agentDir = resolveAgentDir(request.agentDir)
-    setAgentDir(agentDir)
-    fs.mkdirSync(agentDir, { recursive: true })
-    const providerPatches = request.providers ?? []
-    const credentialActions = request.credentials ?? []
+    return await queueProvidersMutation(agentDir, async () => {
+      fs.mkdirSync(agentDir, { recursive: true })
+      const providerPatches = request.providers ?? []
+      const credentialActions = request.credentials ?? []
 
-    let wroteModels = false
-    if (providerPatches.length > 0) {
-      const raw = loadRawModelsConfig(agentDir)
-      // Ensure providers map exists and is mutable.
-      if (!raw.providers || typeof raw.providers !== "object") {
-        raw.providers = {}
-      }
-      for (const patch of providerPatches) {
-        applyProviderPatch(raw, patch)
-      }
-      writeRawModelsConfig(agentDir, raw)
-      wroteModels = true
-    }
-
-    if (credentialActions.length > 0) {
-      const auth = await openAuthStorage(agentDir)
-      try {
-        for (const cred of credentialActions) {
-          await applyCredentialAction(auth, cred)
+      let wroteModels = false
+      if (providerPatches.length > 0) {
+        const raw = loadRawModelsConfig(agentDir)
+        // Ensure providers map exists and is mutable.
+        if (!raw.providers || typeof raw.providers !== "object") {
+          raw.providers = {}
         }
-      } finally {
-        auth.close()
+        for (const patch of providerPatches) {
+          applyProviderPatch(raw, patch)
+        }
+        writeRawModelsConfig(agentDir, raw)
+        wroteModels = true
       }
-    }
 
-    const snapshot = await getProvidersSnapshot(agentDir)
-    log.info("applyProvidersPatch ok", {
-      agentDir,
-      providers: providerPatches.length,
-      credentials: credentialActions.length,
-      wroteModels,
+      if (credentialActions.length > 0) {
+        const auth = await openAuthStorage(agentDir)
+        try {
+          for (const cred of credentialActions) {
+            await applyCredentialAction(auth, cred)
+          }
+        } finally {
+          auth.close()
+        }
+      }
+
+      const snapshot = await buildProvidersSnapshot(
+        agentDir,
+        `mutation-${++providersSnapshotSequence}`,
+      )
+      log.info("applyProvidersPatch ok", {
+        agentDir,
+        providers: providerPatches.length,
+        credentials: credentialActions.length,
+        wroteModels,
+      })
+      return { ok: true, snapshot }
     })
-    return { ok: true, snapshot }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     log.warn("applyProvidersPatch failed", { err: message })

@@ -2,7 +2,6 @@ package com.github.sandogeek.jetbrainsvibefly.agent
 
 import com.github.sandogeek.jetbrainsvibefly.settings.Agent2HostBridge
 import com.github.sandogeek.jetbrainsvibefly.settings.CommitMessageProgressListener
-import com.github.sandogeek.jetbrainsvibefly.settings.ProvidersSettingsLoader
 import com.github.sandogeek.jetbrainsvibefly.settings.VibeflyProviderSettingsState
 
 import com.github.sandogeek.simplerpc.RpcSession
@@ -198,35 +197,12 @@ class VibeflyAgentService(private val project: Project) : Disposable {
                 val totalMs = (System.nanoTime() - startedAt) / 1_000_000L
                 val pid = processRef.get()?.pid()
                 log.info("ensureStarted cold start ready pid=$pid totalMs=$totalMs")
-                onAgentBecameReady()
             } catch (e: Exception) {
                 state = State.FAILED
                 stopLocked()
                 val totalMs = (System.nanoTime() - startedAt) / 1_000_000L
                 log.warn("ensureStarted cold start failed totalMs=$totalMs", e)
                 throw e
-            }
-        }
-    }
-
-    /**
-     * Fresh start → READY only: warm providers cache for the next Settings open.
-     * Settings UI reloads via RPC on mount / Reload.
-     */
-    private fun onAgentBecameReady() {
-        val control = host2AgentRef.get() ?: return
-        val agentDir = VibeflyProviderSettingsState.getInstance().resolvedAgentDir()
-        ApplicationManager.getApplication().executeOnPooledThread {
-            if (disposed || host2AgentRef.get() !== control) return@executeOnPooledThread
-            try {
-                runBlocking {
-                    withTimeout(DEFAULT_CONFIG_TIMEOUT_MS.milliseconds) {
-                        ProvidersSettingsLoader.fetchWith(control, agentDir)
-                    }
-                }
-                log.debug("providers cache warmed after agent ready")
-            } catch (e: Exception) {
-                log.debug("providers cache warmup after agent ready failed", e)
             }
         }
     }
@@ -239,7 +215,9 @@ class VibeflyAgentService(private val project: Project) : Disposable {
 
     /**
      * Run [block] on an already-live control plane without starting the agent.
-     * Returns null when this service has no ready process (caller should fall back).
+     * Returns null only when this service has no ready process (caller may fall back).
+     * Invocation failures are propagated so the same operation is not repeated against a
+     * short-lived agent after already consuming this timeout.
      */
     fun <T> tryWithReadyControl(
         timeoutMs: Long = DEFAULT_CONFIG_TIMEOUT_MS,
@@ -249,17 +227,12 @@ class VibeflyAgentService(private val project: Project) : Disposable {
         val control = host2AgentRef.get() ?: return null
         val process = processRef.get()
         if (process == null || !process.isAlive) return null
-        return try {
-            val value = runBlocking {
-                withTimeout(timeoutMs.milliseconds) {
-                    block(control)
-                }
+        val value = runBlocking {
+            withTimeout(timeoutMs.milliseconds) {
+                block(control)
             }
-            ReadyControlResult(value)
-        } catch (e: Exception) {
-            log.debug("tryWithReadyControl failed", e)
-            null
         }
+        return ReadyControlResult(value)
     }
 
     private fun startLocked() {
@@ -315,6 +288,7 @@ class VibeflyAgentService(private val project: Project) : Disposable {
 
     companion object {
         private val log = logger<VibeflyAgentService>()
+        private val settingsControlSequence = AtomicLong()
 
         const val DEFAULT_COMMIT_MESSAGE_TIMEOUT_MS: Long = 90_000L
         const val DEFAULT_CONFIG_TIMEOUT_MS: Long = 60_000L
@@ -329,8 +303,13 @@ class VibeflyAgentService(private val project: Project) : Disposable {
         fun <T> withControlForSettings(
             agentDir: String? = null,
             timeoutMs: Long = DEFAULT_CONFIG_TIMEOUT_MS,
+            operation: String = "settingsControl",
             block: suspend (Host2Agent) -> T,
         ): T {
+            val requestId = settingsControlSequence.incrementAndGet()
+            val startedAt = System.nanoTime()
+            fun elapsedMs(): Long = (System.nanoTime() - startedAt) / 1_000_000L
+
             for (project in ProjectManager.getInstance().openProjects) {
                 if (project.isDisposed) continue
                 val service = try {
@@ -338,17 +317,44 @@ class VibeflyAgentService(private val project: Project) : Disposable {
                 } catch (_: Exception) {
                     null
                 } ?: continue
-                val reused = service.tryWithReadyControl(timeoutMs, block)
+                val reused = try {
+                    service.tryWithReadyControl(timeoutMs, block)
+                } catch (e: Exception) {
+                    log.warn(
+                        "$operation failed request=$requestId source=project-agent " +
+                            "elapsedMs=${elapsedMs()}; one-shot fallback skipped",
+                        e,
+                    )
+                    throw e
+                }
                 if (reused != null) {
-                    log.debug("withControlForSettings reused project agent")
+                    log.info(
+                        "$operation done request=$requestId source=project-agent " +
+                            "elapsedMs=${elapsedMs()}",
+                    )
                     return reused.value
                 }
             }
-            return VibeflyAgentProcess.withControl(
-                agentDir = agentDir,
-                timeoutMs = timeoutMs,
-                block = block,
-            )
+            log.info("$operation start request=$requestId source=one-shot-agent")
+            return try {
+                val value = VibeflyAgentProcess.withControl(
+                    agentDir = agentDir,
+                    timeoutMs = timeoutMs,
+                    block = block,
+                )
+                log.info(
+                    "$operation done request=$requestId source=one-shot-agent " +
+                        "elapsedMs=${elapsedMs()}",
+                )
+                value
+            } catch (e: Exception) {
+                log.warn(
+                    "$operation failed request=$requestId source=one-shot-agent " +
+                        "elapsedMs=${elapsedMs()}",
+                    e,
+                )
+                throw e
+            }
         }
 
         /**

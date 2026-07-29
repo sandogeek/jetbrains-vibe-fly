@@ -30,6 +30,10 @@ import {
   primaryBadge,
 } from "./providerLogic"
 import { description, displayName } from "./providerLabels"
+import {
+  PROVIDER_CONFIG_RPC_OPTIONS,
+  PROVIDER_LOGIN_RPC_OPTIONS,
+} from "./rpcOptions"
 import { withModelPreferences, withProviders } from "./settingsStore"
 
 export type ProvidersPageProps = {
@@ -164,15 +168,26 @@ export function ProvidersPage(props: ProvidersPageProps) {
     }
     props.onBusy(true)
     props.onStatus(null)
+    const startedAt = performance.now()
     try {
+      console.log("providers reload start")
       const agentDir = props.settings.providers?.agentDir ?? ""
-      const result = await props.ui2Host.refreshProviders(agentDir)
+      const result = await props.ui2Host.refreshProviders(
+        agentDir,
+        PROVIDER_CONFIG_RPC_OPTIONS,
+      )
+      console.log(
+        `providers reload done in ${Math.round(performance.now() - startedAt)}ms`,
+      )
       if (!result.ok) {
         props.onStatus(result.error ?? t("settings.refreshFailed"))
         return
       }
       props.onSnapshot(result.snapshot ?? null)
     } catch (e) {
+      console.log(
+        `providers reload failed in ${Math.round(performance.now() - startedAt)}ms: ${e}`,
+      )
       props.onStatus(e instanceof Error ? e.message : String(e))
     } finally {
       props.onBusy(false)
@@ -190,11 +205,14 @@ export function ProvidersPage(props: ProvidersPageProps) {
     props.onBusy(true)
     props.onStatus(null)
     try {
-      const result = await props.ui2Host.applyProvidersPatch({
-        agentDir: props.settings.providers?.agentDir ?? "",
-        providers: providersPatch,
-        credentials,
-      })
+      const result = await props.ui2Host.applyProvidersPatch(
+        {
+          agentDir: props.settings.providers?.agentDir ?? "",
+          providers: providersPatch,
+          credentials,
+        },
+        PROVIDER_CONFIG_RPC_OPTIONS,
+      )
       if (!result.ok) {
         props.onStatus(result.error ?? t("providers.saveFailed"))
         return
@@ -224,10 +242,13 @@ export function ProvidersPage(props: ProvidersPageProps) {
     })
     props.onBusy(true)
     try {
-      const result = await props.ui2Host.loginProvider({
-        agentDir: props.settings.providers?.agentDir ?? "",
-        providerId: loginId,
-      })
+      const result = await props.ui2Host.loginProvider(
+        {
+          agentDir: props.settings.providers?.agentDir ?? "",
+          providerId: loginId,
+        },
+        PROVIDER_LOGIN_RPC_OPTIONS,
+      )
       if (result.ok) {
         if (result.snapshot) props.onSnapshot(result.snapshot)
         const who = [result.email, result.orgName ?? result.orgId].filter(Boolean).join(" / ")
@@ -298,10 +319,13 @@ export function ProvidersPage(props: ProvidersPageProps) {
     if (!props.ui2Host) return
     props.onBusy(true)
     try {
-      const result = await props.ui2Host.logoutProvider({
-        agentDir: props.settings.providers?.agentDir ?? "",
-        providerId: snap.id,
-      })
+      const result = await props.ui2Host.logoutProvider(
+        {
+          agentDir: props.settings.providers?.agentDir ?? "",
+          providerId: snap.id,
+        },
+        PROVIDER_CONFIG_RPC_OPTIONS,
+      )
       if (!result.ok) {
         props.onStatus(result.error ?? t("providers.logoutFailed"))
         return
