@@ -87,14 +87,7 @@ class SettingsUi2Host(
 
         // Wholesale replace pin/MRU (no separate toggle RPC).
         val prefs = settings.modelPreferences
-        prefsState.recentModelSpecs = prefs.recentModelSpecs
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
-            .toMutableList()
-        prefsState.pinnedModelSpecs = prefs.pinnedModelSpecs
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
-            .toMutableList()
+        prefsState.replace(prefs.recentModelSpecs, prefs.pinnedModelSpecs)
 
         val defaultSpec = providersState.defaultModelSpec()
         if (defaultSpec.isNotEmpty()) {

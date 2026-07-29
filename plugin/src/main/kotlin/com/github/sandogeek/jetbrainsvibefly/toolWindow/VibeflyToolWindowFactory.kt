@@ -3,8 +3,10 @@ package com.github.sandogeek.jetbrainsvibefly.toolWindow
 import com.github.sandogeek.jetbrainsvibefly.agent.VibeflyAgentService
 import com.github.sandogeek.jetbrainsvibefly.chat.ChatWorkspaceState
 import com.github.sandogeek.jetbrainsvibefly.chat.ChatContextDeliveryService
+import com.github.sandogeek.jetbrainsvibefly.settings.VibeflyModelPreferencesState
 import com.github.sandogeek.jetbrainsvibefly.util.Edt
 import com.github.sandogeek.vibefly.jcef.rpc.HostChatContextItem
+import com.github.sandogeek.vibefly.jcef.rpc.ModelPreferencesDto
 import com.github.sandogeek.vibefly.jcef.AgentOrigin
 import com.github.sandogeek.vibefly.jcef.VibeflyBrowserPanel
 import com.github.sandogeek.vibefly.jcef.rpc.Ui2HostImpl
@@ -54,6 +56,7 @@ class VibeflyToolWindowFactory : ToolWindowFactory {
         val projectRoot = project.basePath.orEmpty()
         val workspaceState = ChatWorkspaceState.getInstance(project)
         val contextDelivery = ChatContextDeliveryService.getInstance(project)
+        val modelPreferences = VibeflyModelPreferencesState.getInstance()
         val expectedOrigin = AgentOrigin.currentPanel()
         var panel: VibeflyBrowserPanel? = null
         val ui2Host = Ui2HostImpl(
@@ -64,6 +67,18 @@ class VibeflyToolWindowFactory : ToolWindowFactory {
                     log.warn("Failed to open agent session for origin=$expectedOrigin", e)
                     null
                 }
+            },
+            modelPreferencesProvider = {
+                ModelPreferencesDto(
+                    recentModelSpecs = modelPreferences.recentModelSpecs.toList(),
+                    pinnedModelSpecs = modelPreferences.pinnedModelSpecs.toList(),
+                )
+            },
+            modelPreferencesSaver = { preferences ->
+                modelPreferences.replace(
+                    preferences.recentModelSpecs,
+                    preferences.pinnedModelSpecs,
+                )
             },
             projectRootProvider = { projectRoot },
             workspaceStateProvider = { workspaceState.snapshot() },

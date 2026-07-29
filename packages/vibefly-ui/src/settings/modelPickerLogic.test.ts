@@ -3,6 +3,7 @@ import { emptyCatalog, type BundledCatalog } from "./catalog"
 import {
   buildBadges,
   buildEntries,
+  buildOptionEntries,
   formatCostBadge,
   formatContextBadge,
   listProviders,
@@ -190,5 +191,49 @@ describe("modelPickerLogic", () => {
   test("empty catalog still builds custom entries", () => {
     const entries = buildEntries(connectedSnaps(), emptyCatalog)
     expect(entries.map((e) => e.spec)).toEqual(["my-proxy/demo"])
+  })
+
+  test("direct options preserve specs, provider order, and reasoning search", () => {
+    const entries = buildOptionEntries([
+      {
+        spec: "local-grok/grok-4.5",
+        providerId: "local-grok",
+        modelId: "grok-4.5",
+        modelLabel: "Grok 4.5",
+        reasoning: true,
+      },
+      {
+        spec: "openai/gpt-4o",
+        providerId: "openai",
+        modelId: "gpt-4o",
+        modelLabel: "GPT-4o",
+        reasoning: false,
+      },
+      {
+        spec: "local-grok/grok-mini",
+        providerId: "local-grok",
+        modelId: "grok-mini",
+        modelLabel: "Grok Mini",
+        reasoning: false,
+      },
+    ])
+
+    expect(entries.map((entry) => entry.spec)).toEqual([
+      "local-grok/grok-4.5",
+      "openai/gpt-4o",
+      "local-grok/grok-mini",
+    ])
+    expect(listProviders(entries).map((provider) => provider.id)).toEqual([
+      "local-grok",
+      "openai",
+    ])
+    expect(rank(entries, "reasoning", [], [], false).map((row) => row.entry.spec)).toEqual([
+      "local-grok/grok-4.5",
+    ])
+    expect(
+      rank(entries, "", [], [], false)
+        .filter((row) => row.entry.providerId === "local-grok")
+        .map((row) => row.entry.spec),
+    ).toEqual(["local-grok/grok-4.5", "local-grok/grok-mini"])
   })
 })

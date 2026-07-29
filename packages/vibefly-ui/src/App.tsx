@@ -52,12 +52,20 @@ import type {
   UserInputRequest,
   UserInputResponse,
 } from "@vibefly/uiagent-shared"
-import type { Ui2Host } from "./generated/rpc"
+import type { ModelPreferencesDto, Ui2Host } from "./generated/rpc"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./components/ui/select"
 import { useT } from "./i18n"
 import { log } from "./log"
 import { connectAgentRpc, type AgentStatus } from "./rpc/agent"
 import { createUiRpc } from "./rpc/client"
 import { bindConsoleToHost } from "./rpc/console"
+import { ModelPicker, type ModelPickerOption } from "./settings/ModelPicker"
 import { applyJbTheme } from "./theme"
 
 type ChatTab = ChatSessionSnapshot
@@ -70,6 +78,11 @@ type PendingPermission = {
 type PendingInput = {
   request: UserInputRequest
   resolve: (response: UserInputResponse) => void
+}
+
+type ThinkingOption = {
+  value: string
+  label: string
 }
 
 const MAX_OPEN_TABS = 8
@@ -214,6 +227,10 @@ export function App() {
   const [drafts, setDrafts] = createSignal<Record<string, string>>({})
   const [contexts, setContexts] = createSignal<Record<string, ChatContextItem[]>>({})
   const [models, setModels] = createSignal<Record<string, ChatModelOption[]>>({})
+  const [modelPreferences, setModelPreferences] = createSignal<ModelPreferencesDto>({
+    recentModelSpecs: [],
+    pinnedModelSpecs: [],
+  })
   const [recent, setRecent] = createSignal<RecentChatSession[]>([])
   const [recentOpen, setRecentOpen] = createSignal(false)
   const [error, setError] = createSignal<string | null>(null)
@@ -227,6 +244,7 @@ export function App() {
   let peer: SimpleRpcPeer | null = null
   let stopAgent: (() => void) | null = null
   let unbindConsole: (() => void) | null = null
+  let modelPreferencesSave = Promise.resolve()
   let cancelled = false
   let conversationElement: HTMLElement | undefined
   let dragSessionId: string | null = null
@@ -234,6 +252,26 @@ export function App() {
   const activeTab = createMemo(() => tabs().find((tab) => tab.summary.sessionId === activeId()) ?? null)
   const activeDraft = createMemo(() => drafts()[activeId()] ?? "")
   const activeContexts = createMemo(() => contexts()[activeId()] ?? [])
+  const activeModelOptions = createMemo<ModelPickerOption[]>(() =>
+    (models()[activeId()] ?? []).map((option) => ({
+      spec: option.id,
+      providerId: option.provider,
+      modelId: option.model,
+      modelLabel: option.label,
+      reasoning: option.supportsThinking,
+    })),
+  )
+  const thinkingOptions = createMemo<ThinkingOption[]>(() => [
+    { value: "off", label: t("chat.thinkingOff") },
+    { value: "low", label: "Low" },
+    { value: "medium", label: "Medium" },
+    { value: "high", label: "High" },
+    { value: "xhigh", label: "XHigh" },
+    { value: "auto", label: "Auto" },
+  ])
+  const selectedThinking = createMemo(
+    () => thinkingOptions().find((option) => option.value === (activeTab()?.summary.thinkingLevel ?? "off")) ?? null,
+  )
   const isBusy = createMemo(() => {
     const state = activeTab()?.summary.state
     return state === "running" || state === "waiting_permission" || state === "waiting_input"
@@ -308,7 +346,10 @@ export function App() {
       await ui2Host.getAppVersion()
       await ui2Host.chatUiReady()
       projectRoot = await ui2Host.getProjectRoot()
-      const workspace = await ui2Host.getChatWorkspaceState()
+      const [workspace] = await Promise.all([
+        ui2Host.getChatWorkspaceState(),
+        loadModelPreferences(ui2Host),
+      ])
       if (cancelled) return
       setHostStatus("connected")
 
@@ -396,6 +437,18 @@ export function App() {
   }
 
   let currentAgentProxy: Ui2Agent | null = null
+
+  const loadModelPreferences = async (ui2Host: Ui2Host) => {
+    try {
+      const preferences = (await ui2Host.getIdeSettings()).modelPreferences
+      setModelPreferences({
+        recentModelSpecs: [...(preferences?.recentModelSpecs ?? [])],
+        pinnedModelSpecs: [...(preferences?.pinnedModelSpecs ?? [])],
+      })
+    } catch (preferencesError) {
+      log.warn("model preferences unavailable", preferencesError)
+    }
+  }
 
   const applyBatch = (batch: ChatEventBatch) => {
     for (const event of batch.events) applyEvent(event)
@@ -732,6 +785,29 @@ export function App() {
     }
   }
 
+  const persistModelPreferences = (preferences: ModelPreferencesDto) => {
+    if (!host || offline()) return
+    const targetHost = host
+    modelPreferencesSave = modelPreferencesSave.then(async () => {
+      try {
+        await targetHost.saveIdeSettings({ modelPreferences: preferences })
+      } catch (preferencesError) {
+        log.warn("model preferences save failed", preferencesError)
+        setError(errorText(preferencesError))
+      }
+    })
+  }
+
+  const onChatModelChange = (spec: string, pinned: string[], recentModels: string[]) => {
+    const preferences = {
+      pinnedModelSpecs: [...pinned],
+      recentModelSpecs: [...recentModels],
+    }
+    setModelPreferences(preferences)
+    persistModelPreferences(preferences)
+    if (spec && spec !== activeTab()?.summary.modelId) void setModel(spec)
+  }
+
   const setThinking = async (level: string) => {
     if (!agent || offline() || !activeId()) return
     try {
@@ -1020,29 +1096,41 @@ export function App() {
             <button class="toolbar-button" title={t("chat.addFileContext")} disabled={offline()} onClick={() => void chooseContextFiles()}>
               <Paperclip size={15} />
             </button>
-            <select
-              aria-label={t("chat.model")}
+            <ModelPicker
+              options={activeModelOptions()}
               value={activeTab()?.summary.modelId ?? ""}
+              pinnedSpecs={modelPreferences().pinnedModelSpecs ?? []}
+              recentSpecs={modelPreferences().recentModelSpecs ?? []}
+              variant="compact"
+              placeholder={t("chat.defaultModel")}
+              ariaLabel={t("chat.model")}
               disabled={isBusy() || isQueued() || offline()}
-              onChange={(event) => void setModel(event.currentTarget.value)}
-            >
-              <Show when={(models()[activeId()] ?? []).length > 0} fallback={<option value={activeTab()?.summary.modelId ?? ""}>{modelLabel(activeTab()?.summary.modelId, t("chat.defaultModel"))}</option>}>
-                <For each={models()[activeId()] ?? []}>{(option) => <option value={option.id}>{option.label}</option>}</For>
-              </Show>
-            </select>
-            <select
-              aria-label={t("chat.thinkingLevel")}
-              value={activeTab()?.summary.thinkingLevel ?? "off"}
+              onChange={onChatModelChange}
+            />
+            <Select<ThinkingOption>
+              options={thinkingOptions()}
+              optionValue="value"
+              optionTextValue="label"
+              value={selectedThinking()}
               disabled={isBusy() || isQueued() || offline()}
-              onChange={(event) => void setThinking(event.currentTarget.value)}
+              placement="top-start"
+              gutter={4}
+              fitViewport
+              overflowPadding={8}
+              onChange={(option) => option && void setThinking(option.value)}
+              itemComponent={(props) => (
+                <SelectItem item={props.item} class="composer-select-item">
+                  {props.item.rawValue.label}
+                </SelectItem>
+              )}
             >
-              <option value="off">{t("chat.thinkingOff")}</option>
-              <option value="low">Low</option>
-              <option value="medium">Medium</option>
-              <option value="high">High</option>
-              <option value="xhigh">XHigh</option>
-              <option value="auto">Auto</option>
-            </select>
+              <SelectTrigger class="composer-select-trigger composer-thinking-select" aria-label={t("chat.thinkingLevel")}>
+                <SelectValue<ThinkingOption>>
+                  {(state) => <span>{state.selectedOption().label}</span>}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent class="composer-select-content composer-thinking-content" />
+            </Select>
           </div>
           <div class="composer-actions">
             <button class="toolbar-button" title={t("common.more")}><MoreHorizontal size={16} /></button>

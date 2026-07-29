@@ -9,11 +9,14 @@ import com.intellij.openapi.diagnostic.logger
  * the jcef module does not own agent lifecycle.
  *
  * Settings RPCs (4–11) default to no-op / empty so chat panels stay lightweight.
+ * Tool-window hosts may opt into model preference persistence without exposing other settings.
  * Settings hosts use [SettingsUi2Host] in the plugin module.
  */
 open class Ui2HostImpl(
     private val appVersion: String = DEFAULT_VERSION,
     private val agentConnectionProvider: (suspend () -> AgentConnection?)? = null,
+    private val modelPreferencesProvider: (() -> ModelPreferencesDto)? = null,
+    private val modelPreferencesSaver: (suspend (ModelPreferencesDto) -> Unit)? = null,
     private val projectRootProvider: () -> String = { "" },
     private val workspaceStateProvider: () -> ChatWorkspaceStateDto = { ChatWorkspaceStateDto() },
     private val workspaceStateSaver: (suspend (ChatWorkspaceStateDto) -> Unit)? = null,
@@ -41,10 +44,13 @@ open class Ui2HostImpl(
         }
     }
 
-    override suspend fun getIdeSettings(): IdeSettingsDto = IdeSettingsDto()
+    override suspend fun getIdeSettings(): IdeSettingsDto = IdeSettingsDto(
+        modelPreferences = modelPreferencesProvider?.invoke() ?: ModelPreferencesDto(),
+    )
 
     override suspend fun saveIdeSettings(settings: IdeSettingsDto) {
-        log.debug("saveIdeSettings ignored on non-settings host")
+        modelPreferencesSaver?.invoke(settings.modelPreferences)
+            ?: log.debug("saveIdeSettings ignored on non-settings host")
     }
 
     override suspend fun refreshProviders(agentDir: String): ProvidersRefreshResult =

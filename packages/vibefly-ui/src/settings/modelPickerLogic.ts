@@ -36,6 +36,14 @@ export type ModelPickerEntry = {
   modelLabelLower: string
 }
 
+export type ModelPickerOption = {
+  spec: string
+  providerId: string
+  modelId: string
+  modelLabel: string
+  reasoning: boolean
+}
+
 export type ModelPickerRow = {
   entry: ModelPickerEntry
   tier: ModelPickerTier
@@ -240,6 +248,39 @@ export function buildEntries(
   }
   out.sort(normalCompare)
   return out
+}
+
+export function buildOptionEntries(options: ModelPickerOption[]): ModelPickerEntry[] {
+  const providerRanks = new Map<string, number>()
+  return options.map((option, index) => {
+    let rank = providerRanks.get(option.providerId)
+    if (rank == null) {
+      rank = providerRanks.size
+      providerRanks.set(option.providerId, rank)
+    }
+    const providerLabel = displayName(option.providerId)
+    const modelLabel = option.modelLabel.trim() || option.modelId
+    const badges = buildBadges(undefined, undefined, undefined, option.reasoning, false, false)
+    const providerIdLower = option.providerId.toLowerCase()
+    const providerLabelLower = providerLabel.toLowerCase()
+    const modelIdLower = option.modelId.toLowerCase()
+    const modelLabelLower = modelLabel.toLowerCase()
+    return {
+      spec: option.spec,
+      providerId: option.providerId,
+      providerLabel,
+      modelId: option.modelId,
+      modelLabel,
+      providerRank: rank,
+      modelPriority: index,
+      badges,
+      haystack: `${providerIdLower} ${providerLabelLower} ${modelIdLower} ${modelLabelLower} ${badges.map((badge) => badge.searchText).join(" ")}`,
+      providerIdLower,
+      providerLabelLower,
+      modelIdLower,
+      modelLabelLower,
+    }
+  })
 }
 
 export function tokenizeQuery(query: string): QueryToken[] {

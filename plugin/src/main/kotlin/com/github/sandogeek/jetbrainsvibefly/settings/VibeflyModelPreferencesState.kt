@@ -8,7 +8,7 @@ import com.intellij.openapi.components.Storage
 import com.intellij.util.xmlb.annotations.XCollection
 
 /**
- * Shared pin / MRU model prefs for Providers default model and Commit model pickers.
+ * Shared pin / MRU model prefs for chat, Providers default model, and Commit model pickers.
  * Orphan specs may remain in storage; UI only surfaces specs still in current entries.
  */
 @Service(Service.Level.APP)
@@ -27,8 +27,12 @@ class VibeflyModelPreferencesState : PersistentStateComponent<VibeflyModelPrefer
     override fun getState(): VibeflyModelPreferencesState = this
 
     override fun loadState(state: VibeflyModelPreferencesState) {
-        recentModelSpecs = state.recentModelSpecs.map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
-        pinnedModelSpecs = state.pinnedModelSpecs.map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
+        replace(state.recentModelSpecs, state.pinnedModelSpecs)
+    }
+
+    fun replace(recent: Iterable<String>, pinned: Iterable<String>) {
+        recentModelSpecs = normalize(recent, MAX_RECENT)
+        pinnedModelSpecs = normalize(pinned)
     }
 
     fun recordUsed(spec: String) {
@@ -61,8 +65,7 @@ class VibeflyModelPreferencesState : PersistentStateComponent<VibeflyModelPrefer
     }
 
     fun copyFrom(other: VibeflyModelPreferencesState) {
-        recentModelSpecs = other.recentModelSpecs.toMutableList()
-        pinnedModelSpecs = other.pinnedModelSpecs.toMutableList()
+        replace(other.recentModelSpecs, other.pinnedModelSpecs)
     }
 
     fun snapshot(): VibeflyModelPreferencesState {
@@ -76,5 +79,14 @@ class VibeflyModelPreferencesState : PersistentStateComponent<VibeflyModelPrefer
 
         fun getInstance(): VibeflyModelPreferencesState =
             ApplicationManager.getApplication().getService(VibeflyModelPreferencesState::class.java)
+
+        private fun normalize(values: Iterable<String>, limit: Int = Int.MAX_VALUE): MutableList<String> {
+            val seen = mutableSetOf<String>()
+            return values.asSequence()
+                .map { it.trim() }
+                .filter { it.isNotEmpty() && seen.add(it) }
+                .take(limit)
+                .toMutableList()
+        }
     }
 }

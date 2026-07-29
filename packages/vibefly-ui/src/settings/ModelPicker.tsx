@@ -5,22 +5,23 @@ import { useT } from "../i18n"
 import type { BundledCatalog } from "./catalog"
 import {
   buildEntries,
+  buildOptionEntries,
   listProviders,
   rank,
   recordUsed,
   togglePinned,
   type ModelBadge,
   type ModelPickerEntry,
+  type ModelPickerOption,
   type ModelPickerRow,
 } from "./modelPickerLogic"
 
-export type ModelPickerProps = {
+type ModelPickerCommonProps = {
   value: string
   onChange: (spec: string, nextPinned: string[], nextRecent: string[]) => void
-  providers: ProviderSnapshot[]
-  catalog: BundledCatalog
   pinnedSpecs: string[]
   recentSpecs: string[]
+  variant?: "default" | "compact"
   allowClear?: boolean
   allowFollowDefault?: boolean
   disabled?: boolean
@@ -29,6 +30,23 @@ export type ModelPickerProps = {
   followDefaultSpec?: string
   onConfigureProviders?: () => void
 }
+
+type ModelPickerCatalogSource = {
+  providers: ProviderSnapshot[]
+  catalog: BundledCatalog
+  options?: never
+}
+
+type ModelPickerOptionSource = {
+  options: ModelPickerOption[]
+  providers?: never
+  catalog?: never
+}
+
+export type ModelPickerProps = ModelPickerCommonProps &
+  (ModelPickerCatalogSource | ModelPickerOptionSource)
+
+export type { ModelPickerOption }
 
 type DropdownPlacement = {
   top: number
@@ -63,7 +81,12 @@ export function ModelPicker(props: ModelPickerProps) {
   let panelEl: HTMLDivElement | undefined
   let listEl: HTMLDivElement | undefined
 
-  const entries = createMemo(() => buildEntries(props.providers, props.catalog))
+  const entries = createMemo(() =>
+    props.options
+      ? buildOptionEntries(props.options)
+      : buildEntries(props.providers, props.catalog),
+  )
+  const compact = () => props.variant === "compact"
   const providerOptions = createMemo(() => listProviders(entries()))
   const selectedEntry = createMemo((): ModelPickerEntry | null => {
     if (!props.value) return null
@@ -359,11 +382,18 @@ export function ModelPicker(props: ModelPickerProps) {
   }
 
   return (
-    <div class="relative w-full">
+    <div
+      class="model-picker relative"
+      classList={{ "w-full": !compact(), "model-picker-compact": compact() }}
+    >
       <button
         ref={triggerEl}
         type="button"
-        class="flex min-h-10 w-full items-center justify-between gap-2 rounded border border-border bg-surface px-3 py-1.5 text-left text-fg outline-none hover:border-accent focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+        class="flex w-full items-center justify-between gap-2 rounded border border-border text-left text-fg outline-none hover:border-accent focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+        classList={{
+          "min-h-10 bg-surface px-3 py-1.5": !compact(),
+          "h-[29px] min-h-[29px] bg-surface-raised px-2 py-0": compact(),
+        }}
         disabled={props.disabled}
         aria-label={props.ariaLabel ?? t("modelPicker.selectModel")}
         aria-haspopup="listbox"
@@ -380,9 +410,20 @@ export function ModelPicker(props: ModelPickerProps) {
           }
         }}
       >
-        <span class="min-w-0 flex-1">
-          <span class="block truncate text-sm">{triggerPrimary()}</span>
-          <Show when={triggerSecondary()}>
+        <span
+          class="min-w-0 flex-1"
+          classList={{ "flex items-center gap-1": compact() }}
+        >
+          <Show when={compact() && selectedUnavailable()}>
+            <AlertTriangle class="size-3 shrink-0 text-warning" aria-hidden="true" />
+          </Show>
+          <span
+            class="block truncate"
+            classList={{ "text-sm": !compact(), "text-[11px]": compact() }}
+          >
+            {triggerPrimary()}
+          </span>
+          <Show when={!compact() && triggerSecondary()}>
             {(secondary) => (
               <span
                 class="mt-0.5 flex items-center gap-1 truncate font-mono text-[11px] text-muted"
