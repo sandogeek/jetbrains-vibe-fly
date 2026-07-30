@@ -68,7 +68,6 @@ export const dict = {
   providers: {
     subtitle: "API keys and OAuth tokens stay in Oh My Pi agent.db (never IDE XML).",
     reload: "Reload from disk",
-    catalogLoadFailed: "Catalog load failed: {{error}}. Custom snapshot models still work.",
     agentDirectory: "Agent directory",
     defaultModel: "Default model",
     connectedProviders: "Connected Providers",

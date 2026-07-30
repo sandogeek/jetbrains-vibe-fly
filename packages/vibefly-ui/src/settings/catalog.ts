@@ -1,3 +1,5 @@
+import { bundledCatalog as generatedCatalog } from "../generated/bundledCatalog"
+
 export type CatalogModel = {
   id: string
   name?: string | null
@@ -13,6 +15,8 @@ export type CatalogModel = {
 
 export type CatalogProvider = {
   id: string
+  supportsLogin?: boolean
+  loginProviderId?: string | null
   models: CatalogModel[]
 }
 
@@ -48,29 +52,8 @@ function indexCatalog(raw: {
   return { providerOrder, providers, providerRank, modelsByProvider }
 }
 
-/**
- * Fetch catalog from Vite public/ (dev) or classpath scheme (prod).
- * Failures return empty catalog — custom snapshot models still work.
- */
-export async function loadBundledCatalog(): Promise<{
-  catalog: BundledCatalog
-  error: string | null
-}> {
-  try {
-    const res = await fetch("./catalog/bundled-catalog.json", { cache: "no-cache" })
-    if (!res.ok) {
-      return { catalog: EMPTY, error: `Catalog HTTP ${res.status}` }
-    }
-    const json = (await res.json()) as {
-      providerOrder?: string[]
-      providers?: CatalogProvider[]
-    }
-    return { catalog: indexCatalog(json), error: null }
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    return { catalog: EMPTY, error: msg }
-  }
-}
+/** Immutable catalog compiled into the UI bundle; no runtime file fetch. */
+export const bundledCatalog = indexCatalog(generatedCatalog)
 
 export function providerRank(catalog: BundledCatalog, providerId: string): number {
   return catalog.providerRank.get(providerId) ?? catalog.providerOrder.length

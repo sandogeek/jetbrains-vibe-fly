@@ -47,22 +47,19 @@ export interface ProviderCredentialStatus {
   originKind?: string;
 }
 
-export interface ProviderSnapshot {
+export interface ProviderRuntimeSnapshot {
   id: string;
-  isCatalog?: boolean;
   isConfigured?: boolean;
   baseUrl?: string | null;
   api?: string | null;
   auth?: string | null;
   models?: Array<ProviderModelSnapshot>;
   credential?: ProviderCredentialStatus;
-  supportsLogin?: boolean;
-  loginProviderId?: string | null;
 }
 
 export interface ProvidersSnapshot {
   agentDir: string;
-  providers?: Array<ProviderSnapshot>;
+  providers?: Array<ProviderRuntimeSnapshot>;
   modelsPath?: string | null;
 }
 
@@ -195,4 +192,3 @@ export type Host2UiService = RpcService<typeof host2Ui>;
 export function registerHost2UiService(peer: SimpleRpcPeer, implementation: Host2UiService) {
   return host2Ui.register(peer, implementation);
 }
-

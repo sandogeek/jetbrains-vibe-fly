@@ -1,5 +1,6 @@
 import { useNavigate } from "@solidjs/router"
-import type { IdeSettingsDto, ProviderSnapshot, ProvidersSnapshot } from "../generated/rpc"
+import type { IdeSettingsDto } from "../generated/rpc"
+import type { ProviderSnapshot, ProvidersSnapshot } from "./providerSnapshots"
 import { useT } from "../i18n"
 import type { BundledCatalog } from "./catalog"
 import { ModelPicker } from "./ModelPicker"

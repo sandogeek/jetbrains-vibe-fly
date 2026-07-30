@@ -15,7 +15,7 @@ import {
   TextFieldLabel,
   TextFieldTextArea,
 } from "@/components/ui/text-field"
-import type { ProviderSnapshot } from "../generated/rpc"
+import type { ProviderSnapshot } from "./providerSnapshots"
 import { useT, type Translator } from "../i18n"
 import {
   credentialStatusText,

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { ProviderSnapshot } from "../generated/rpc"
+import type { ProviderSnapshot } from "./providerSnapshots"
 import {
   classifyProviders,
   filterBuiltInProviders,
@@ -16,16 +16,22 @@ const snaps: ProviderSnapshot[] = [
   {
     id: "openai",
     isCatalog: true,
+    supportsLogin: false,
+    loginProviderId: null,
     credential: { hasApiKey: true, hasOAuth: false, originKind: "api_key" },
   },
   {
     id: "anthropic",
     isCatalog: true,
+    supportsLogin: true,
+    loginProviderId: null,
     credential: { hasApiKey: false, hasOAuth: false, originKind: "none" },
   },
   {
     id: "my-proxy",
     isCatalog: false,
+    supportsLogin: false,
+    loginProviderId: null,
     models: [{ id: "x" }],
   },
 ]

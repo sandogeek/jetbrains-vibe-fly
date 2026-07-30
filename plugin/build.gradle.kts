@@ -57,6 +57,7 @@ val vibeflyAgentBundleDir = layout.buildDirectory.dir("bundled-agent")
 val buildVibeflyAgent by tasks.registering(BuildVibeflyAgentTask::class) {
     group = "build"
     description = "Build and stage production vibefly-agent runtime for the plugin distribution"
+    dependsOn(":vibefly-jcef:exportBundledCatalog")
     bunCommand.set(providers.gradleProperty("vibefly.bun").orElse("bun"))
     agentRootDir.set(rootProject.layout.projectDirectory.dir("packages/vibefly-agent"))
     agentSourceDir.set(rootProject.layout.projectDirectory.dir("packages/vibefly-agent/src"))

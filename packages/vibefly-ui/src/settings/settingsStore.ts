@@ -3,16 +3,14 @@ import type {
   IdeSettingsDto,
   ModelPreferencesDto,
   ProvidersFormDto,
-  ProvidersSnapshot,
-  ProviderSnapshot,
 } from "../generated/rpc"
-import { emptyCatalog, type BundledCatalog } from "./catalog"
+import { bundledCatalog, type BundledCatalog } from "./catalog"
+import type { ProviderSnapshot, ProvidersSnapshot } from "./providerSnapshots"
 
 export type SettingsState = {
   settings: IdeSettingsDto
   snapshot: ProvidersSnapshot | null
   catalog: BundledCatalog
-  catalogError: string | null
   loadError: string | null
   busy: boolean
   status: string | null
@@ -98,8 +96,7 @@ export function initialState(): SettingsState {
   return {
     settings: emptySettings(),
     snapshot: null,
-    catalog: emptyCatalog,
-    catalogError: null,
+    catalog: bundledCatalog,
     loadError: null,
     busy: false,
     status: null,

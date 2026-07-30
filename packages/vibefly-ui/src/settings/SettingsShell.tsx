@@ -9,16 +9,18 @@ import type {
   Host2UiService,
   IdeSettingsDto,
   LoginInputResponse,
-  ProvidersSnapshot,
   Ui2Host,
 } from "../generated/rpc"
 import { useT } from "../i18n"
 import { createUiRpc } from "../rpc/client"
 import { bindConsoleToHost } from "../rpc/console"
 import { applyJbTheme } from "../theme"
-import { loadBundledCatalog } from "./catalog"
 import { CommitMessagePage } from "./CommitMessagePage"
 import { ProvidersPage } from "./ProvidersPage"
+import {
+  mergeProvidersSnapshot,
+  type ProvidersSnapshot,
+} from "./providerSnapshots"
 import { PROVIDER_CONFIG_RPC_OPTIONS } from "./rpcOptions"
 import { emptySettings, initialState, normalizeSettings, type SettingsState } from "./settingsStore"
 import {
@@ -98,7 +100,6 @@ export function SettingsShell(props: { children?: JSX.Element }) {
 
   const bootstrap = async (host: Ui2Host | null) => {
     setState((s) => ({ ...s, busy: true, loadError: null }))
-    const catalogResult = await loadBundledCatalog()
     let settings = emptySettings()
     let snapshot: ProvidersSnapshot | null = null
     let loadError: string | null = null
@@ -112,7 +113,7 @@ export function SettingsShell(props: { children?: JSX.Element }) {
       try {
         const refresh = await host.refreshProviders("", PROVIDER_CONFIG_RPC_OPTIONS)
         if (refresh.ok) {
-          snapshot = refresh.snapshot ?? null
+          snapshot = mergeProvidersSnapshot(refresh.snapshot, state().catalog)
         } else {
           loadError = loadError ?? refresh.error ?? t("settings.refreshFailed")
         }
@@ -125,8 +126,6 @@ export function SettingsShell(props: { children?: JSX.Element }) {
 
     setState((s) => ({
       ...s,
-      catalog: catalogResult.catalog,
-      catalogError: catalogResult.error,
       settings,
       snapshot,
       loadError,
@@ -218,7 +217,6 @@ export function SettingsShell(props: { children?: JSX.Element }) {
               settings={state().settings}
               snapshot={state().snapshot}
               catalog={state().catalog}
-              catalogError={state().catalogError}
               busy={state().busy}
               onSettings={(settings) => setState((s) => ({ ...s, settings }))}
               onSnapshot={(snapshot) => setState((s) => ({ ...s, snapshot }))}

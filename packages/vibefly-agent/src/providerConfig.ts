@@ -10,9 +10,6 @@ import {
   type AuthCredential,
 } from "@oh-my-pi/pi-coding-agent"
 import { getAgentDbPath } from "@oh-my-pi/pi-utils"
-import {
-  getBundledProviders,
-} from "@oh-my-pi/pi-catalog/models"
 import { JSONC, YAML } from "bun"
 import type {
   CredentialAction,
@@ -20,15 +17,14 @@ import type {
   ProviderModelPatch,
   ProviderModelSnapshot,
   ProviderPatch,
-  ProviderSnapshot,
+  ProviderRuntimeSnapshot,
   ProvidersPatchRequest,
   ProvidersPatchResult,
   ProvidersSnapshot,
 } from "./generated/controlRpc.js"
+import { staticProviders } from "./generated/providerCatalog.js"
 import { log } from "./log.js"
 import {
-  allLoginProviderIds,
-  providerSupportsLogin,
   resolveLoginProviderId,
 } from "./loginProviders.js"
 
@@ -176,10 +172,6 @@ export function writeRawModelsConfig(agentDir: string, data: RawModelsFile): str
   return writePath
 }
 
-function catalogProviderIds(): Set<string> {
-  return new Set(getBundledProviders().map((p) => String(p)))
-}
-
 function asString(v: unknown): string | undefined {
   if (typeof v === "string") {
     const t = v.trim()
@@ -189,9 +181,7 @@ function asString(v: unknown): string | undefined {
 }
 
 function snapshotModels(
-  _providerId: string,
   raw: Record<string, unknown> | undefined,
-  isCatalog: boolean,
 ): ProviderModelSnapshot[] {
   const modelsRaw = raw?.models
   if (Array.isArray(modelsRaw) && modelsRaw.length > 0) {
@@ -210,8 +200,6 @@ function snapshotModels(
       })
       .filter((m): m is ProviderModelSnapshot => m != null)
   }
-
-  if (isCatalog) return []
 
   return []
 }
@@ -323,35 +311,35 @@ async function buildProvidersSnapshot(
       elapsedMs: Math.round(authOpenedAt - authStartedAt),
     })
 
-    const catalogIds = catalogProviderIds()
     const raw = loadRawModelsConfig(agentDir)
     const configured = raw.providers ?? {}
-    // Include OAuth/login-only providers so they appear in Settings even without models.yml.
-    const loginIds = new Set(allLoginProviderIds())
     const ids = new Set<string>([
-      ...catalogIds,
+      ...staticProviders.map((provider) => provider.id),
       ...Object.keys(configured),
-      ...loginIds,
     ])
 
-    const providers: ProviderSnapshot[] = []
+    const providers: ProviderRuntimeSnapshot[] = []
     for (const id of [...ids].sort((a, b) => a.localeCompare(b))) {
-      const isCatalog = catalogIds.has(id) || loginIds.has(id)
       const entry = configured[id]
       const isConfigured = entry != null && typeof entry === "object"
       const rec = isConfigured ? (entry as Record<string, unknown>) : undefined
-      const loginId = resolveLoginProviderId(id)
+      const credential = credentialStatus(auth, id)
+      if (
+        !isConfigured &&
+        !credential.hasApiKey &&
+        !credential.hasOAuth &&
+        credential.originKind === "none"
+      ) {
+        continue
+      }
       providers.push({
         id,
-        isCatalog,
         isConfigured,
         baseUrl: asString(rec?.baseUrl),
         api: asString(rec?.api),
         auth: asString(rec?.auth),
-        models: snapshotModels(id, rec, catalogIds.has(id)),
-        credential: credentialStatus(auth, id),
-        supportsLogin: providerSupportsLogin(id),
-        loginProviderId: loginId && loginId !== id ? loginId : null,
+        models: snapshotModels(rec),
+        credential,
       })
     }
 
@@ -363,7 +351,7 @@ async function buildProvidersSnapshot(
     log.info("providers snapshot done", {
       requestId,
       agentDir,
-      providers: providers.length,
+      runtimeProviders: providers.length,
       authMs: Math.round(authOpenedAt - authStartedAt),
       buildMs: Math.round(performance.now() - authOpenedAt),
       totalMs: Math.round(performance.now() - startedAt),

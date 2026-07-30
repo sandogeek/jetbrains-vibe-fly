@@ -13,7 +13,7 @@ import {
   tokenizeQuery,
   togglePinned,
 } from "./modelPickerLogic"
-import type { ProviderSnapshot } from "../generated/rpc"
+import type { ProviderSnapshot } from "./providerSnapshots"
 
 function catalogFixture(): BundledCatalog {
   return {
@@ -69,16 +69,22 @@ function connectedSnaps(): ProviderSnapshot[] {
     {
       id: "anthropic",
       isCatalog: true,
+      supportsLogin: true,
+      loginProviderId: null,
       credential: { hasApiKey: true, hasOAuth: false, originKind: "api_key" },
     },
     {
       id: "openai",
       isCatalog: true,
+      supportsLogin: false,
+      loginProviderId: null,
       credential: { hasOAuth: true, hasApiKey: false, originKind: "oauth" },
     },
     {
       id: "my-proxy",
       isCatalog: false,
+      supportsLogin: false,
+      loginProviderId: null,
       models: [{ id: "demo", name: "Demo" }],
     },
   ]

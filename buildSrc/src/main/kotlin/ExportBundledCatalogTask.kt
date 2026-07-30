@@ -17,13 +17,13 @@ import java.io.File
 import javax.inject.Inject
 
 /**
- * Runs packages/vibefly-agent `bun run export:catalog` → vibefly-ui public catalog JSON.
+ * Runs packages/vibefly-agent `bun run export:catalog` to generate provider TS modules.
  *
- * When agent node_modules is missing, keeps the committed JSON so the plugin can still build.
+ * When agent node_modules is missing, keeps the committed outputs so the plugin can still build.
  * Override bun: -Pvibefly.bun=/path/to/bun
  *
  * Up-to-date inputs are intentional and narrow: only bun path, package.json, export script,
- * and pi-catalog package marker — not the whole agent tree (src/, bun.lock, temps, etc.).
+ * and upstream package markers — not the whole agent tree (src/, bun.lock, temps, etc.).
  */
 abstract class ExportBundledCatalogTask @Inject constructor(
     private val execOperations: ExecOperations,
@@ -44,35 +44,35 @@ abstract class ExportBundledCatalogTask @Inject constructor(
     @get:PathSensitive(PathSensitivity.RELATIVE)
     abstract val exportScript: RegularFileProperty
 
-    /**
-     * Fingerprint for the installed pi-catalog version/content marker.
-     * Empty when node_modules is missing (committed JSON is used as fallback).
-     */
+    /** Fingerprints for installed pi-catalog/pi-ai versions. */
     @get:InputFiles
     @get:PathSensitive(PathSensitivity.RELATIVE)
-    abstract val piCatalogInputs: ConfigurableFileCollection
+    abstract val upstreamPackageInputs: ConfigurableFileCollection
 
     @get:OutputFile
-    abstract val outputFile: RegularFileProperty
+    abstract val uiOutputFile: RegularFileProperty
+
+    @get:OutputFile
+    abstract val agentOutputFile: RegularFileProperty
 
     @TaskAction
     fun export() {
         val workDir = workingDirectory.get().asFile
         val nodeModules = File(workDir, "node_modules")
-        val out = outputFile.get().asFile
+        val outputs = listOf(uiOutputFile.get().asFile, agentOutputFile.get().asFile)
         if (!nodeModules.isDirectory) {
-            if (out.isFile && out.length() > 0L) {
+            if (outputs.all { it.isFile && it.length() > 0L }) {
                 logger.warn(
-                    "Skip bundled catalog export: missing node_modules at {}. " +
-                        "Using committed {}. Run: (cd packages/vibefly-agent && bun install && bun run export:catalog)",
+                    "Skip provider catalog export: missing node_modules at {}. " +
+                        "Using committed outputs. Run: (cd packages/vibefly-agent && bun install && bun run export:catalog)",
                     nodeModules,
-                    out,
                 )
                 return
             }
             throw GradleException(
-                "Cannot export bundled catalog: missing node_modules at $nodeModules " +
-                    "and no committed ${out.path}. Run: (cd packages/vibefly-agent && bun install && bun run export:catalog)",
+                "Cannot export provider catalog: missing node_modules at $nodeModules " +
+                    "and generated outputs are missing. Run: " +
+                    "(cd packages/vibefly-agent && bun install && bun run export:catalog)",
             )
         }
 
@@ -87,8 +87,9 @@ abstract class ExportBundledCatalogTask @Inject constructor(
             workingDir(workDir)
             commandLine(bun, "run", "export:catalog")
         }
-        if (!out.isFile || out.length() == 0L) {
-            throw GradleException("export:catalog did not write ${out.path}")
+        val missing = outputs.filterNot { it.isFile && it.length() > 0L }
+        if (missing.isNotEmpty()) {
+            throw GradleException("export:catalog did not write ${missing.joinToString { it.path }}")
         }
     }
 }

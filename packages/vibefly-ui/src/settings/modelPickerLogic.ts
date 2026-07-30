@@ -1,8 +1,9 @@
-import type { ProviderModelSnapshot, ProviderSnapshot } from "../generated/rpc"
+import type { ProviderModelSnapshot } from "../generated/rpc"
 import type { BundledCatalog, CatalogModel } from "./catalog"
 import { catalogModels, providerRank } from "./catalog"
 import { classifyProviders } from "./providerLogic"
 import { displayName } from "./providerLabels"
+import type { ProviderSnapshot } from "./providerSnapshots"
 
 export type ModelPickerTier = "follow_default" | "clear" | "pinned" | "recent" | "normal"
 

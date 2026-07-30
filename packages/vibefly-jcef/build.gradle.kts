@@ -52,23 +52,27 @@ val generateVibeflyAgentControlRpc by tasks.registering(JavaExec::class) {
     outputs.file(agentControlRpcTs)
 }
 
-// Slim pi-catalog JSON for model picker (committed under vibefly-ui/public; re-export when upgrading).
-// Vite copies public/ into resources/web on build — host Kotlin never reads this file.
+// Build-time provider data for UI + Agent (committed generated TS; re-export when upgrading).
 val agentRoot = rootProject.layout.projectDirectory.dir("packages/vibefly-agent")
-val uiCatalogJson =
-    rootProject.layout.projectDirectory.file("packages/vibefly-ui/public/catalog/bundled-catalog.json")
+val uiProviderCatalog =
+    rootProject.layout.projectDirectory.file("packages/vibefly-ui/src/generated/bundledCatalog.ts")
+val agentProviderCatalog =
+    rootProject.layout.projectDirectory.file("packages/vibefly-agent/src/generated/providerCatalog.ts")
 
 val exportBundledCatalog by tasks.registering(ExportBundledCatalogTask::class) {
     group = "build"
-    description =
-        "Export slim bundled model catalog from agent pi-catalog into vibefly-ui public assets"
+    description = "Export immutable provider data from Agent dependencies into generated TS modules"
     bunCommand.set(providers.gradleProperty("vibefly.bun").orElse("bun"))
     workingDirectory.set(agentRoot)
     packageJson.set(agentRoot.file("package.json"))
     exportScript.set(agentRoot.file("scripts/export-bundled-catalog.ts"))
     // Always register the path: missing file → empty input; install/upgrade → out-of-date.
-    piCatalogInputs.from(agentRoot.file("node_modules/@oh-my-pi/pi-catalog/package.json"))
-    outputFile.set(uiCatalogJson)
+    upstreamPackageInputs.from(
+        agentRoot.file("node_modules/@oh-my-pi/pi-catalog/package.json"),
+        agentRoot.file("node_modules/@oh-my-pi/pi-ai/package.json"),
+    )
+    uiOutputFile.set(uiProviderCatalog)
+    agentOutputFile.set(agentProviderCatalog)
 }
 
 // vibefly-ui (Vite) → src/main/resources/web for ClasspathResourceHandler
@@ -91,11 +95,11 @@ val buildVibeflyUi by tasks.registering(BuildVibeflyUiTask::class) {
     packageJson.set(uiRoot.file("package.json"))
     viteConfig.set(uiRoot.file("vite.config.ts"))
     indexHtml.set(uiRoot.file("index.html"))
-    catalogJson.set(uiCatalogJson)
+    providerCatalog.set(uiProviderCatalog)
     outputDir.set(webOut)
 }
 
-// Dev: JCEF loads Vite — skip bun run build, but still refresh public catalog for the dev server.
+// Dev: JCEF loads Vite — skip bun run build, but still refresh generated provider data.
 if (!uiDevMode) {
     tasks.named("processResources") {
         dependsOn(buildVibeflyUi)

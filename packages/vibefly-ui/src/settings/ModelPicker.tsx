@@ -1,6 +1,6 @@
 import { AlertTriangle, Check, ChevronDown, Search, Star, X } from "lucide-solid"
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js"
-import type { ProviderSnapshot } from "../generated/rpc"
+import type { ProviderSnapshot } from "./providerSnapshots"
 import { useT } from "../i18n"
 import type { BundledCatalog } from "./catalog"
 import {

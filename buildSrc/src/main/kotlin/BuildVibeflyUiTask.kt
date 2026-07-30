@@ -46,10 +46,10 @@ abstract class BuildVibeflyUiTask @Inject constructor(
     @get:PathSensitive(PathSensitivity.RELATIVE)
     abstract val indexHtml: RegularFileProperty
 
-    /** Vite public catalog — fingerprint so catalog-only changes rebuild web resources. */
+    /** Generated provider catalog — fingerprint so catalog-only changes rebuild web resources. */
     @get:InputFile
     @get:PathSensitive(PathSensitivity.RELATIVE)
-    abstract val catalogJson: RegularFileProperty
+    abstract val providerCatalog: RegularFileProperty
 
     @get:OutputDirectory
     abstract val outputDir: DirectoryProperty

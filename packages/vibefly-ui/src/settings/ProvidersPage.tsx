@@ -3,8 +3,6 @@ import type {
   CredentialAction,
   IdeSettingsDto,
   ProviderPatch,
-  ProviderSnapshot,
-  ProvidersSnapshot,
   Ui2Host,
 } from "../generated/rpc"
 import { useT } from "../i18n"
@@ -35,13 +33,17 @@ import {
   PROVIDER_LOGIN_RPC_OPTIONS,
 } from "./rpcOptions"
 import { withModelPreferences, withProviders } from "./settingsStore"
+import {
+  mergeProvidersSnapshot,
+  type ProviderSnapshot,
+  type ProvidersSnapshot,
+} from "./providerSnapshots"
 
 export type ProvidersPageProps = {
   ui2Host: Ui2Host | null
   settings: IdeSettingsDto
   snapshot: ProvidersSnapshot | null
   catalog: BundledCatalog
-  catalogError: string | null
   busy: boolean
   onSettings: (next: IdeSettingsDto) => void
   onSnapshot: (snap: ProvidersSnapshot | null) => void
@@ -183,7 +185,7 @@ export function ProvidersPage(props: ProvidersPageProps) {
         props.onStatus(result.error ?? t("settings.refreshFailed"))
         return
       }
-      props.onSnapshot(result.snapshot ?? null)
+      props.onSnapshot(mergeProvidersSnapshot(result.snapshot, props.catalog))
     } catch (e) {
       console.log(
         `providers reload failed in ${Math.round(performance.now() - startedAt)}ms: ${e}`,
@@ -217,7 +219,9 @@ export function ProvidersPage(props: ProvidersPageProps) {
         props.onStatus(result.error ?? t("providers.saveFailed"))
         return
       }
-      if (result.snapshot) props.onSnapshot(result.snapshot)
+      if (result.snapshot) {
+        props.onSnapshot(mergeProvidersSnapshot(result.snapshot, props.catalog))
+      }
     } catch (e) {
       props.onStatus(e instanceof Error ? e.message : String(e))
     } finally {
@@ -250,7 +254,9 @@ export function ProvidersPage(props: ProvidersPageProps) {
         PROVIDER_LOGIN_RPC_OPTIONS,
       )
       if (result.ok) {
-        if (result.snapshot) props.onSnapshot(result.snapshot)
+        if (result.snapshot) {
+          props.onSnapshot(mergeProvidersSnapshot(result.snapshot, props.catalog))
+        }
         const who = [result.email, result.orgName ?? result.orgId].filter(Boolean).join(" / ")
         props.onStatus(who ? t("providers.loggedInAs", { who }) : t("providers.loginSuccess"))
       } else {
@@ -330,7 +336,9 @@ export function ProvidersPage(props: ProvidersPageProps) {
         props.onStatus(result.error ?? t("providers.logoutFailed"))
         return
       }
-      if (result.snapshot) props.onSnapshot(result.snapshot)
+      if (result.snapshot) {
+        props.onSnapshot(mergeProvidersSnapshot(result.snapshot, props.catalog))
+      }
     } catch (e) {
       props.onStatus(e instanceof Error ? e.message : String(e))
     } finally {
@@ -372,14 +380,6 @@ export function ProvidersPage(props: ProvidersPageProps) {
           {props.busy ? t("common.loading") : t("providers.reload")}
         </button>
       </header>
-
-      <Show when={props.catalogError}>
-        {(e) => (
-          <p class="m-0 rounded border border-border bg-surface px-3 py-2 text-xs text-muted">
-            {t("providers.catalogLoadFailed", { error: e() })}
-          </p>
-        )}
-      </Show>
 
       <section class="grid gap-3 sm:grid-cols-2">
         <div>

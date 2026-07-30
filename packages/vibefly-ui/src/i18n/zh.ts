@@ -70,7 +70,6 @@ export const dict: RawDictionary = {
   providers: {
     subtitle: "API 密钥与 OAuth 令牌保存在 Oh My Pi agent.db 中（不会写入 IDE XML）。",
     reload: "从磁盘重新加载",
-    catalogLoadFailed: "目录加载失败：{{error}}。自定义快照模型仍可用。",
     agentDirectory: "Agent 目录",
     defaultModel: "默认模型",
     connectedProviders: "已连接提供商",

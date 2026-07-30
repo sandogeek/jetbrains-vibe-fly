@@ -243,7 +243,7 @@ describe("catalog + snapshot", () => {
     expect(third).toBe(first)
   })
 
-  test("getProvidersSnapshot merges catalog and configured", async () => {
+  test("getProvidersSnapshot returns mutable state for built-in and configured providers", async () => {
     const agentDir = tempAgentDir()
     setAgentDir(agentDir)
     writeRawModelsConfig(agentDir, {
@@ -262,14 +262,14 @@ describe("catalog + snapshot", () => {
     expect(snap.agentDir).toBe(agentDir)
     expect(providers.some((p) => p.id === "local-custom")).toBe(true)
     const custom = providers.find((p) => p.id === "local-custom")!
-    expect(custom.isCatalog).toBe(false)
     expect(custom.isConfigured).toBe(true)
     expect(custom.baseUrl).toContain("127.0.0.1")
     expect((custom.models ?? []).some((m) => m.id === "m1")).toBe(true)
 
-    const catalogProvider = providers.find((p) => p.isCatalog)
-    if (catalogProvider) {
-      expect(catalogProvider.models ?? []).toEqual([])
+    for (const provider of providers) {
+      expect("isCatalog" in provider).toBe(false)
+      expect("supportsLogin" in provider).toBe(false)
+      expect("loginProviderId" in provider).toBe(false)
     }
   })
 })

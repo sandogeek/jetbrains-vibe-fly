@@ -34,7 +34,7 @@ interface Ui2Host {
     @RpcFun(5)
     suspend fun saveIdeSettings(settings: IdeSettingsDto)
 
-    /** Fetch providers snapshot for [agentDir] (empty → resolved default agent dir). */
+    /** Fetch mutable provider state for [agentDir] (empty → resolved default agent dir). */
     @RpcFun(6)
     suspend fun refreshProviders(agentDir: String): ProvidersRefreshResult
 

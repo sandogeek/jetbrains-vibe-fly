@@ -18,10 +18,10 @@ data class ProviderModelSnapshot(
     val isCustom: Boolean = false,
 )
 
+/** Mutable provider state only; immutable catalog metadata is generated directly for TypeScript. */
 @Serializable
-data class ProviderSnapshot(
+data class ProviderRuntimeSnapshot(
     val id: String,
-    val isCatalog: Boolean = false,
     val isConfigured: Boolean = false,
     val baseUrl: String? = null,
     val api: String? = null,
@@ -29,15 +29,11 @@ data class ProviderSnapshot(
     val auth: String? = null,
     val models: List<ProviderModelSnapshot> = emptyList(),
     val credential: ProviderCredentialStatus = ProviderCredentialStatus(),
-    /** True when Oh My Pi exposes a `/login` flow for this provider id. */
-    val supportsLogin: Boolean = false,
-    /** Login registry id when different from [id] (rarely set). */
-    val loginProviderId: String? = null,
 )
 
 @Serializable
 data class ProvidersSnapshot(
     val agentDir: String,
-    val providers: List<ProviderSnapshot> = emptyList(),
+    val providers: List<ProviderRuntimeSnapshot> = emptyList(),
     val modelsPath: String? = null,
 )

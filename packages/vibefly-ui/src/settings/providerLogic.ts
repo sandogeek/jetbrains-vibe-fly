@@ -1,4 +1,4 @@
-import type { ProviderSnapshot } from "../generated/rpc"
+import type { ProviderSnapshot } from "./providerSnapshots"
 import { description, displayName } from "./providerLabels"
 
 export type ProviderBadge = "custom" | "api_key" | "oauth" | "configured"
