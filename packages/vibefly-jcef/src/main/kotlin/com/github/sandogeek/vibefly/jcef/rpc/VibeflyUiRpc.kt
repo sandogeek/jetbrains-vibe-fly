@@ -6,7 +6,9 @@ import com.github.sandogeek.simplerpc.jcef.CefMessageRouterTransport
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.util.Disposer
+import com.intellij.ui.jcef.JBCefApp
 import com.intellij.ui.jcef.JBCefBrowser
+import com.intellij.ui.jcef.JBCefJSQuery
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
@@ -18,12 +20,14 @@ import org.cef.browser.CefMessageRouter
 import org.cef.browser.CefMessageRouter.CefMessageRouterConfig
 import org.cef.callback.CefQueryCallback
 import org.cef.handler.CefMessageRouterHandlerAdapter
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Wires SimpleRpc over CefMessageRouter for a [JBCefBrowser].
  *
- * Call [attach] before [JBCefBrowser.loadURL] so `window.cefQuery` is available
- * when the page runs `createCefSimpleRpc`.
+ * Call [attach] before [JBCefBrowser.loadURL]. Each panel uses a unique native query
+ * function name to avoid multi-panel MessageRouter collisions. The panel puts
+ * [channelId] in its start URL so the page binds the exact pair of functions.
  */
 class VibeflyUiRpc(
     private val browser: JBCefBrowser,
@@ -42,14 +46,23 @@ class VibeflyUiRpc(
 
     private val router: CefMessageRouter
 
+    /** Identifies this panel's exact CEF query-function pair to the page. */
+    val channelId: String = ROUTER_SEQUENCE.incrementAndGet().toString()
+
+    /** Unique CEF-injected names for this panel (avoids cefQuery collisions). */
+    private val queryFunction: String = "vibeflyCefQuery_$channelId"
+    private val cancelFunction: String = "vibeflyCefQueryCancel_$channelId"
+    private val ownedBrowser: CefBrowser = browser.cefBrowser
+
     init {
         session.register(Ui2Host::class.java, ui2Host)
 
-        val config = CefMessageRouterConfig(
-            CefMessageRouterTransport.JS_QUERY_FUNCTION,
-            CefMessageRouterTransport.JS_CANCEL_FUNCTION,
-        )
-        router = CefMessageRouter.create(config)
+        val config = CefMessageRouterConfig(queryFunction, cancelFunction)
+        // JBCefApp delegates router creation to the remote JCEF implementation when
+        // out-of-process mode is enabled; locally it falls back to CefMessageRouter.create.
+        router = JBCefApp.getInstance().createMessageRouter(config)
+        // MessageRouters on a shared / remote CEF stack can see every browser's queries.
+        // Only accept this panel's browser; return false so the correct router can handle it.
         router.addHandler(
             object : CefMessageRouterHandlerAdapter() {
                 override fun onQuery(
@@ -60,8 +73,11 @@ class VibeflyUiRpc(
                     persistent: Boolean,
                     callback: CefQueryCallback?,
                 ): Boolean {
+                    if (browser != ownedBrowser) {
+                        log.error("queryFunction cancelFunction名字一致的情况下onQuery可能串台，改为唯一后不应该出现此问题 ${browser} ${ownedBrowser}")
+                        return false
+                    }
                     if (request == null || callback == null) return false
-                    logProvidersRequest(request)
                     return transport.handleQuery(
                         queryId,
                         request,
@@ -75,13 +91,17 @@ class VibeflyUiRpc(
                     frame: CefFrame?,
                     queryId: Long,
                 ) {
+                    if (browser != ownedBrowser) return
                     transport.handleQueryCanceled(queryId)
                 }
             },
             true,
         )
         browser.jbCefClient.cefClient.addMessageRouter(router)
-        log.info("SimpleRpc CefMessageRouter attached")
+        log.info(
+            "SimpleRpc CefMessageRouter attached host=${ui2Host.javaClass.name} " +
+                "queryFn=$queryFunction",
+        )
     }
 
     override fun dispose() {
@@ -98,22 +118,10 @@ class VibeflyUiRpc(
         session.close()
     }
 
-    private fun logProvidersRequest(request: String) {
-        val message = try {
-            Json.parseToJsonElement(request).jsonObject
-        } catch (_: Exception) {
-            return
-        }
-        if (message["t"]?.jsonPrimitive?.contentOrNull != "req") return
-        if (message["s"]?.jsonPrimitive?.contentOrNull != "Ui2Host") return
-        if (message["i"]?.jsonPrimitive?.intOrNull != REFRESH_PROVIDERS_METHOD_ID) return
-        val wireId = message["id"]?.jsonPrimitive?.contentOrNull ?: return
-        log.info("refreshProviders JCEF query received wireId=$wireId")
-    }
-
     companion object {
         private val log = logger<VibeflyUiRpc>()
-        private const val REFRESH_PROVIDERS_METHOD_ID = 6
+        private val ROUTER_SEQUENCE = AtomicLong()
+        const val CHANNEL_QUERY_PARAMETER: String = "vibeflyRpcChannel"
 
         /**
          * Attach SimpleRpc to [browser] and register disposal on [parent].

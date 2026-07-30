@@ -62,10 +62,7 @@ class VibeflyBrowserPanel(
     init {
         // Always register so absolute http://vibefly/ assets still work if referenced.
         VibeflyScheme.ensureRegistered()
-        val startUrl = VibeflyStartUrl.withRoute(VibeflyUiDev.resolveStartUrl(), route)
-        if (VibeflyUiDev.isEnabled()) {
-            log.info("Vibefly UI dev (Vite HMR): $startUrl")
-        }
+        val routedStartUrl = VibeflyStartUrl.withRoute(VibeflyUiDev.resolveStartUrl(), route)
         background = UIUtil.getPanelBackground()
         isOpaque = true
         // Remote/out-of-process JCEF requires OSR; platform default enables it when
@@ -76,6 +73,14 @@ class VibeflyBrowserPanel(
         Disposer.register(this, browser)
         // MessageRouter must be registered before the page creates createCefSimpleRpc.
         uiRpc = VibeflyUiRpc.attach(browser, this, ui2Host)
+        val startUrl = VibeflyStartUrl.withQueryParameter(
+            routedStartUrl,
+            VibeflyUiRpc.CHANNEL_QUERY_PARAMETER,
+            uiRpc.channelId,
+        )
+        if (VibeflyUiDev.isEnabled()) {
+            log.info("Vibefly UI dev (Vite HMR): $startUrl")
+        }
 
         browser.jbCefClient.addLoadHandler(
             object : CefLoadHandlerAdapter() {

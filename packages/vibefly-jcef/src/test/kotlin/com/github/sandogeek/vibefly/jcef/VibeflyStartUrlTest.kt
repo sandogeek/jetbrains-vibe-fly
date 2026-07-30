@@ -60,4 +60,28 @@ class VibeflyStartUrlTest {
             VibeflyStartUrl.withRoute("http://vibefly/index.html#/chat", "settings"),
         )
     }
+
+    @Test
+    fun addsQueryParameterBeforeHashRoute() {
+        assertEquals(
+            "http://vibefly/index.html?vibeflyRpcChannel=7#/settings",
+            VibeflyStartUrl.withQueryParameter(
+                "http://vibefly/index.html#/settings",
+                "vibeflyRpcChannel",
+                "7",
+            ),
+        )
+    }
+
+    @Test
+    fun preservesExistingQueryWhenAddingParameter() {
+        assertEquals(
+            "http://127.0.0.1:5173/?dev=true&vibeflyRpcChannel=8#/settings",
+            VibeflyStartUrl.withQueryParameter(
+                "http://127.0.0.1:5173/?dev=true#/settings",
+                "vibeflyRpcChannel",
+                "8",
+            ),
+        )
+    }
 }

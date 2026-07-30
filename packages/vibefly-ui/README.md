@@ -45,7 +45,9 @@ localStorage.setItem("vibefly.log.level", "debug")
 
 ## SimpleRpc
 
-JCEF 内通过 `window.cefQuery` / `cefQueryCancel` 接入 `@sandogeek/simple-rpc`。
+JCEF 内通过面板独占的 `window.vibeflyCefQuery_<channel>` /
+`vibeflyCefQueryCancel_<channel>` 接入 `@sandogeek/simple-rpc`；channel 由启动 URL
+显式传给页面，避免设置页和工具窗口的 `Ui2Host` 会话互相抢占请求。
 服务名约定：`Caller2Callee`（调用方 → 被调方）。
 
 | 方向 | 服务 | 说明 |
