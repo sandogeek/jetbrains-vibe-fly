@@ -214,25 +214,18 @@ class VibeflyAgentService(private val project: Project) : Disposable {
     }
 
     /**
-     * Run [block] on an already-live control plane without starting the agent.
-     * Returns null only when this service has no ready process (caller may fall back).
-     * Invocation failures are propagated so the same operation is not repeated against a
-     * short-lived agent after already consuming this timeout.
+     * Ensure the project agent is running, then run [block] on its Host2Agent control plane.
      */
-    fun <T> tryWithReadyControl(
+    suspend fun <T> withControl(
         timeoutMs: Long = DEFAULT_CONFIG_TIMEOUT_MS,
         block: suspend (Host2Agent) -> T,
-    ): ReadyControlResult<T>? {
-        if (disposed) return null
-        val control = host2AgentRef.get() ?: return null
-        val process = processRef.get()
-        if (process == null || !process.isAlive) return null
-        val value = runBlocking {
-            withTimeout(timeoutMs.milliseconds) {
-                block(control)
-            }
+    ): T {
+        ensureStarted()
+        val control = host2AgentRef.get()
+            ?: error("Agent control API is not available")
+        return withTimeout(timeoutMs.milliseconds) {
+            block(control)
         }
-        return ReadyControlResult(value)
     }
 
     private fun startLocked() {
@@ -297,11 +290,11 @@ class VibeflyAgentService(private val project: Project) : Disposable {
             project.getService(VibeflyAgentService::class.java)
 
         /**
-         * Settings / one-shot control calls: reuse any already-running project agent
-         * (avoids Bun cold start), otherwise spawn a short-lived process.
+         * Settings / Host2Agent control calls always use the current project's agent.
+         * Starts it on demand; never spawns a short-lived one-shot process.
          */
         fun <T> withControlForSettings(
-            agentDir: String? = null,
+            project: Project? = null,
             timeoutMs: Long = DEFAULT_CONFIG_TIMEOUT_MS,
             operation: String = "settingsControl",
             block: suspend (Host2Agent) -> T,
@@ -310,51 +303,35 @@ class VibeflyAgentService(private val project: Project) : Disposable {
             val startedAt = System.nanoTime()
             fun elapsedMs(): Long = (System.nanoTime() - startedAt) / 1_000_000L
 
-            for (project in ProjectManager.getInstance().openProjects) {
-                if (project.isDisposed) continue
-                val service = try {
-                    project.getService(VibeflyAgentService::class.java)
-                } catch (_: Exception) {
-                    null
-                } ?: continue
-                val reused = try {
-                    service.tryWithReadyControl(timeoutMs, block)
-                } catch (e: Exception) {
-                    log.warn(
-                        "$operation failed request=$requestId source=project-agent " +
-                            "elapsedMs=${elapsedMs()}; one-shot fallback skipped",
-                        e,
-                    )
-                    throw e
-                }
-                if (reused != null) {
-                    log.info(
-                        "$operation done request=$requestId source=project-agent " +
-                            "elapsedMs=${elapsedMs()}",
-                    )
-                    return reused.value
-                }
-            }
-            log.info("$operation start request=$requestId source=one-shot-agent")
+            val target = resolveProject(project)
+                ?: error("No open project available for Host2Agent call ($operation)")
+            val service = getInstance(target)
+            log.info(
+                "$operation start request=$requestId source=project-agent " +
+                    "project=${target.name}",
+            )
             return try {
-                val value = VibeflyAgentProcess.withControl(
-                    agentDir = agentDir,
-                    timeoutMs = timeoutMs,
-                    block = block,
-                )
+                val value = runBlocking {
+                    service.withControl(timeoutMs = timeoutMs, block = block)
+                }
                 log.info(
-                    "$operation done request=$requestId source=one-shot-agent " +
+                    "$operation done request=$requestId source=project-agent " +
                         "elapsedMs=${elapsedMs()}",
                 )
                 value
             } catch (e: Exception) {
                 log.warn(
-                    "$operation failed request=$requestId source=one-shot-agent " +
+                    "$operation failed request=$requestId source=project-agent " +
                         "elapsedMs=${elapsedMs()}",
                     e,
                 )
                 throw e
             }
+        }
+
+        private fun resolveProject(preferred: Project?): Project? {
+            preferred?.takeUnless { it.isDisposed }?.let { return it }
+            return ProjectManager.getInstance().openProjects.firstOrNull { !it.isDisposed }
         }
 
         /**
@@ -385,5 +362,3 @@ class VibeflyAgentService(private val project: Project) : Disposable {
     }
 }
 
-/** Distinguishes a successful ready-control call (value may be null) from "not ready". */
-class ReadyControlResult<T>(val value: T)

@@ -13,7 +13,7 @@ import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 
 /**
- * Shared Bun agent process launcher for project lifecycle and one-shot Settings RPC.
+ * Shared Bun agent process launcher for project lifecycle Host2Agent control.
  */
 object VibeflyAgentProcess {
     private val log = logger<VibeflyAgentProcess>()
@@ -125,26 +125,6 @@ object VibeflyAgentProcess {
                 "rpcSetupMs=$rpcMs, totalMs=${elapsedMs()})",
         )
         return Handle(process, transport, session, control)
-    }
-
-    /**
-     * Run a one-shot control-plane call against a short-lived agent process.
-     */
-    fun <T> withControl(
-        agentDir: String? = null,
-        timeoutMs: Long = 60_000L,
-        block: suspend (Host2Agent) -> T,
-    ): T {
-        val handle = start(agentDir = agentDir)
-        try {
-            return runBlocking {
-                withTimeout(timeoutMs.milliseconds) {
-                    block(handle.control)
-                }
-            }
-        } finally {
-            handle.close()
-        }
     }
 
     fun resolveBunInspectArgs(): List<String> {

@@ -20,6 +20,7 @@ import com.github.sandogeek.vibefly.jcef.rpc.CommitFormDto
 import com.github.sandogeek.vibefly.jcef.rpc.Host2Agent
 import com.github.sandogeek.vibefly.jcef.rpc.Ui2HostImpl
 import com.intellij.ide.BrowserUtil
+import com.intellij.openapi.project.Project
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.logger
 import kotlinx.coroutines.runBlocking
@@ -36,6 +37,7 @@ import java.util.concurrent.atomic.AtomicReference
  * Login reverse-RPC is bridged via [Agent2HostBridge] + optional [Host2Ui] login callbacks.
  */
 class SettingsUi2Host(
+    private val project: Project? = null,
     private val host2UiProvider: () -> Host2Ui? = { null },
 ) : Ui2HostImpl(agentConnectionProvider = null) {
 
@@ -119,7 +121,7 @@ class SettingsUi2Host(
         fun elapsedMs(): Long = (System.nanoTime() - startedAt) / 1_000_000L
         log.info("refreshProviders start request=$requestId agentDir=$expanded")
         return try {
-            val result = ProvidersSettingsLoader.fetch(expanded)
+            val result = ProvidersSettingsLoader.fetch(expanded, project)
             log.info(
                 "refreshProviders done request=$requestId elapsedMs=${elapsedMs()} " +
                     "providers=${result.snapshot.providers.size}",
@@ -140,7 +142,7 @@ class SettingsUi2Host(
         val effective = request.copy(agentDir = expanded)
         return try {
             VibeflyAgentService.withControlForSettings(
-                agentDir = expanded,
+                project = project,
                 operation = "applyProvidersPatch",
             ) { control ->
                 control.applyProvidersPatch(effective)
@@ -158,7 +160,7 @@ class SettingsUi2Host(
         return try {
             Agent2HostBridge.withUi(webUi) {
                 VibeflyAgentService.withControlForSettings(
-                    agentDir = expanded,
+                    project = project,
                     timeoutMs = LOGIN_TIMEOUT_MS,
                     operation = "loginProvider",
                 ) { control ->
@@ -194,7 +196,7 @@ class SettingsUi2Host(
         val effective = request.copy(agentDir = expanded)
         return try {
             VibeflyAgentService.withControlForSettings(
-                agentDir = expanded,
+                project = project,
                 operation = "logoutProvider",
             ) { control ->
                 control.logoutProvider(effective)

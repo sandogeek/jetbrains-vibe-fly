@@ -20,7 +20,7 @@ import javax.swing.JPanel
  * Editor tab hosting the Solid settings app in JCEF.
  */
 class VibeflySettingsFileEditor(
-    @Suppress("unused") private val project: Project,
+    private val project: Project,
     private val file: VirtualFile,
 ) : UserDataHolderBase(), FileEditor {
 
@@ -40,6 +40,7 @@ class VibeflySettingsFileEditor(
         } else {
             lateinit var host: SettingsUi2Host
             host = SettingsUi2Host(
+                project = project,
                 host2UiProvider = { browserPanel?.rpc?.host2Ui },
             )
             val browser = VibeflyBrowserPanel(host, route = "settings")
