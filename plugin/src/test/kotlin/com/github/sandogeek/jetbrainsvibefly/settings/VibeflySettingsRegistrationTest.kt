@@ -21,19 +21,21 @@ class VibeflySettingsRegistrationTest {
     }
 
     @Test
-    fun testPluginXmlRegistersSingleConfigurableAndEditor() {
+    fun testPluginXmlRegistersSingleConfigurableOnly() {
         val pluginXml = File("src/main/resources/META-INF/plugin.xml")
         assertTrue("plugin.xml should exist", pluginXml.isFile)
         val text = pluginXml.readText()
         assertTrue(text.contains("id=\"vibefly.settings\""))
         assertTrue(text.contains("VibeflySettingsConfigurable"))
+        assertTrue(text.contains("parentId=\"tools\""))
         assertFalse(text.contains("id=\"vibefly.providers\""))
         assertFalse(text.contains("id=\"vibefly.commitMessage\""))
         assertFalse(text.contains("VibeflyProvidersConfigurable"))
         assertFalse(text.contains("VibeflyCommitMessageConfigurable"))
-        assertTrue(text.contains("fileEditorProvider"))
-        assertTrue(text.contains("VibeflySettingsFileEditorProvider"))
-        assertTrue(text.contains("id=\"VibeFly.OpenSettings\""))
-        assertTrue(text.contains("OpenVibeflySettingsAction"))
+        assertFalse(text.contains("fileEditorProvider"))
+        assertFalse(text.contains("VibeflySettingsFileEditorProvider"))
+        assertFalse(text.contains("id=\"VibeFly.OpenSettings\""))
+        assertFalse(text.contains("OpenVibeflySettingsAction"))
+        assertFalse(text.contains("VibeflySettingsFileSystem"))
     }
 }

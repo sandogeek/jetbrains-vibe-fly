@@ -50,6 +50,7 @@ export const dict: RawDictionary = {
     reasoning: "推理",
     retry: "重试",
     showDiff: "查看 Diff",
+    openSettings: "设置",
   },
   settings: {
     title: "设置",

@@ -4,24 +4,26 @@ import com.github.sandogeek.jetbrainsvibefly.agent.VibeflyAgentService
 import com.github.sandogeek.jetbrainsvibefly.chat.ChatWorkspaceState
 import com.github.sandogeek.jetbrainsvibefly.chat.ChatContextDeliveryService
 import com.github.sandogeek.jetbrainsvibefly.settings.VibeflyModelPreferencesState
+import com.github.sandogeek.jetbrainsvibefly.settings.VibeflySettingsConfigurable
 import com.github.sandogeek.jetbrainsvibefly.util.Edt
 import com.github.sandogeek.vibefly.jcef.rpc.HostChatContextItem
 import com.github.sandogeek.vibefly.jcef.rpc.ModelPreferencesDto
 import com.github.sandogeek.vibefly.jcef.AgentOrigin
 import com.github.sandogeek.vibefly.jcef.VibeflyBrowserPanel
 import com.github.sandogeek.vibefly.jcef.rpc.Ui2HostImpl
-import com.intellij.openapi.diagnostic.logger
-import com.intellij.openapi.project.Project
-import com.intellij.openapi.vfs.LocalFileSystem
-import com.intellij.openapi.fileEditor.FileEditorManager
-import com.intellij.openapi.fileEditor.OpenFileDescriptor
-import com.intellij.openapi.fileChooser.FileChooser
-import com.intellij.openapi.fileChooser.FileChooserDescriptor
 import com.intellij.diff.DiffManager
 import com.intellij.diff.DiffContentFactory
 import com.intellij.diff.requests.SimpleDiffRequest
-import com.intellij.openapi.vcs.changes.ChangeListManager
+import com.intellij.openapi.diagnostic.logger
+import com.intellij.openapi.fileChooser.FileChooser
+import com.intellij.openapi.fileChooser.FileChooserDescriptor
+import com.intellij.openapi.fileEditor.FileEditorManager
+import com.intellij.openapi.fileEditor.OpenFileDescriptor
+import com.intellij.openapi.options.ShowSettingsUtil
+import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
+import com.intellij.openapi.vcs.changes.ChangeListManager
+import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
 import com.intellij.ui.components.JBLabel
@@ -106,6 +108,12 @@ class VibeflyToolWindowFactory : ToolWindowFactory {
                 // Host2Ui is registered; push current LAF mode (no CSS batch).
                 panel?.applyTheme(retry = false)
             },
+            openIdeSettingsHandler = {
+                Edt.run {
+                    ShowSettingsUtil.getInstance()
+                        .showSettingsDialog(project, VibeflySettingsConfigurable::class.java)
+                }
+            },
         )
         panel = VibeflyBrowserPanel(
             ui2Host,
@@ -124,7 +132,7 @@ class VibeflyToolWindowFactory : ToolWindowFactory {
                 }
             },
         )
-        val browserPanel = panel!!
+        val browserPanel = panel
         contextDelivery.bind { sessionId, contexts ->
             browserPanel.rpc.host2Ui.addChatContexts(sessionId, contexts)
         }
@@ -175,7 +183,7 @@ class VibeflyToolWindowFactory : ToolWindowFactory {
 
     private fun selectContextFiles(project: Project, root: String): List<String> {
         val descriptor = FileChooserDescriptor(true, false, false, false, false, true).apply {
-            title = "Add Files To Vibe Fly"
+            title = "Add Files to Vibe Fly"
         }
         val chosen = FileChooser.chooseFiles(descriptor, project, project.projectFile)
         return projectRelativeFiles(root, chosen.map { it.path })

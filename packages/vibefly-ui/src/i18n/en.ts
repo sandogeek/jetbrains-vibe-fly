@@ -48,6 +48,7 @@ export const dict = {
     reasoning: "Reasoning",
     retry: "Retry",
     showDiff: "Show Diff",
+    openSettings: "Settings",
   },
   settings: {
     title: "Settings",

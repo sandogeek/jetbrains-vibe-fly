@@ -936,6 +936,13 @@ export function App() {
           <button class="icon-button" title={t("chat.recentSessions")} onClick={() => void refreshRecent()}>
             <History size={16} />
           </button>
+          <button
+            class="icon-button"
+            title={t("chat.openSettings")}
+            onClick={() => void host?.openIdeSettings()}
+          >
+            <Settings2 size={16} />
+          </button>
           <span class="connection-dot" classList={{ ready: agentStatus() === "ready", offline: offline() }} title={`${hostStatus()} / ${agentStatus()}`} />
         </div>
         <Show when={recentOpen()}>

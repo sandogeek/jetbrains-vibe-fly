@@ -83,4 +83,8 @@ interface Ui2Host {
     /** Signals that Host -> UI context delivery can be retried after page load/reload. */
     @RpcFun(19)
     suspend fun chatUiReady()
+
+    /** Open IDE Settings → Tools → Vibe Fly. */
+    @RpcFun(20)
+    suspend fun openIdeSettings()
 }

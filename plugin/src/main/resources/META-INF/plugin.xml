@@ -28,8 +28,6 @@
                 id="vibefly.settings"
                 key="settings.vibefly"
                 instance="com.github.sandogeek.jetbrainsvibefly.settings.VibeflySettingsConfigurable"/>
-
-        <fileEditorProvider implementation="com.github.sandogeek.jetbrainsvibefly.settings.editor.VibeflySettingsFileEditorProvider"/>
     </extensions>
 
     <actions>
@@ -37,12 +35,6 @@
                 class="com.github.sandogeek.jetbrainsvibefly.commit.GenerateCommitMessageAction"
                 icon="AllIcons.Actions.Edit">
             <add-to-group group-id="Vcs.MessageActionGroup" anchor="first"/>
-        </action>
-        <action id="VibeFly.OpenSettings"
-                class="com.github.sandogeek.jetbrainsvibefly.settings.editor.OpenVibeflySettingsAction"
-                text="Vibe Fly Settings"
-                description="Open Vibe Fly settings in an editor tab">
-            <add-to-group group-id="ToolsMenu" anchor="last"/>
         </action>
         <action id="VibeFly.AddSelectionToChat"
                 class="com.github.sandogeek.jetbrainsvibefly.chat.AddSelectionToVibeflyAction"

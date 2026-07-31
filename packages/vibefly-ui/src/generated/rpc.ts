@@ -170,6 +170,7 @@ export const ui2Host = defineRpcService("Ui2Host", {
   showProjectDiff: rpcMethod<[relativePath: string], void>(17),
   selectChatContextFiles: rpcMethod<[], Array<string>>(18),
   chatUiReady: rpcMethod<[], void>(19),
+  openIdeSettings: rpcMethod<[], void>(20),
 });
 
 export type Ui2Host = RpcClient<typeof ui2Host>;

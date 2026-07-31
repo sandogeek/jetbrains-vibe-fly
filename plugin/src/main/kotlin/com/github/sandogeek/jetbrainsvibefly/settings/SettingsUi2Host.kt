@@ -110,6 +110,7 @@ class SettingsUi2Host(
                 prevDefaultProvider != providersState.defaultProvider ||
                 prevDefaultModel != providersState.defaultModel
         if (providersChanged) {
+            // TODO 不要stopAllOpenProjects，而是通知其它project重新getIdeSettings
             VibeflyAgentService.stopAllOpenProjects()
         }
     }

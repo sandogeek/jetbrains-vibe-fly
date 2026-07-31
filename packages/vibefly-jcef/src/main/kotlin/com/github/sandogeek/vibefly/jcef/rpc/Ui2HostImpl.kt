@@ -25,6 +25,7 @@ open class Ui2HostImpl(
     private val showProjectDiffHandler: (suspend (String) -> Unit)? = null,
     private val selectChatContextFilesHandler: (suspend () -> List<String>)? = null,
     private val chatUiReadyHandler: (suspend () -> Unit)? = null,
+    private val openIdeSettingsHandler: (suspend () -> Unit)? = null,
 ) : Ui2Host {
 
     override suspend fun getAppVersion(): String = appVersion
@@ -54,23 +55,21 @@ open class Ui2HostImpl(
     }
 
     override suspend fun refreshProviders(agentDir: String): ProvidersRefreshResult =
-        ProvidersRefreshResult(ok = false, error = "Settings host only")
+        throw RuntimeException("Settings host only")
 
     override suspend fun applyProvidersPatch(request: ProvidersPatchRequest): ProvidersPatchResult =
-        ProvidersPatchResult(ok = false, error = "Settings host only")
+        throw RuntimeException("Settings host only")
 
     override suspend fun loginProvider(request: ProviderLoginRequest): ProviderLoginResult =
-        ProviderLoginResult(ok = false, error = "Settings host only")
+        throw RuntimeException("Settings host only")
 
-    override suspend fun cancelProviderLogin() {
-        log.debug("cancelProviderLogin ignored on non-settings host")
-    }
+    override suspend fun cancelProviderLogin(): Unit  = throw RuntimeException("Settings host only")
 
     override suspend fun logoutProvider(request: ProviderLogoutRequest): ProviderLogoutResult =
-        ProviderLogoutResult(ok = false, error = "Settings host only")
+        throw RuntimeException("Settings host only")
 
     override suspend fun openExternalUrl(url: String) {
-        log.debug("openExternalUrl ignored on non-settings host: $url")
+        throw RuntimeException("Settings host only")
     }
 
     override suspend fun getProjectRoot(): String = projectRootProvider()
@@ -101,6 +100,11 @@ open class Ui2HostImpl(
 
     override suspend fun chatUiReady() {
         chatUiReadyHandler?.invoke()
+    }
+
+    override suspend fun openIdeSettings() {
+        openIdeSettingsHandler?.invoke()
+            ?: log.debug("openIdeSettings ignored on non-project host")
     }
 
     companion object {
