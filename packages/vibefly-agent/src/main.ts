@@ -119,22 +119,22 @@ async function main(): Promise<void> {
         },
       })
     },
-    async getProvidersSnapshot(agentDir, ctx) {
-      return getProvidersSnapshot(agentDir, { requestId: ctx?.requestId })
+    async getProvidersSnapshot() {
+      return getProvidersSnapshot(agentDir)
     },
     async applyProvidersPatch(request) {
       const result = await applyProvidersPatch(request)
       if (result.ok) {
         clearOmpRuntimeCache()
         try {
-          await getOmpRuntime({ forceNew: true, agentDir: request.agentDir })
+          await getOmpRuntime({ forceNew: true, agentDir })
         } catch (error) {
           log.warn("omp reload after patch failed", { err: error })
         }
       }
       return result
     },
-    async getLoginProviders(agentDir) {
+    async getLoginProviders() {
       return getLoginProviders(agentDir)
     },
     async loginProvider(request) {
@@ -142,7 +142,7 @@ async function main(): Promise<void> {
       if (result.ok) {
         clearOmpRuntimeCache()
         try {
-          await getOmpRuntime({ forceNew: true, agentDir: request.agentDir })
+          await getOmpRuntime({ forceNew: true, agentDir })
         } catch (error) {
           log.warn("omp reload after login failed", { err: error })
         }
@@ -154,7 +154,7 @@ async function main(): Promise<void> {
       if (result.ok) {
         clearOmpRuntimeCache()
         try {
-          await getOmpRuntime({ forceNew: true, agentDir: request.agentDir })
+          await getOmpRuntime({ forceNew: true, agentDir })
         } catch (error) {
           log.warn("omp reload after logout failed", { err: error })
         }

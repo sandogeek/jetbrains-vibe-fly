@@ -72,7 +72,6 @@ export function ProvidersPage(props: ProvidersPageProps) {
   const t = useT()
   const [search, setSearch] = createSignal("")
   const [dialog, setDialog] = createSignal<DialogState>({ kind: "none" })
-  let agentDirTimer: ReturnType<typeof setTimeout> | undefined
 
   onMount(() => {
     props.registerLoginHandlers?.({
@@ -123,7 +122,6 @@ export function ProvidersPage(props: ProvidersPageProps) {
 
   onCleanup(() => {
     props.registerLoginHandlers?.(null)
-    clearTimeout(agentDirTimer)
   })
 
   const providers = createMemo(() => props.snapshot?.providers ?? [])
@@ -139,15 +137,6 @@ export function ProvidersPage(props: ProvidersPageProps) {
   const scheduleSave = (next: IdeSettingsDto) => {
     props.onSettings(next)
     void props.onSave(next)
-  }
-
-  const onAgentDirInput = (value: string) => {
-    const next = withProviders(props.settings, { agentDir: value })
-    props.onSettings(next)
-    clearTimeout(agentDirTimer)
-    agentDirTimer = setTimeout(() => {
-      void props.onSave(next)
-    }, 300)
   }
 
   const onDefaultModel = (spec: string, pinned: string[], recent: string[]) => {
@@ -173,11 +162,7 @@ export function ProvidersPage(props: ProvidersPageProps) {
     const startedAt = performance.now()
     try {
       console.log("providers reload start")
-      const agentDir = props.settings.providers?.agentDir ?? ""
-      const result = await props.ui2Host.refreshProviders(
-        agentDir,
-        PROVIDER_CONFIG_RPC_OPTIONS,
-      )
+      const result = await props.ui2Host.refreshProviders(PROVIDER_CONFIG_RPC_OPTIONS)
       console.log(
         `providers reload done in ${Math.round(performance.now() - startedAt)}ms`,
       )
@@ -209,7 +194,6 @@ export function ProvidersPage(props: ProvidersPageProps) {
     try {
       const result = await props.ui2Host.applyProvidersPatch(
         {
-          agentDir: props.settings.providers?.agentDir ?? "",
           providers: providersPatch,
           credentials,
         },
@@ -248,7 +232,6 @@ export function ProvidersPage(props: ProvidersPageProps) {
     try {
       const result = await props.ui2Host.loginProvider(
         {
-          agentDir: props.settings.providers?.agentDir ?? "",
           providerId: loginId,
         },
         PROVIDER_LOGIN_RPC_OPTIONS,
@@ -327,7 +310,6 @@ export function ProvidersPage(props: ProvidersPageProps) {
     try {
       const result = await props.ui2Host.logoutProvider(
         {
-          agentDir: props.settings.providers?.agentDir ?? "",
           providerId: snap.id,
         },
         PROVIDER_CONFIG_RPC_OPTIONS,
@@ -381,16 +363,7 @@ export function ProvidersPage(props: ProvidersPageProps) {
         </button>
       </header>
 
-      <section class="grid gap-3 sm:grid-cols-2">
-        <div>
-          <label class="mb-1 block text-xs text-muted">{t("providers.agentDirectory")}</label>
-          <input
-            class="w-full rounded border border-border bg-surface px-2 py-1.5 font-mono text-sm text-fg"
-            value={props.settings.providers?.agentDir ?? ""}
-            placeholder="~/.omp/agent"
-            onInput={(e) => onAgentDirInput(e.currentTarget.value)}
-          />
-        </div>
+      <section>
         <div>
           <label class="mb-1 block text-xs text-muted">{t("providers.defaultModel")}</label>
           <ModelPicker

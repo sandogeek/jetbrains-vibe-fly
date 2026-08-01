@@ -43,7 +43,6 @@ describe("resolveCommitModel request + OMP only", () => {
     setEnv("VIBEFLY_COMMIT_API", "openai-completions")
 
     const patch = await applyProvidersPatch({
-      agentDir,
       providers: [
         {
           id: "local-proxy",
@@ -76,7 +75,6 @@ describe("resolveCommitModel request + OMP only", () => {
     setEnv("PI_CODING_AGENT_DIR", agentDir)
 
     const patch = await applyProvidersPatch({
-      agentDir,
       providers: [
         {
           id: "local-proxy",
@@ -111,7 +109,6 @@ describe("resolveCommitModel request + OMP only", () => {
     setEnv("PI_CODING_AGENT_DIR", agentDir)
 
     const patch = await applyProvidersPatch({
-      agentDir,
       providers: [
         {
           id: "local-proxy",
@@ -168,7 +165,6 @@ describe("resolveCommitModel request + OMP only", () => {
 
     // auth "apiKey" would make OMP reject models.yml; Vibe Fly forces "none".
     const patch = await applyProvidersPatch({
-      agentDir,
       providers: [
         {
           id: "local-proxy",

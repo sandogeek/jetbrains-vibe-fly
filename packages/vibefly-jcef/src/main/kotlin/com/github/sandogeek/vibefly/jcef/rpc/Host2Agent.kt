@@ -22,14 +22,14 @@ interface Host2Agent {
     ): GenerateCommitMessageResult
 
     @RpcFun(5)
-    suspend fun getProvidersSnapshot(agentDir: String): ProvidersSnapshot
+    suspend fun getProvidersSnapshot(): ProvidersSnapshot
 
     @RpcFun(6)
     suspend fun applyProvidersPatch(request: ProvidersPatchRequest): ProvidersPatchResult
 
     /** OAuth / API-key login providers from Oh My Pi registry (same as `/login`). */
     @RpcFun(7)
-    suspend fun getLoginProviders(agentDir: String): LoginProvidersList
+    suspend fun getLoginProviders(): LoginProvidersList
 
     /**
      * Interactive provider login via AuthStorage.login (browser OAuth or paste API key).

@@ -111,7 +111,7 @@ export function SettingsShell(props: { children?: JSX.Element }) {
         loadError = e instanceof Error ? e.message : String(e)
       }
       try {
-        const refresh = await host.refreshProviders("", PROVIDER_CONFIG_RPC_OPTIONS)
+        const refresh = await host.refreshProviders(PROVIDER_CONFIG_RPC_OPTIONS)
         if (refresh.ok) {
           snapshot = mergeProvidersSnapshot(refresh.snapshot, state().catalog)
         } else {

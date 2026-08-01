@@ -19,7 +19,6 @@ export type SettingsState = {
 export function emptySettings(): IdeSettingsDto {
   return {
     providers: {
-      agentDir: "",
       defaultProvider: "",
       defaultModel: "",
     },
@@ -41,7 +40,6 @@ export function normalizeSettings(raw: IdeSettingsDto | null | undefined): IdeSe
   if (!raw) return base
   return {
     providers: {
-      agentDir: raw.providers?.agentDir ?? "",
       defaultProvider: raw.providers?.defaultProvider ?? "",
       defaultModel: raw.providers?.defaultModel ?? "",
     },

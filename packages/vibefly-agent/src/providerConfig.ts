@@ -516,7 +516,7 @@ export async function applyProvidersPatch(
   request: ProvidersPatchRequest,
 ): Promise<ProvidersPatchResult> {
   try {
-    const agentDir = resolveAgentDir(request.agentDir)
+    const agentDir = resolveAgentDir()
     return await queueProvidersMutation(agentDir, async () => {
       fs.mkdirSync(agentDir, { recursive: true })
       const providerPatches = request.providers ?? []

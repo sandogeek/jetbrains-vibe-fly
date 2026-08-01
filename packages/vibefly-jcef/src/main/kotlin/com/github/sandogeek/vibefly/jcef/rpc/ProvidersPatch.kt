@@ -38,7 +38,6 @@ data class CredentialAction(
 
 @Serializable
 data class ProvidersPatchRequest(
-    val agentDir: String,
     val providers: List<ProviderPatch> = emptyList(),
     val credentials: List<CredentialAction> = emptyList(),
 )

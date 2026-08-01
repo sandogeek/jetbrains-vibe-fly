@@ -11,7 +11,6 @@ export interface AgentConnection {
 }
 
 export interface ProvidersFormDto {
-  agentDir?: string;
   defaultProvider?: string;
   defaultModel?: string;
 }
@@ -93,7 +92,6 @@ export interface CredentialAction {
 }
 
 export interface ProvidersPatchRequest {
-  agentDir: string;
   providers?: Array<ProviderPatch>;
   credentials?: Array<CredentialAction>;
 }
@@ -105,7 +103,6 @@ export interface ProvidersPatchResult {
 }
 
 export interface ProviderLoginRequest {
-  agentDir: string;
   providerId: string;
 }
 
@@ -121,7 +118,6 @@ export interface ProviderLoginResult {
 }
 
 export interface ProviderLogoutRequest {
-  agentDir: string;
   providerId: string;
 }
 
@@ -156,7 +152,7 @@ export const ui2Host = defineRpcService("Ui2Host", {
   getAgentConnection: rpcMethod<[], AgentConnection | null>(3),
   getIdeSettings: rpcMethod<[], IdeSettingsDto>(4),
   saveIdeSettings: rpcMethod<[settings: IdeSettingsDto], void>(5),
-  refreshProviders: rpcMethod<[agentDir: string], ProvidersRefreshResult>(6),
+  refreshProviders: rpcMethod<[], ProvidersRefreshResult>(6),
   applyProvidersPatch: rpcMethod<[request: ProvidersPatchRequest], ProvidersPatchResult>(7),
   loginProvider: rpcMethod<[request: ProviderLoginRequest], ProviderLoginResult>(8),
   cancelProviderLogin: rpcMethod<[], void>(9),

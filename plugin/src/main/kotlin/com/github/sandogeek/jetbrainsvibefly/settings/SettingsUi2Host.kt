@@ -1,5 +1,6 @@
 package com.github.sandogeek.jetbrainsvibefly.settings
 
+import com.github.sandogeek.jetbrainsvibefly.agent.VibeflyAgentDirectory
 import com.github.sandogeek.jetbrainsvibefly.agent.VibeflyAgentService
 import com.github.sandogeek.jetbrainsvibefly.util.Edt
 import com.github.sandogeek.vibefly.jcef.rpc.Host2Ui
@@ -54,7 +55,6 @@ class SettingsUi2Host(
         val prefs = VibeflyModelPreferencesState.getInstance()
         return IdeSettingsDto(
             providers = ProvidersFormDto(
-                agentDir = providers.agentDir,
                 defaultProvider = providers.defaultProvider,
                 defaultModel = providers.defaultModel,
             ),
@@ -76,12 +76,10 @@ class SettingsUi2Host(
         val commitState = VibeflyCommitMessageSettingsState.getInstance()
         val prefsState = VibeflyModelPreferencesState.getInstance()
 
-        val prevAgentDir = providersState.agentDir
         val prevDefaultProvider = providersState.defaultProvider
         val prevDefaultModel = providersState.defaultModel
 
         val form = settings.providers
-        providersState.agentDir = form.agentDir
         providersState.defaultProvider = form.defaultProvider
         providersState.defaultModel = form.defaultModel
 
@@ -106,8 +104,7 @@ class SettingsUi2Host(
         }
 
         val providersChanged =
-            prevAgentDir != providersState.agentDir ||
-                prevDefaultProvider != providersState.defaultProvider ||
+            prevDefaultProvider != providersState.defaultProvider ||
                 prevDefaultModel != providersState.defaultModel
         if (providersChanged) {
             // TODO 不要stopAllOpenProjects，而是通知其它project重新getIdeSettings
@@ -115,14 +112,14 @@ class SettingsUi2Host(
         }
     }
 
-    override suspend fun refreshProviders(agentDir: String): ProvidersRefreshResult {
-        val expanded = expandAgentDir(agentDir)
+    override suspend fun refreshProviders(): ProvidersRefreshResult {
+        val fixedAgentDir = VibeflyAgentDirectory.current()
         val requestId = providerRequestSequence.incrementAndGet()
         val startedAt = System.nanoTime()
         fun elapsedMs(): Long = (System.nanoTime() - startedAt) / 1_000_000L
-        log.info("refreshProviders start request=$requestId agentDir=$expanded")
+        log.info("refreshProviders start request=$requestId agentDir=$fixedAgentDir")
         return try {
-            val result = ProvidersSettingsLoader.fetch(expanded, project)
+            val result = ProvidersSettingsLoader.fetch(project)
             log.info(
                 "refreshProviders done request=$requestId elapsedMs=${elapsedMs()} " +
                     "providers=${result.snapshot.providers.size}",
@@ -130,7 +127,7 @@ class SettingsUi2Host(
             ProvidersRefreshResult(ok = true, snapshot = result.snapshot)
         } catch (e: Exception) {
             log.warn(
-                "refreshProviders failed request=$requestId agentDir=$expanded " +
+                "refreshProviders failed request=$requestId agentDir=$fixedAgentDir " +
                     "elapsedMs=${elapsedMs()}",
                 e,
             )
@@ -139,14 +136,12 @@ class SettingsUi2Host(
     }
 
     override suspend fun applyProvidersPatch(request: ProvidersPatchRequest): ProvidersPatchResult {
-        val expanded = expandAgentDir(request.agentDir)
-        val effective = request.copy(agentDir = expanded)
         return try {
             VibeflyAgentService.withControlForSettings(
                 project = project,
                 operation = "applyProvidersPatch",
             ) { control ->
-                control.applyProvidersPatch(effective)
+                control.applyProvidersPatch(request)
             }
         } catch (e: Exception) {
             log.warn("applyProvidersPatch failed", e)
@@ -155,8 +150,6 @@ class SettingsUi2Host(
     }
 
     override suspend fun loginProvider(request: ProviderLoginRequest): ProviderLoginResult {
-        val expanded = expandAgentDir(request.agentDir)
-        val effective = request.copy(agentDir = expanded)
         val webUi = WebProviderLoginUi(host2UiProvider)
         return try {
             Agent2HostBridge.withUi(webUi) {
@@ -167,7 +160,7 @@ class SettingsUi2Host(
                 ) { control ->
                     activeControl.set(control)
                     try {
-                        control.loginProvider(effective)
+                        control.loginProvider(request)
                     } finally {
                         activeControl.compareAndSet(control, null)
                     }
@@ -193,14 +186,12 @@ class SettingsUi2Host(
     }
 
     override suspend fun logoutProvider(request: ProviderLogoutRequest): ProviderLogoutResult {
-        val expanded = expandAgentDir(request.agentDir)
-        val effective = request.copy(agentDir = expanded)
         return try {
             VibeflyAgentService.withControlForSettings(
                 project = project,
                 operation = "logoutProvider",
             ) { control ->
-                control.logoutProvider(effective)
+                control.logoutProvider(request)
             }
         } catch (e: Exception) {
             log.warn("logoutProvider failed", e)
@@ -217,15 +208,6 @@ class SettingsUi2Host(
             } catch (e: Exception) {
                 log.warn("BrowserUtil.browse failed for $target", e)
             }
-        }
-    }
-
-    private fun expandAgentDir(raw: String): String {
-        val trimmed = raw.trim()
-        return if (trimmed.isEmpty()) {
-            VibeflyProviderSettingsState.getInstance().resolvedAgentDir()
-        } else {
-            VibeflyProviderSettingsState.expandHome(trimmed)
         }
     }
 

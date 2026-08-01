@@ -19,7 +19,6 @@ data class LoginProvidersList(
 
 @Serializable
 data class ProviderLoginRequest(
-    val agentDir: String,
     val providerId: String,
 )
 
@@ -38,7 +37,6 @@ data class ProviderLoginResult(
 
 @Serializable
 data class ProviderLogoutRequest(
-    val agentDir: String,
     val providerId: String,
 )
 

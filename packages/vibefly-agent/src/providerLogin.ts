@@ -79,7 +79,7 @@ export async function loginProvider(
     }
   }
 
-  const agentDir = resolveAgentDir(request.agentDir)
+  const agentDir = resolveAgentDir()
   setAgentDir(agentDir)
   const auth = await openAuthStorage(agentDir)
   const abort = new AbortController()
@@ -175,7 +175,7 @@ export async function logoutProvider(
   if (!providerId) {
     return { ok: false, error: "Provider id is required" }
   }
-  const agentDir = resolveAgentDir(request.agentDir)
+  const agentDir = resolveAgentDir()
   setAgentDir(agentDir)
   const auth = await openAuthStorage(agentDir)
   try {

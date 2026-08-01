@@ -101,7 +101,6 @@ describe("applyProvidersPatch + AuthStorage", () => {
     setAgentDir(agentDir)
 
     const result = await applyProvidersPatch({
-      agentDir,
       providers: [
         {
           id: "my-proxy",
@@ -140,7 +139,6 @@ describe("applyProvidersPatch + AuthStorage", () => {
 
     // clear only api key
     const cleared = await applyProvidersPatch({
-      agentDir,
       providers: [],
       credentials: [{ provider: "my-proxy", action: "clear" }],
     })
@@ -160,7 +158,6 @@ describe("applyProvidersPatch + AuthStorage", () => {
     setAgentDir(agentDir)
 
     const result = await applyProvidersPatch({
-      agentDir,
       providers: [
         {
           id: "local-grok",
@@ -207,12 +204,10 @@ describe("applyProvidersPatch + AuthStorage", () => {
     setAgentDir(agentDir)
 
     await applyProvidersPatch({
-      agentDir,
       providers: [],
       credentials: [{ provider: "openai", action: "set", apiKey: "sk-keep" }],
     })
     await applyProvidersPatch({
-      agentDir,
       providers: [],
       credentials: [{ provider: "openai", action: "set", apiKey: "" }],
     })

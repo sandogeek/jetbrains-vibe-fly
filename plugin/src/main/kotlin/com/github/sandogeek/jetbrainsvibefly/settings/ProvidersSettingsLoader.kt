@@ -2,8 +2,8 @@ package com.github.sandogeek.jetbrainsvibefly.settings
 
 import com.github.sandogeek.jetbrainsvibefly.agent.VibeflyAgentService
 import com.github.sandogeek.vibefly.jcef.rpc.Host2Agent
-import com.intellij.openapi.project.Project
 import com.github.sandogeek.vibefly.jcef.rpc.ProvidersSnapshot
+import com.intellij.openapi.project.Project
 
 /**
  * Providers snapshot fetch used by the Settings UI.
@@ -14,17 +14,17 @@ internal object ProvidersSettingsLoader {
         val snapshot: ProvidersSnapshot,
     )
 
-    fun fetch(expandedAgentDir: String, project: Project? = null): Result =
+    fun fetch(project: Project? = null): Result =
         VibeflyAgentService.withControlForSettings(
             project = project,
             operation = "getProvidersSnapshot",
         ) { control ->
-            fetchWith(control, expandedAgentDir)
+            fetchWith(control)
         }
 
-    suspend fun fetchWith(control: Host2Agent, expandedAgentDir: String): Result {
-        val snapshot = control.getProvidersSnapshot(expandedAgentDir)
-        ProvidersSettingsCache.put(expandedAgentDir, snapshot)
+    suspend fun fetchWith(control: Host2Agent): Result {
+        val snapshot = control.getProvidersSnapshot()
+        ProvidersSettingsCache.put(snapshot.agentDir, snapshot)
         return Result(snapshot)
     }
 }

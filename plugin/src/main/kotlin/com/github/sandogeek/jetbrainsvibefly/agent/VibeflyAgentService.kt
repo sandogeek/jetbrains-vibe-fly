@@ -3,7 +3,6 @@ package com.github.sandogeek.jetbrainsvibefly.agent
 import com.github.sandogeek.jetbrainsvibefly.settings.Agent2HostBridge
 import com.github.sandogeek.jetbrainsvibefly.settings.CommitMessageProgressListener
 import com.github.sandogeek.jetbrainsvibefly.settings.VibeflyProviderSettingsState
-
 import com.github.sandogeek.simplerpc.RpcSession
 import com.github.sandogeek.simplerpc.stdio.StdioRpcTransport
 import com.github.sandogeek.vibefly.jcef.AgentOrigin
@@ -11,9 +10,6 @@ import com.github.sandogeek.vibefly.jcef.rpc.AgentConnection
 import com.github.sandogeek.vibefly.jcef.rpc.GenerateCommitMessageRequest
 import com.github.sandogeek.vibefly.jcef.rpc.GenerateCommitMessageResult
 import com.github.sandogeek.vibefly.jcef.rpc.Host2Agent
-import com.github.sandogeek.vibefly.jcef.rpc.ProvidersPatchRequest
-import com.github.sandogeek.vibefly.jcef.rpc.ProvidersPatchResult
-import com.github.sandogeek.vibefly.jcef.rpc.ProvidersSnapshot
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
@@ -154,30 +150,6 @@ class VibeflyAgentService(private val project: Project) : Disposable {
         }
     }
 
-    suspend fun getProvidersSnapshot(
-        agentDir: String,
-        timeoutMs: Long = DEFAULT_CONFIG_TIMEOUT_MS,
-    ): ProvidersSnapshot {
-        ensureStarted()
-        val control = host2AgentRef.get()
-            ?: error("Agent control API is not available")
-        return withTimeout(timeoutMs.milliseconds) {
-            control.getProvidersSnapshot(agentDir)
-        }
-    }
-
-    suspend fun applyProvidersPatch(
-        request: ProvidersPatchRequest,
-        timeoutMs: Long = DEFAULT_CONFIG_TIMEOUT_MS,
-    ): ProvidersPatchResult {
-        ensureStarted()
-        val control = host2AgentRef.get()
-            ?: error("Agent control API is not available")
-        return withTimeout(timeoutMs.milliseconds) {
-            control.applyProvidersPatch(request)
-        }
-    }
-
     suspend fun ensureStarted() {
         if (disposed) error("VibeflyAgentService is disposed")
         mutex.withLock {
@@ -231,7 +203,7 @@ class VibeflyAgentService(private val project: Project) : Disposable {
     private fun startLocked() {
         val settings = VibeflyProviderSettingsState.getInstance()
         val handle = VibeflyAgentProcess.start(
-            agentDir = settings.resolvedAgentDir(),
+            agentDir = VibeflyAgentDirectory.current(),
             projectRoot = project.basePath,
             defaultModel = settings.defaultModelSpec(),
         )
@@ -361,4 +333,3 @@ class VibeflyAgentService(private val project: Project) : Disposable {
         }
     }
 }
-

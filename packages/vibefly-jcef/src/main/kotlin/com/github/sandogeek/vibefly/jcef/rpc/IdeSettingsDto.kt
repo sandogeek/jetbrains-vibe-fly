@@ -4,7 +4,6 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class ProvidersFormDto(
-    val agentDir: String = "",
     val defaultProvider: String = "",
     val defaultModel: String = "",
 )

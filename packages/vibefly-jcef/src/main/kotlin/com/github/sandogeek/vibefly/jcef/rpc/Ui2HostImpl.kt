@@ -54,7 +54,7 @@ open class Ui2HostImpl(
             ?: log.debug("saveIdeSettings ignored on non-settings host")
     }
 
-    override suspend fun refreshProviders(agentDir: String): ProvidersRefreshResult =
+    override suspend fun refreshProviders(): ProvidersRefreshResult =
         throw RuntimeException("Settings host only")
 
     override suspend fun applyProvidersPatch(request: ProvidersPatchRequest): ProvidersPatchResult =

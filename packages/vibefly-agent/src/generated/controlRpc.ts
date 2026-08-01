@@ -87,7 +87,6 @@ export interface CredentialAction {
 }
 
 export interface ProvidersPatchRequest {
-  agentDir: string;
   providers?: Array<ProviderPatch>;
   credentials?: Array<CredentialAction>;
 }
@@ -111,7 +110,6 @@ export interface LoginProvidersList {
 }
 
 export interface ProviderLoginRequest {
-  agentDir: string;
   providerId: string;
 }
 
@@ -127,7 +125,6 @@ export interface ProviderLoginResult {
 }
 
 export interface ProviderLogoutRequest {
-  agentDir: string;
   providerId: string;
 }
 
@@ -158,9 +155,9 @@ export const host2Agent = defineRpcService("Host2Agent", {
   openWebSocketSession: rpcMethod<[expectedOrigin: string], AgentConnection>(1),
   shutdown: rpcMethod<[], void>(2),
   generateCommitMessage: rpcMethod<[request: GenerateCommitMessageRequest], GenerateCommitMessageResult>(3),
-  getProvidersSnapshot: rpcMethod<[agentDir: string], ProvidersSnapshot>(5),
+  getProvidersSnapshot: rpcMethod<[], ProvidersSnapshot>(5),
   applyProvidersPatch: rpcMethod<[request: ProvidersPatchRequest], ProvidersPatchResult>(6),
-  getLoginProviders: rpcMethod<[agentDir: string], LoginProvidersList>(7),
+  getLoginProviders: rpcMethod<[], LoginProvidersList>(7),
   loginProvider: rpcMethod<[request: ProviderLoginRequest], ProviderLoginResult>(8),
   logoutProvider: rpcMethod<[request: ProviderLogoutRequest], ProviderLogoutResult>(9),
   cancelProviderLogin: rpcMethod<[], void>(10),

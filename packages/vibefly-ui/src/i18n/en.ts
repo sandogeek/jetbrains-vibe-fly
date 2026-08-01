@@ -69,7 +69,6 @@ export const dict = {
   providers: {
     subtitle: "API keys and OAuth tokens stay in Oh My Pi agent.db (never IDE XML).",
     reload: "Reload from disk",
-    agentDirectory: "Agent directory",
     defaultModel: "Default model",
     connectedProviders: "Connected Providers",
     addCustom: "+ Add Custom Provider",
