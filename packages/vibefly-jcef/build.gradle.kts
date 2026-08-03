@@ -68,8 +68,8 @@ val exportBundledCatalog by tasks.registering(ExportBundledCatalogTask::class) {
     exportScript.set(agentRoot.file("scripts/export-bundled-catalog.ts"))
     // Always register the path: missing file → empty input; install/upgrade → out-of-date.
     upstreamPackageInputs.from(
-        agentRoot.file("node_modules/@oh-my-pi/pi-catalog/package.json"),
-        agentRoot.file("node_modules/@oh-my-pi/pi-ai/package.json"),
+        agentRoot.file("node_modules/@earendil-works/pi-coding-agent/package.json"),
+        agentRoot.file("node_modules/@earendil-works/pi-ai/package.json"),
     )
     uiOutputFile.set(uiProviderCatalog)
     agentOutputFile.set(agentProviderCatalog)

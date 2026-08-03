@@ -53,13 +53,18 @@ abstract class RunVibeflyUiDevServerTask @Inject constructor(
         val node = BuildVibeflyUiTask.resolveNodeExecutable(nodeCommand.get())
             ?: throw GradleException(
                 "Cannot find 'node'. Install Node.js or set -Pvibefly.node=/path/to/node. " +
-                    "IDE-launched Gradle often misses Homebrew PATH (/opt/homebrew/bin).",
+                    "IDE-launched Gradle often misses Homebrew/nvm PATH.",
+            )
+        val npm = BuildVibeflyUiTask.resolveNpmExecutable(node)
+            ?: throw GradleException(
+                "Cannot find 'npm' next to node at $node. Install Node.js with npm or set -Pvibefly.node.",
             )
 
-        logger.lifecycle("Starting vibefly-ui: npm run dev (node={}, cwd={})", node, workDir)
+        logger.lifecycle("Starting vibefly-ui: npm run dev (node={}, npm={}, cwd={})", node, npm, workDir)
         execOperations.exec {
             workingDir(workDir)
-            commandLine("npm", "run", "dev")
+            commandLine(npm, "run", "dev")
+            environment("PATH", BuildVibeflyUiTask.pathWithNodeFirst(node))
         }
     }
 }

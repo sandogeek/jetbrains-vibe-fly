@@ -69,13 +69,18 @@ abstract class BuildVibeflyUiTask @Inject constructor(
         val node = resolveNodeExecutable(nodeCommand.get())
             ?: throw GradleException(
                 "Cannot find 'node'. Install Node.js or set -Pvibefly.node=/path/to/node. " +
-                    "IDE-launched Gradle often misses Homebrew PATH (/opt/homebrew/bin).",
+                    "IDE-launched Gradle often misses Homebrew/nvm PATH.",
+            )
+        val npm = resolveNpmExecutable(node)
+            ?: throw GradleException(
+                "Cannot find 'npm' next to node at $node. Install Node.js with npm or set -Pvibefly.node.",
             )
 
-        logger.info("Building vibefly-ui with {}", node)
+        logger.info("Building vibefly-ui with {} ({})", node, npm)
         execOperations.exec {
             workingDir(workDir)
-            commandLine("npm", "run", "build")
+            commandLine(npm, "run", "build")
+            environment("PATH", pathWithNodeFirst(node))
         }
     }
 
@@ -91,7 +96,7 @@ abstract class BuildVibeflyUiTask @Inject constructor(
             }
 
             // Bare command: search known locations then PATH
-            if (candidate == "node") {
+            if (candidate == "node" || candidate == "node.exe") {
                 for (path in candidateNodePaths()) {
                     val file = File(path)
                     if (file.isFile && file.canExecute()) return file.absolutePath
@@ -101,14 +106,65 @@ abstract class BuildVibeflyUiTask @Inject constructor(
             return findOnPath(candidate)
         }
 
+        /** Prefer npm sitting next to [nodeExecutable] (works when IDE PATH omits nvm/Homebrew). */
+        fun resolveNpmExecutable(nodeExecutable: String): String? {
+            val nodeFile = File(nodeExecutable)
+            val binDir = nodeFile.parentFile ?: return findOnPath(npmBinaryName())
+            for (name in npmBinaryNames()) {
+                val file = File(binDir, name)
+                if (file.exists() && (file.canExecute() || file.isFile)) {
+                    return file.absolutePath
+                }
+            }
+            return findOnPath(npmBinaryName())
+        }
+
+        /** Prepend node's bin dir so child npm/scripts resolve `node` when IDE PATH is minimal. */
+        fun pathWithNodeFirst(nodeExecutable: String, basePath: String? = System.getenv("PATH")): String {
+            val nodeDir = File(nodeExecutable).parent ?: return basePath.orEmpty()
+            val existing = basePath.orEmpty()
+            return if (existing.isEmpty()) nodeDir else "$nodeDir${File.pathSeparator}$existing"
+        }
+
+        private fun npmBinaryName(): String =
+            if (isWindows()) "npm.cmd" else "npm"
+
+        private fun npmBinaryNames(): List<String> =
+            if (isWindows()) listOf("npm.cmd", "npm.exe", "npm") else listOf("npm")
+
+        private fun nodeBinaryName(): String =
+            if (isWindows()) "node.exe" else "node"
+
+        private fun isWindows(): Boolean =
+            System.getProperty("os.name").orEmpty().lowercase().contains("windows")
+
         private fun candidateNodePaths(): List<String> {
             val home = System.getProperty("user.home").orEmpty()
+            val node = nodeBinaryName()
             return buildList {
-                add("$home/.nvm/current/bin/node")
-                add("/opt/homebrew/bin/node")
-                add("/usr/local/bin/node")
-                add("/usr/bin/node")
+                if (home.isNotEmpty()) {
+                    add("$home/.nvm/current/bin/$node")
+                    // nvm often has no "current" symlink — pick newest installed version
+                    addAll(nvmVersionNodePaths(home, node))
+                    add("$home/.fnm/current/bin/$node")
+                    add("$home/.local/share/fnm/current/bin/$node")
+                    add("$home/.volta/bin/$node")
+                    add("$home/.asdf/shims/$node")
+                }
+                add("/opt/homebrew/bin/$node")
+                add("/usr/local/bin/$node")
+                add("/usr/bin/$node")
             }
+        }
+
+        private fun nvmVersionNodePaths(home: String, node: String): List<String> {
+            val versionsDir = File(home, ".nvm/versions/node")
+            if (!versionsDir.isDirectory) return emptyList()
+            return versionsDir.listFiles()
+                ?.filter { it.isDirectory }
+                ?.sortedByDescending { it.name }
+                ?.map { File(it, "bin/$node").absolutePath }
+                .orEmpty()
         }
 
         private fun findOnPath(command: String): String? {

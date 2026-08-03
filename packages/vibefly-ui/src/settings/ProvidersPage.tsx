@@ -286,7 +286,6 @@ export function ProvidersPage(props: ProvidersPageProps) {
       id: result.id,
       baseUrl,
       api,
-      auth: existing?.auth ?? "none",
       models,
       clearBaseUrl: !baseUrl,
       clearApi: !api,

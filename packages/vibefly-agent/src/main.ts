@@ -21,7 +21,7 @@ import {
 } from "./generated/controlRpc.js"
 import { log } from "./log.js"
 import { ChatSessionRegistry } from "./chatSessionRegistry.js"
-import { applyAgentDirFromEnv, clearOmpRuntimeCache, getOmpRuntime } from "./ompRuntime.js"
+import { applyAgentDirFromEnv, clearPiRuntimeCache, getPiRuntime } from "./piRuntime.js"
 import {
   applyProvidersPatch,
   getProvidersSnapshot,
@@ -54,17 +54,17 @@ async function main(): Promise<void> {
     elapsedMs: Math.round(performance.now() - agentDirStarted),
   })
 
-  // Warm OMP auth + model registry (no secrets in env).
-  const ompWarmStarted = performance.now()
+  // Warm pi auth + model runtime.
+  const piWarmStarted = performance.now()
   try {
-    await getOmpRuntime()
-    log.info("omp runtime warm done", {
-      elapsedMs: Math.round(performance.now() - ompWarmStarted),
+    await getPiRuntime()
+    log.info("pi runtime warm done", {
+      elapsedMs: Math.round(performance.now() - piWarmStarted),
     })
   } catch (error) {
-    log.warn("omp runtime warm failed", {
+    log.warn("pi runtime warm failed", {
       err: error,
-      elapsedMs: Math.round(performance.now() - ompWarmStarted),
+      elapsedMs: Math.round(performance.now() - piWarmStarted),
     })
   }
 
@@ -125,11 +125,11 @@ async function main(): Promise<void> {
     async applyProvidersPatch(request) {
       const result = await applyProvidersPatch(request)
       if (result.ok) {
-        clearOmpRuntimeCache()
+        clearPiRuntimeCache()
         try {
-          await getOmpRuntime({ forceNew: true, agentDir })
+          await getPiRuntime({ forceNew: true, agentDir })
         } catch (error) {
-          log.warn("omp reload after patch failed", { err: error })
+          log.warn("pi reload after patch failed", { err: error })
         }
       }
       return result
@@ -140,11 +140,11 @@ async function main(): Promise<void> {
     async loginProvider(request) {
       const result = await loginProvider(request, agent2Host)
       if (result.ok) {
-        clearOmpRuntimeCache()
+        clearPiRuntimeCache()
         try {
-          await getOmpRuntime({ forceNew: true, agentDir })
+          await getPiRuntime({ forceNew: true, agentDir })
         } catch (error) {
-          log.warn("omp reload after login failed", { err: error })
+          log.warn("pi reload after login failed", { err: error })
         }
       }
       return result
@@ -152,11 +152,11 @@ async function main(): Promise<void> {
     async logoutProvider(request) {
       const result = await logoutProvider(request)
       if (result.ok) {
-        clearOmpRuntimeCache()
+        clearPiRuntimeCache()
         try {
-          await getOmpRuntime({ forceNew: true, agentDir })
+          await getPiRuntime({ forceNew: true, agentDir })
         } catch (error) {
-          log.warn("omp reload after logout failed", { err: error })
+          log.warn("pi reload after logout failed", { err: error })
         }
       }
       return result
@@ -253,7 +253,7 @@ async function main(): Promise<void> {
       // ignore
     }
     try {
-      clearOmpRuntimeCache()
+      clearPiRuntimeCache()
     } catch {
       // ignore
     }

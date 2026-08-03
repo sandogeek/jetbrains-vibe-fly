@@ -1,6 +1,6 @@
 # @vibefly/agent
 
-Vibe Fly Node agent：对接 [Oh My Pi](https://github.com/can1357/oh-my-pi)（`@oh-my-pi/pi-coding-agent`），经 SimpleRpc stdio 与 JVM 插件通信。
+Vibe Fly Node agent：对接 [pi](https://github.com/earendil-works/pi)（`@earendil-works/pi-coding-agent`），经 SimpleRpc stdio 与 JVM 插件通信。
 
 ## 职责
 
@@ -11,7 +11,7 @@ Vibe Fly Node agent：对接 [Oh My Pi](https://github.com/can1357/oh-my-pi)（`
 | Host → Agent | SimpleRpc `Host2Agent`（stdio） | `openWebSocketSession` / `shutdown` |
 | UI → Agent | SimpleRpc `Ui2Agent`（WebSocket） | `ping` / `startTask` |
 | Agent → UI | SimpleRpc `Agent2Ui`（WebSocket） | `onAgentEvent` |
-| Agent 内部 | Oh My Pi SDK | `createAgentSession` + 会话事件 |
+| Agent 内部 | pi SDK | `createAgentSession` + 会话事件 |
 
 约定（见仓库 `设想.md`）：
 
@@ -54,6 +54,7 @@ packages/vibefly-agent/
 # 先构建 SimpleRpc Node 传输（若尚未 build）
 cd packages/vibefly-simplerpc/typeScript && npm install && npm run build
 cd ../typeScript-node && npm install && npm run build
+cd ../../vibefly-uiagent-shared && npm install && npm run build
 
 cd packages/vibefly-agent
 npm install
@@ -92,8 +93,8 @@ stdin/stdout 走 Content-Length SimpleRpc 控制面（`Host2Agent`）；业务 R
 
 ## 依赖
 
-- `@oh-my-pi/pi-coding-agent` / `@oh-my-pi/pi-ai`：引擎
+- `@earendil-works/pi-coding-agent` / `@earendil-works/pi-ai`：引擎
 - `@sandogeek/simple-rpc-node`：stdio Content-Length + peer（本仓 `packages/vibefly-simplerpc`）
-- `winston`：stderr 日志（与 omp `@oh-my-pi/pi-utils` 一致）
+- `winston`：stderr 日志
 
-定制与桥接只放在本包，不修改上游 Oh My Pi 包路径。
+定制与桥接只放在本包，不修改上游 pi 包路径。

@@ -74,6 +74,9 @@ object VibeflyAgentProcess {
 
         val command = mutableListOf(node)
         command.addAll(resolveNodeInspectArgs())
+        if (entry.fileName.toString().endsWith(".ts")) {
+            command.addAll(listOf("--import", "tsx"))
+        }
         command.add(entry.toString())
         log.info(
             "Starting vibefly-agent: ${command.joinToString(" ")} (cwd=$workDir, resolveMs=$resolveMs)",
@@ -86,7 +89,7 @@ object VibeflyAgentProcess {
         val env = builder.environment()
         val dir = agentDir?.trim().orEmpty()
         if (dir.isNotEmpty()) {
-            // Internal process param for OMP agent dir (not commit config).
+            // Internal process param for the pi agent dir (not commit config).
             env["PI_CODING_AGENT_DIR"] = dir
         }
         projectRoot?.trim()?.takeIf { it.isNotEmpty() }?.let {

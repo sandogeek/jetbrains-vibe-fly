@@ -1,4 +1,4 @@
-/** Immutable Oh My Pi login registry metadata generated at build time. */
+/** Immutable pi login registry metadata generated at build time. */
 import { staticProviders } from "./generated/providerCatalog.js"
 
 const staticProviderById = new Map(

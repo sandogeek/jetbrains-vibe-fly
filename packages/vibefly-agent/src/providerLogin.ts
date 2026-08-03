@@ -1,11 +1,6 @@
-/**
- * Oh My Pi AuthStorage.login / logout bridge for JetBrains Settings.
- * Interactive callbacks go through Agent2Host reverse RPC.
- */
-import { getOAuthProviders } from "@oh-my-pi/pi-ai/oauth"
-import type { OAuthProviderId } from "@oh-my-pi/pi-ai/oauth"
-import { setAgentDir } from "@oh-my-pi/pi-utils"
+/** pi provider login bridge for JetBrains Settings. */
 import { rpcOptions } from "@sandogeek/simple-rpc"
+import type { AuthEvent, AuthInteraction, AuthPrompt } from "@earendil-works/pi-ai"
 import type {
   Agent2Host,
   LoginProvidersList,
@@ -16,13 +11,9 @@ import type {
 } from "./generated/controlRpc.js"
 import { log } from "./log.js"
 import { resolveLoginProviderId } from "./loginProviders.js"
-import {
-  getProvidersSnapshot,
-  openAuthStorage,
-  resolveAgentDir,
-} from "./providerConfig.js"
+import { getPiRuntime } from "./piRuntime.js"
+import { getProvidersSnapshot, resolveAgentDir } from "./providerConfig.js"
 
-/** Long-lived reverse calls (user may paste a code after several minutes). */
 const loginUiOpts = rpcOptions({ timeoutMs: 0 })
 
 export type LoginUi = Pick<
@@ -32,34 +23,101 @@ export type LoginUi = Pick<
 
 export { providerSupportsLogin, resolveLoginProviderId } from "./loginProviders.js"
 
-/** In-flight login abort (host cancel / dialog close). */
 let activeLoginAbort: AbortController | null = null
 
 export function cancelActiveLogin(): void {
   activeLoginAbort?.abort()
 }
 
+function supportsLogin(provider: {
+  auth: { oauth?: unknown; apiKey?: { login?: unknown } }
+}): boolean {
+  return Boolean(provider.auth.oauth || provider.auth.apiKey?.login)
+}
+
+function loginType(provider: {
+  auth: { oauth?: unknown; apiKey?: { login?: unknown } }
+}): "oauth" | "api_key" {
+  return provider.auth.oauth ? "oauth" : "api_key"
+}
+
 export async function getLoginProviders(
   agentDirInput?: string | null,
 ): Promise<LoginProvidersList> {
   const agentDir = resolveAgentDir(agentDirInput)
-  setAgentDir(agentDir)
-  const auth = await openAuthStorage(agentDir)
-  try {
-    const providers = getOAuthProviders().map((p) => {
-      const storeId = p.storeCredentialsAs ?? p.id
-      return {
-        id: p.id,
-        name: p.name,
-        available: p.available !== false,
-        storeCredentialsAs: p.storeCredentialsAs ?? null,
-        authenticated: auth.hasAuth(storeId) || auth.hasAuth(p.id),
-      }
+  const runtime = await getPiRuntime({ agentDir })
+  const providers = []
+  for (const provider of runtime.modelRuntime.getProviders()) {
+    if (!supportsLogin(provider)) continue
+    const status = await runtime.modelRuntime.checkAuth(provider.id)
+    providers.push({
+      id: provider.id,
+      name: provider.name,
+      available: true,
+      storeCredentialsAs: null,
+      authenticated: status != null,
     })
-    return { providers }
-  } finally {
-    auth.close()
   }
+  return { providers }
+}
+
+function notifyLoginEvent(event: AuthEvent, ui: LoginUi): void {
+  if (event.type === "auth_url") {
+    void ui
+      .openLoginUrl(
+        {
+          url: event.url,
+          launchUrl: event.url,
+          instructions: event.instructions ?? null,
+        },
+        loginUiOpts,
+      )
+      .catch((error) => log.warn("openLoginUrl failed", { err: error }))
+    return
+  }
+  if (event.type === "device_code") {
+    void ui
+      .openLoginUrl(
+        {
+          url: event.verificationUri,
+          launchUrl: event.verificationUri,
+          instructions: `Enter code ${event.userCode}`,
+        },
+        loginUiOpts,
+      )
+      .catch((error) => log.warn("openLoginUrl failed", { err: error }))
+    return
+  }
+  const message = event.type === "progress" || event.type === "info"
+    ? event.message
+    : ""
+  if (message) void ui.reportLoginProgress(message, loginUiOpts).catch(() => {})
+}
+
+async function promptForLogin(prompt: AuthPrompt, ui: LoginUi, abort: AbortController): Promise<string> {
+  const options = prompt.type === "select"
+    ? `\n${prompt.options.map((option, index) => `${index + 1}. ${option.label}`).join("\n")}`
+    : ""
+  const response = await ui.requestLoginInput(
+    {
+      message: `${prompt.message}${options}`,
+      placeholder: prompt.type === "select" ? "Enter a choice" : prompt.placeholder ?? null,
+      allowEmpty: false,
+    },
+    loginUiOpts,
+  )
+  if (response.cancelled) {
+    abort.abort()
+    throw new Error("Login cancelled")
+  }
+  const value = response.text ?? ""
+  if (prompt.type === "select") {
+    const index = Number.parseInt(value, 10) - 1
+    if (Number.isInteger(index) && index >= 0 && index < prompt.options.length) {
+      return prompt.options[index]!.id
+    }
+  }
+  return value
 }
 
 export async function loginProvider(
@@ -67,93 +125,41 @@ export async function loginProvider(
   ui: LoginUi,
 ): Promise<ProviderLoginResult> {
   const providerId = request.providerId.trim()
-  if (!providerId) {
-    return { ok: false, error: "Provider id is required" }
-  }
+  if (!providerId) return { ok: false, error: "Provider id is required" }
   const loginId = resolveLoginProviderId(providerId) ?? providerId
-  const known = getOAuthProviders().find((p) => p.id === loginId)
-  if (!known) {
-    return {
-      ok: false,
-      error: `Unknown login provider: ${providerId}`,
-    }
+  const agentDir = resolveAgentDir()
+  const runtime = await getPiRuntime({ agentDir })
+  const provider = runtime.modelRuntime.getProvider(loginId)
+  if (!provider || !supportsLogin(provider)) {
+    return { ok: false, error: `Unknown login provider: ${providerId}` }
   }
 
-  const agentDir = resolveAgentDir()
-  setAgentDir(agentDir)
-  const auth = await openAuthStorage(agentDir)
   const abort = new AbortController()
   activeLoginAbort = abort
-
   try {
-    await ui
-      .reportLoginProgress(`Starting login for ${known.name}…`, loginUiOpts)
-      .catch(() => {})
-
-    const identity = await auth.login(loginId as OAuthProviderId, {
+    await ui.reportLoginProgress(`Starting login for ${provider.name}...`, loginUiOpts).catch(() => {})
+    const interaction: AuthInteraction = {
       signal: abort.signal,
-      onAuth: (info) => {
-        void ui
-          .openLoginUrl(
-            {
-              url: info.url,
-              launchUrl: info.launchUrl ?? null,
-              instructions: info.instructions ?? null,
-            },
-            loginUiOpts,
-          )
-          .catch((err) => {
-            log.warn("openLoginUrl failed", { err })
-          })
-      },
-      onProgress: (message) => {
-        void ui.reportLoginProgress(message, loginUiOpts).catch(() => {})
-      },
-      onPrompt: async (prompt) => {
-        const allowEmpty =
-          "allowEmpty" in prompt && (prompt as { allowEmpty?: boolean }).allowEmpty === true
-        const response = await ui.requestLoginInput(
-          {
-            message: prompt.message,
-            placeholder: prompt.placeholder ?? null,
-            allowEmpty,
-          },
-          loginUiOpts,
-        )
-        if (response.cancelled) {
-          abort.abort()
-          throw new Error("Login cancelled")
-        }
-        return response.text ?? ""
-      },
-    })
-
-    const snapshot = await getProvidersSnapshot(agentDir)
-    log.info("loginProvider ok", {
-      providerId: loginId,
-      identityType: identity?.type ?? "none",
-    })
-    if (!identity) {
-      return {
-        ok: true,
-        identityType: "none",
-        snapshot,
-      }
+      prompt: (prompt) => promptForLogin(prompt, ui, abort),
+      notify: (event) => notifyLoginEvent(event, ui),
     }
-    if (identity.type === "api_key") {
-      return {
-        ok: true,
-        identityType: "api_key",
-        snapshot,
-      }
+    const credential = await runtime.modelRuntime.login(
+      loginId,
+      loginType(provider),
+      interaction,
+    )
+    const snapshot = await getProvidersSnapshot(agentDir)
+    log.info("loginProvider ok", { providerId: loginId, identityType: credential.type })
+    if (credential.type === "api_key") {
+      return { ok: true, identityType: "api_key", snapshot }
     }
     return {
       ok: true,
       identityType: "oauth",
-      email: identity.email ?? null,
-      accountId: identity.accountId ?? null,
-      orgId: identity.orgId ?? null,
-      orgName: identity.orgName ?? null,
+      email: typeof credential.email === "string" ? credential.email : null,
+      accountId: typeof credential.accountId === "string" ? credential.accountId : null,
+      orgId: typeof credential.orgId === "string" ? credential.orgId : null,
+      orgName: typeof credential.orgName === "string" ? credential.orgName : null,
       snapshot,
     }
   } catch (error) {
@@ -161,10 +167,7 @@ export async function loginProvider(
     log.warn("loginProvider failed", { providerId: loginId, err: message })
     return { ok: false, error: message }
   } finally {
-    if (activeLoginAbort === abort) {
-      activeLoginAbort = null
-    }
-    auth.close()
+    if (activeLoginAbort === abort) activeLoginAbort = null
   }
 }
 
@@ -172,24 +175,13 @@ export async function logoutProvider(
   request: ProviderLogoutRequest,
 ): Promise<ProviderLogoutResult> {
   const providerId = request.providerId.trim()
-  if (!providerId) {
-    return { ok: false, error: "Provider id is required" }
-  }
+  if (!providerId) return { ok: false, error: "Provider id is required" }
   const agentDir = resolveAgentDir()
-  setAgentDir(agentDir)
-  const auth = await openAuthStorage(agentDir)
+  const runtime = await getPiRuntime({ agentDir })
+  const loginId = resolveLoginProviderId(providerId) ?? providerId
   try {
-    // Logout both login id and storeCredentialsAs target.
-    const loginId = resolveLoginProviderId(providerId) ?? providerId
-    const storeAs =
-      getOAuthProviders().find((p) => p.id === loginId)?.storeCredentialsAs
-    await auth.logout(loginId)
-    if (storeAs && storeAs !== loginId) {
-      await auth.logout(storeAs)
-    }
-    if (providerId !== loginId) {
-      await auth.logout(providerId)
-    }
+    await runtime.modelRuntime.logout(loginId)
+    if (providerId !== loginId) await runtime.modelRuntime.logout(providerId)
     const snapshot = await getProvidersSnapshot(agentDir)
     log.info("logoutProvider ok", { providerId, loginId })
     return { ok: true, snapshot }
@@ -197,7 +189,5 @@ export async function logoutProvider(
     const message = error instanceof Error ? error.message : String(error)
     log.warn("logoutProvider failed", { providerId, err: message })
     return { ok: false, error: message }
-  } finally {
-    auth.close()
   }
 }

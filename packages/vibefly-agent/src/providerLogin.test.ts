@@ -13,10 +13,11 @@ describe("login providers", () => {
   test("resolveLoginProviderId maps known OAuth providers", () => {
     expect(resolveLoginProviderId("anthropic")).toBe("anthropic")
     expect(providerSupportsLogin("anthropic")).toBe(true)
-    expect(providerSupportsLogin("openai")).toBe(false)
+    expect(providerSupportsLogin("openai")).toBe(true)
+    expect(providerSupportsLogin("ollama")).toBe(false)
   })
 
-  test("getLoginProviders lists Oh My Pi login registry", async () => {
+  test("getLoginProviders lists pi login registry", async () => {
     const dir = mkdtempSync(join(tmpdir(), "vibefly-login-"))
     try {
       const list = await getLoginProviders(dir)

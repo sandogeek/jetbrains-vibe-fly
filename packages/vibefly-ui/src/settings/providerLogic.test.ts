@@ -42,7 +42,7 @@ describe("providerLogic", () => {
     expect(displayName("openai")).toBe("OpenAI")
     expect(displayName("unknown-x")).toBe("unknown-x")
     expect(description("anthropic")).toBe("Direct access to Claude models")
-    expect(description("nope")).toBe("Bundled models from Oh My Pi catalog")
+    expect(description("nope")).toBe("Bundled models from pi catalog")
   })
 
   test("isConnected and classify", () => {

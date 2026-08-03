@@ -60,7 +60,7 @@ describe("chat project path guard", () => {
     ).toThrow(/escapes the project/)
   })
 
-  test("allows read-only web and OMP resource URIs", () => {
+  test("allows read-only web and pi resource URIs", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "vibefly-path-"))
     tempDirs.push(root)
     expect(() => validateToolPaths(root, "read", { path: "https://example.com/docs" })).not.toThrow()

@@ -3,14 +3,15 @@ import * as path from "node:path"
 import { rpcOptions } from "@sandogeek/simple-rpc"
 import {
   createAgentSession,
+  DefaultResourceLoader,
   SessionManager,
+  SettingsManager,
   type AgentSession,
   type AgentSessionEvent,
   type ExtensionFactory,
-  type ExtensionAskDialogQuestion,
-} from "@oh-my-pi/pi-coding-agent"
-import type { AgentMessage } from "@oh-my-pi/pi-agent-core"
-import type { Model } from "@oh-my-pi/pi-ai"
+} from "@earendil-works/pi-coding-agent"
+import type { AgentMessage } from "@earendil-works/pi-agent-core"
+import type { Api, Model } from "@earendil-works/pi-ai"
 import type {
   Agent2Ui,
   ChatContextItem,
@@ -32,7 +33,7 @@ import type {
   ToolPermissionDecision,
 } from "@vibefly/uiagent-shared"
 import { log } from "./log.js"
-import { getOmpRuntime } from "./ompRuntime.js"
+import { getPiRuntime } from "./piRuntime.js"
 import { SerialTurnScheduler } from "./chatScheduler.js"
 
 type RuntimeSession = {
@@ -71,20 +72,14 @@ const PERMISSION_RPC_OPTIONS = rpcOptions({ timeoutMs: 24 * 60 * 60 * 1000 })
 const TOOL_NAMES = [
   "read",
   "grep",
-  "glob",
-  "ast_grep",
+  "find",
+  "ls",
   "bash",
   "edit",
   "write",
-  "todo",
-  "ask",
 ]
 const THINKING_LEVELS = new Set(["off", "minimal", "low", "medium", "high", "xhigh", "max", "auto"])
-type ClientBridgePermissionOption = {
-  optionId: string
-  name: string
-  kind: "allow_once" | "allow_always" | "reject_once" | "reject_always"
-}
+type ToolPermissionRequest = Parameters<Agent2Ui["requestToolPermission"]>[0]
 
 function now(): number {
   return Date.now()
@@ -316,17 +311,57 @@ export function validateToolPaths(projectRoot: string, toolName: string, input: 
   }
 }
 
-function createPathGuardExtension(projectRoot: string): ExtensionFactory {
+function createPathGuardExtension(
+  projectRoot: string,
+  requestPermission: (request: ToolPermissionRequest) => Promise<ToolPermissionDecision>,
+): ExtensionFactory {
   return (api) => {
-    api.on("tool_call", (event) => {
-      if (!FILE_TOOLS.has(event.toolName)) return
-      try {
-        validateToolPaths(projectRoot, event.toolName, event.input)
-      } catch (error) {
-        return { block: true, reason: errorMessage(error) }
+    api.on("tool_call", async (event, context) => {
+      if (FILE_TOOLS.has(event.toolName)) {
+        try {
+          validateToolPaths(projectRoot, event.toolName, event.input)
+        } catch (error) {
+          return { block: true, reason: errorMessage(error) }
+        }
       }
+      if (event.toolName !== "bash" && event.toolName !== "edit" && event.toolName !== "write") {
+        return undefined
+      }
+      if (!context.hasUI) {
+        return { block: true, reason: "Tool requires approval, but no UI is available" }
+      }
+      const command = event.toolName === "bash"
+        ? String((event.input as Record<string, unknown>).command ?? "")
+        : undefined
+      const locations = locationsFromArgs(event.input, projectRoot)
+      const title = event.toolName === "bash"
+        ? `Run ${command}`
+        : event.toolName === "edit"
+          ? `Edit ${locations?.map((location) => location.path).join(", ") || "project files"}`
+          : `Write ${locations?.map((location) => location.path).join(", ") || "project files"}`
+      const decision = await requestPermission({
+        requestId: makeId("permission"),
+        sessionId: context.sessionManager.getSessionId(),
+        toolCallId: event.toolCallId,
+        toolName: event.toolName,
+        title,
+        command,
+        cwd: projectRoot,
+        input: event.input,
+        locations,
+      })
+      if (decision === "allow_once" || decision === "allow_always") return undefined
+      return { block: true, reason: decision === "cancelled" ? "Cancelled by user" : "Blocked by user" }
     })
   }
+}
+
+function sessionDirFor(projectRoot: string, agentDir: string): string {
+  const resolvedRoot = path.resolve(projectRoot)
+  const safePath = `--${resolvedRoot.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`
+  const sessionDir = path.join(agentDir, "sessions", safePath)
+  fs.mkdirSync(sessionDir, { recursive: true, mode: 0o700 })
+  return sessionDir
 }
 
 export class ChatSessionRegistry {
@@ -354,7 +389,7 @@ export class ChatSessionRegistry {
     if (this.#scheduler.active) {
       const record = this.#records.get(this.#scheduler.active.sessionId)
       if (record?.runtime) {
-        await record.runtime.session.abort({ reason: "UI WebSocket disconnected" }).catch(() => {})
+        await record.runtime.session.abort().catch(() => {})
       }
     }
     for (const record of this.#records.values()) {
@@ -384,19 +419,19 @@ export class ChatSessionRegistry {
 
   async listRecentChatSessions(request: ListChatSessionsRequest): Promise<RecentChatSession[]> {
     const projectRoot = this.#ensureProject(request.projectRoot)
-    const runtime = await getOmpRuntime()
-    const sessionDir = SessionManager.getDefaultSessionDir(projectRoot, runtime.agentDir)
+    const runtime = await getPiRuntime()
+    const sessionDir = sessionDirFor(projectRoot, runtime.agentDir)
     const sessions = await SessionManager.list(projectRoot, sessionDir)
     return sessions
       .sort((a, b) => b.modified.getTime() - a.modified.getTime())
       .slice(0, MAX_RECENT_SESSIONS)
       .map((session) => ({
         sessionId: session.id,
-        title: firstLine(session.title || session.firstMessage),
+        title: firstLine(session.name || session.firstMessage),
         sessionFile: session.path,
         updatedAt: session.modified.getTime(),
         messageCount: session.messageCount,
-        status: session.status,
+        status: undefined,
       }))
   }
 
@@ -417,15 +452,14 @@ export class ChatSessionRegistry {
       sessionFile = recent.find((session) => session.sessionId === request.sessionId)?.sessionFile
     }
     if (!sessionFile || !fs.existsSync(sessionFile)) {
-      throw new Error("The selected OMP session no longer exists")
+      throw new Error("The selected pi session no longer exists")
     }
 
-    const runtime = await getOmpRuntime()
+    const runtime = await getPiRuntime()
     const manager = await SessionManager.open(
       sessionFile,
-      SessionManager.getDefaultSessionDir(projectRoot, runtime.agentDir),
-      undefined,
-      { initialCwd: projectRoot, suppressBreadcrumb: true },
+      sessionDirFor(projectRoot, runtime.agentDir),
+      projectRoot,
     )
     const sessionId = manager.getSessionId()
     const duplicate = this.#records.get(sessionId)
@@ -444,8 +478,8 @@ export class ChatSessionRegistry {
 
   async createChatSession(request: ListChatSessionsRequest): Promise<ChatSessionSnapshot> {
     const projectRoot = this.#ensureProject(request.projectRoot)
-    const runtime = await getOmpRuntime()
-    const sessionDir = SessionManager.getDefaultSessionDir(projectRoot, runtime.agentDir)
+    const runtime = await getPiRuntime()
+    const sessionDir = sessionDirFor(projectRoot, runtime.agentDir)
     const manager = SessionManager.create(projectRoot, sessionDir)
     const record = this.#newRecord(projectRoot, manager, manager.getSessionFile())
     this.#records.set(record.summary.sessionId, record)
@@ -533,23 +567,25 @@ export class ChatSessionRegistry {
     const record = this.#requiredRecord(sessionId)
     const session = record.runtime?.session
     if (!session) return
-    await session.abort({ reason: "Stopped by user" })
+    await session.abort()
     await session.waitForIdle().catch(() => {})
   }
 
   async listChatModels(sessionId: string): Promise<ChatModelOption[]> {
     const record = this.#requiredRecord(sessionId)
     await this.#ensureRuntime(record)
-    return record.runtime!.session.getAvailableModels().map(toModelOption)
+    const models = await record.runtime!.session.modelRuntime.getAvailable()
+    return models.map(toModelOption)
   }
 
   async setChatModel(sessionId: string, modelId: string): Promise<ChatSessionSummary> {
     const record = this.#requiredMutableRecord(sessionId)
     await this.#ensureRuntime(record)
     const session = record.runtime!.session
-    const model = session.getAvailableModels().find((candidate) => modelKey(candidate) === modelId)
+    const models = await session.modelRuntime.getAvailable()
+    const model = models.find((candidate) => modelKey(candidate) === modelId)
     if (!model) throw new Error(`Model is not available: ${modelId}`)
-    await session.setModelTemporary(model)
+    await session.setModel(model)
     this.#syncSummaryFromRuntime(record)
     this.#emitSummary(record)
     return { ...record.summary }
@@ -604,25 +640,33 @@ export class ChatSessionRegistry {
   }
 
   async #createRuntime(record: SessionRecord, manager: SessionManager): Promise<void> {
-    const omp = await getOmpRuntime()
-    const initialModel = manager.getBranch().length === 0 ? resolveModel(omp.registry, this.defaultModelId) : undefined
+    const piRuntime = await getPiRuntime()
+    const initialModel = manager.getBranch().length === 0
+      ? resolveModel(piRuntime.registry, this.defaultModelId)
+      : undefined
+    const settingsManager = SettingsManager.create(record.projectRoot, piRuntime.agentDir)
+    const resourceLoader = new DefaultResourceLoader({
+      cwd: record.projectRoot,
+      agentDir: piRuntime.agentDir,
+      settingsManager,
+      noExtensions: true,
+      extensionFactories: [
+        createPathGuardExtension(
+          record.projectRoot,
+          (request) => this.#requestPermission(record, request),
+        ),
+      ],
+    })
+    await resourceLoader.reload()
     const created = await createAgentSession({
       cwd: record.projectRoot,
-      agentDir: omp.agentDir,
-      authStorage: omp.auth,
-      modelRegistry: omp.registry,
+      agentDir: piRuntime.agentDir,
+      modelRuntime: piRuntime.modelRuntime,
       model: initialModel,
       sessionManager: manager,
-      toolNames: TOOL_NAMES,
-      restrictToolNames: true,
-      enableMCP: false,
-      enableIrc: false,
-      enableLsp: true,
-      hasUI: true,
-      spawns: "",
-      autoApprove: false,
-      extensions: [createPathGuardExtension(record.projectRoot)],
-      disableExtensionDiscovery: true,
+      settingsManager,
+      resourceLoader,
+      tools: TOOL_NAMES,
     })
     const runtime: RuntimeSession = {
       session: created.session,
@@ -630,8 +674,10 @@ export class ChatSessionRegistry {
     }
     record.runtime = runtime
     runtime.unsubscribe = created.session.subscribe((event) => this.#onSessionEvent(record, event))
-    created.session.setClientBridge(this.#createClientBridge(record))
-    created.setToolUIContext(this.#createExtensionUi(record) as never, true)
+    await created.session.bindExtensions({
+      uiContext: this.#createExtensionUi(record) as never,
+      mode: "rpc",
+    })
     record.sessionFile = created.session.sessionFile
     this.#syncSummaryFromRuntime(record)
   }
@@ -640,14 +686,13 @@ export class ChatSessionRegistry {
     record.lastAccess = now()
     if (record.runtime) return
     if (!record.sessionFile || !fs.existsSync(record.sessionFile)) {
-      throw new Error("The OMP session file was removed or is unavailable")
+      throw new Error("The pi session file was removed or is unavailable")
     }
-    const omp = await getOmpRuntime()
+    const runtime = await getPiRuntime()
     const manager = await SessionManager.open(
       record.sessionFile,
-      SessionManager.getDefaultSessionDir(record.projectRoot, omp.agentDir),
-      undefined,
-      { initialCwd: record.projectRoot, suppressBreadcrumb: true },
+      sessionDirFor(record.projectRoot, runtime.agentDir),
+      record.projectRoot,
     )
     await this.#createRuntime(record, manager)
     await this.#evictRuntime(record.summary.sessionId)
@@ -658,8 +703,8 @@ export class ChatSessionRegistry {
     if (!runtime) return
     record.runtime = undefined
     runtime.unsubscribe()
-    runtime.session.setClientBridge(undefined)
-    await runtime.session.dispose().catch((error) => {
+    runtime.session.dispose()
+    await Promise.resolve().catch((error) => {
       log.warn("chat session dispose failed", { sessionId: record.summary.sessionId, err: error })
     })
   }
@@ -693,7 +738,7 @@ export class ChatSessionRegistry {
     record.summary.sessionFile = session.sessionFile
     record.summary.title = firstLine(session.sessionName ?? record.summary.title)
     record.summary.modelId = session.model ? modelKey(session.model) : undefined
-    record.summary.thinkingLevel = session.configuredThinkingLevel() ?? "off"
+    record.summary.thinkingLevel = session.thinkingLevel ?? "off"
     record.summary.messageCount = toChatMessages(session.messages).length
     record.summary.updatedAt = now()
   }
@@ -746,10 +791,10 @@ export class ChatSessionRegistry {
       const prompt = formatPrompt(turn.text, turn.contexts, record.projectRoot)
       if (record.summary.title === "New session") {
         const title = firstLine(turn.text)
-        await runtime.session.sessionManager.setSessionName(title, "user")
+        runtime.session.setSessionName(title)
         record.summary.title = title
       }
-      await runtime.session.prompt(prompt, { userInitiated: true })
+      await runtime.session.prompt(prompt, { source: "rpc" })
       await runtime.session.waitForIdle()
       ok = true
       record.summary.state = "completed"
@@ -915,121 +960,28 @@ export class ChatSessionRegistry {
     }
   }
 
-  #createClientBridge(record: SessionRecord) {
-    return {
-      capabilities: { requestPermission: true, writeTextFile: true },
-      requestPermission: async (
-        toolCall: {
-          toolCallId: string
-          toolName: string
-          title: string
-          rawInput?: unknown
-          content?: unknown[]
-          locations?: { path: string; line?: number }[]
-        },
-        options: ClientBridgePermissionOption[],
-        signal?: AbortSignal,
-      ) => {
-        const command =
-          toolCall.toolName === "bash" && toolCall.rawInput && typeof toolCall.rawInput === "object"
-            ? String((toolCall.rawInput as Record<string, unknown>).command ?? "")
-            : undefined
-        const requestId = makeId("permission")
-        const permissionKey = clientPermissionKey(toolCall.toolName, toolCall.title)
-        const remembered = record.permissionDecisions.get(permissionKey)
-        if (remembered) {
-          const option = options.find((candidate) => candidate.kind === remembered)
-          return option
-            ? { outcome: "selected" as const, optionId: option.optionId, kind: option.kind }
-            : { outcome: "cancelled" as const }
-        }
-        const previous = record.summary.state
-        record.summary.state = "waiting_permission"
-        this.#emitSummary(record)
-        try {
-          const response = await this.#requestPermission(
-            {
-              requestId,
-              sessionId: record.summary.sessionId,
-              toolCallId: toolCall.toolCallId,
-              toolName: toolCall.toolName,
-              title: toolCall.title,
-              command,
-              cwd: record.projectRoot,
-              input: toolCall.rawInput,
-              locations: toolCall.locations,
-            },
-            signal,
-          )
-          if ((response === "allow_once" || response === "allow_always") && toolCall.toolName === "edit") {
-            for (const location of toolCall.locations ?? []) {
-              record.approvedEditPaths.set(path.resolve(record.projectRoot, location.path), now() + 10_000)
-            }
-          }
-          if (response === "allow_always" || response === "reject_always") {
-            record.permissionDecisions.set(permissionKey, response)
-          }
-          if (response === "cancelled") return { outcome: "cancelled" as const }
-          const option = options.find((candidate) => candidate.kind === response)
-          return option
-            ? { outcome: "selected" as const, optionId: option.optionId, kind: option.kind }
-            : { outcome: "cancelled" as const }
-        } finally {
-          record.summary.state = previous === "waiting_permission" ? "running" : previous
-          this.#emitSummary(record)
-        }
-      },
-      writeTextFile: async ({ path: target, content }: { path: string; content: string }) => {
-        const relativeTarget = path.isAbsolute(target) ? path.relative(record.projectRoot, target) : target
-        const absolute = pathInsideProject(record.projectRoot, relativeTarget)
-        const editApproval = record.approvedEditPaths.get(absolute)
-        if (editApproval && editApproval >= now()) {
-          record.approvedEditPaths.delete(absolute)
-        } else {
-          const remembered = record.writeDecision
-          if (remembered === "reject_always") throw new Error("Write rejected by session preference")
-          if (remembered !== "allow_always") {
-            const requestId = makeId("permission")
-            const previous = record.summary.state
-            record.summary.state = "waiting_permission"
-            this.#emitSummary(record)
-            let decision: ToolPermissionDecision
-            try {
-              decision = await this.#requestPermission({
-                requestId,
-                sessionId: record.summary.sessionId,
-                toolCallId: makeId("write"),
-                toolName: "write",
-                title: `Write ${path.relative(record.projectRoot, absolute)}`,
-                cwd: record.projectRoot,
-                input: { path: path.relative(record.projectRoot, absolute), content },
-                locations: [{ path: path.relative(record.projectRoot, absolute) }],
-              })
-            } finally {
-              record.summary.state = previous === "waiting_permission" ? "running" : previous
-              this.#emitSummary(record)
-            }
-            if (decision === "allow_always") record.writeDecision = "allow_always"
-            if (decision === "reject_always") record.writeDecision = "reject_always"
-            if (decision !== "allow_once" && decision !== "allow_always") {
-              throw new Error("Write rejected by user")
-            }
-          }
-        }
-        await fs.promises.mkdir(path.dirname(absolute), { recursive: true })
-        await fs.promises.writeFile(absolute, content, "utf8")
-      },
-    }
-  }
-
   async #requestPermission(
-    request: Parameters<Agent2Ui["requestToolPermission"]>[0],
-    signal?: AbortSignal,
+    record: SessionRecord,
+    request: ToolPermissionRequest,
   ): Promise<ToolPermissionDecision> {
     if (!this.#sink) return "cancelled"
-    if (signal?.aborted) return "cancelled"
-    const response = await this.#sink.requestToolPermission(request, PERMISSION_RPC_OPTIONS)
-    return response.requestId === request.requestId ? response.decision : "cancelled"
+    const permissionKey = clientPermissionKey(request.toolName, request.title)
+    const remembered = record.permissionDecisions.get(permissionKey)
+    if (remembered) return remembered === "reject_always" ? "reject_always" : remembered
+    const previous = record.summary.state
+    record.summary.state = "waiting_permission"
+    this.#emitSummary(record)
+    try {
+      const response = await this.#sink.requestToolPermission(request, PERMISSION_RPC_OPTIONS)
+      const decision = response.requestId === request.requestId ? response.decision : "cancelled"
+      if (decision === "allow_always" || decision === "reject_always") {
+        record.permissionDecisions.set(permissionKey, decision)
+      }
+      return decision
+    } finally {
+      record.summary.state = previous === "waiting_permission" ? "running" : previous
+      this.#emitSummary(record)
+    }
   }
 
   #createExtensionUi(record: SessionRecord) {
@@ -1052,25 +1004,19 @@ export class ChatSessionRegistry {
     }
 
     return {
-      timeoutStartsOnPresentation: true,
-      select: async (title: string, options: Array<{ label: string }>) =>
-        ask(`${title}\n${options.map((option, index) => `${index + 1}. ${option.label}`).join("\n")}`),
+      select: async (title: string, options: string[]) => {
+        const response = await ask(`${title}\n${options.map((option, index) => `${index + 1}. ${option}`).join("\n")}`)
+        const index = Number.parseInt(response ?? "", 10) - 1
+        return Number.isInteger(index) && index >= 0 && index < options.length
+          ? options[index]
+          : response
+      },
       confirm: async (title: string, message: string) => {
         const response = await ask(`${title}\n${message}\n[y/N]`)
         return /^y(?:es)?$/i.test(response ?? "")
       },
       input: ask,
       editor: ask,
-      askDialog: async (questions: ExtensionAskDialogQuestion[]) => {
-        const answers: Record<string, string> = {}
-        for (const question of questions) {
-          const choices = question.options.map((option, index) => `${index + 1}. ${option.label}`).join("\n")
-          const answer = await ask(`${question.question}${choices ? `\n${choices}` : ""}`)
-          if (answer === undefined) return undefined
-          answers[question.id] = answer
-        }
-        return { answers }
-      },
       notify: (message: string, level: "info" | "warning" | "error" = "info") => {
         const assistantId = record.activeMessageId ?? makeId("notice")
         this.#emit(record, {
@@ -1088,6 +1034,9 @@ export class ChatSessionRegistry {
       onTerminalInput: () => () => {},
       setStatus: () => {},
       setWorkingMessage: () => {},
+      setWorkingVisible: () => {},
+      setWorkingIndicator: () => {},
+      setHiddenThinkingLabel: () => {},
       setWidget: () => {},
       setFooter: () => {},
       setHeader: () => {},
@@ -1098,16 +1047,18 @@ export class ChatSessionRegistry {
       getEditorText: () => "",
       addAutocompleteProvider: () => {},
       setEditorComponent: () => {},
-      getAllThemes: async () => [],
-      getTheme: async () => undefined,
-      setTheme: async () => ({ success: false, error: "Theme selection is unavailable" }),
+      getEditorComponent: () => undefined,
+      theme: undefined,
+      getAllThemes: () => [],
+      getTheme: () => undefined,
+      setTheme: () => ({ success: false, error: "Theme selection is unavailable" }),
       getToolsExpanded: () => false,
       setToolsExpanded: () => {},
     }
   }
 }
 
-function modelKey(model: Pick<Model, "provider" | "id">): string {
+function modelKey(model: Pick<Model<Api>, "provider" | "id">): string {
   return `${model.provider}/${model.id}`
 }
 
@@ -1117,7 +1068,7 @@ function clientPermissionKey(toolName: string, title: string): string {
   return toolName
 }
 
-function toModelOption(model: Model): ChatModelOption {
+function toModelOption(model: Model<Api>): ChatModelOption {
   return {
     id: modelKey(model),
     provider: model.provider,
@@ -1128,9 +1079,9 @@ function toModelOption(model: Model): ChatModelOption {
 }
 
 function resolveModel(
-  registry: { find(provider: string, id: string): Model | undefined },
+  registry: { find(provider: string, id: string): Model<Api> | undefined },
   modelId: string | undefined,
-): Model | undefined {
+): Model<Api> | undefined {
   const spec = modelId?.trim()
   if (!spec) return undefined
   const slash = spec.indexOf("/")

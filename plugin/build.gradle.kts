@@ -72,6 +72,7 @@ val buildVibeflyAgent by tasks.registering(BuildVibeflyAgentTask::class) {
         rootProject.layout.projectDirectory.file("packages/vibefly-simplerpc/typeScript/package.json"),
         rootProject.layout.projectDirectory.file("packages/vibefly-simplerpc/typeScript-node/package.json"),
         rootProject.layout.projectDirectory.file("packages/vibefly-uiagent-shared/package.json"),
+        rootProject.layout.projectDirectory.file("packages/vibefly-uiagent-shared/tsconfig.json"),
         rootProject.layout.projectDirectory.dir("packages/vibefly-simplerpc/typeScript/src"),
         rootProject.layout.projectDirectory.dir("packages/vibefly-simplerpc/typeScript-node/src"),
         rootProject.layout.projectDirectory.dir("packages/vibefly-uiagent-shared/src"),
@@ -139,8 +140,8 @@ tasks.named<RunIdeTask>("runIde") {
         val dist = rootProject.layout.projectDirectory
             .file("packages/vibefly-agent/dist/main.js").asFile
         when {
-            src.isFile -> src.absolutePath
             dist.isFile -> dist.absolutePath
+            src.isFile -> src.absolutePath
             else -> src.absolutePath
         }
     }

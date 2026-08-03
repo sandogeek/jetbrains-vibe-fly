@@ -11,5 +11,5 @@ webview/dist
 # vibefly-ui (Vite)
 packages/**/node_modules
 packages/vibefly-ui/dist
+packages/vibefly-uiagent-shared/dist
 packages/vibefly-jcef/**/resources/web/
-

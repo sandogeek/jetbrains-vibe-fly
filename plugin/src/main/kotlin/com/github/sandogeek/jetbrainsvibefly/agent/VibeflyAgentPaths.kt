@@ -38,7 +38,7 @@ object VibeflyAgentPaths {
      * Prefer:
      * 1. Explicit `-Dvibefly.agent.entry` / `VIBEFLY_AGENT_ENTRY`
      * 2. Plugin-bundled `agent/dist/main.js` (installable zip / sandbox)
-     * 3. Monorepo `packages/vibefly-agent/{src/main.ts,dist/main.js}` for local development
+     * 3. Monorepo `packages/vibefly-agent/{dist/main.js,src/main.ts}` for local development
      */
     fun resolveAgentEntry(): Path {
         val explicit = System.getProperty("vibefly.agent.entry")?.trim().orEmpty()
@@ -52,8 +52,8 @@ object VibeflyAgentPaths {
         resolveBundledAgentEntry()?.let { return it }
 
         val relativeCandidates = listOf(
-            Path.of("packages/vibefly-agent/src/main.ts"),
             Path.of("packages/vibefly-agent/dist/main.js"),
+            Path.of("packages/vibefly-agent/src/main.ts"),
         )
         val searchRoots = linkedSetOf<Path>()
         System.getProperty("user.dir")?.let {

@@ -27,7 +27,7 @@ interface Host2Agent {
     @RpcFun(6)
     suspend fun applyProvidersPatch(request: ProvidersPatchRequest): ProvidersPatchResult
 
-    /** OAuth / API-key login providers from Oh My Pi registry (same as `/login`). */
+    /** OAuth / API-key login providers from the pi registry (same as `/login`). */
     @RpcFun(7)
     suspend fun getLoginProviders(): LoginProvidersList
 

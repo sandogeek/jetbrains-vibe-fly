@@ -79,13 +79,18 @@ abstract class ExportBundledCatalogTask @Inject constructor(
         val node = BuildVibeflyUiTask.resolveNodeExecutable(nodeCommand.get())
             ?: throw GradleException(
                 "Cannot find 'node'. Install Node.js or set -Pvibefly.node=/path/to/node. " +
-                    "IDE-launched Gradle often misses Homebrew PATH (/opt/homebrew/bin).",
+                    "IDE-launched Gradle often misses Homebrew/nvm PATH.",
+            )
+        val npm = BuildVibeflyUiTask.resolveNpmExecutable(node)
+            ?: throw GradleException(
+                "Cannot find 'npm' next to node at $node. Install Node.js with npm or set -Pvibefly.node.",
             )
 
-        logger.lifecycle("Exporting bundled model catalog with {}", node)
+        logger.lifecycle("Exporting bundled model catalog with {} ({})", node, npm)
         execOperations.exec {
             workingDir(workDir)
-            commandLine("npm", "run", "export:catalog")
+            commandLine(npm, "run", "export:catalog")
+            environment("PATH", BuildVibeflyUiTask.pathWithNodeFirst(node))
         }
         val missing = outputs.filterNot { it.isFile && it.length() > 0L }
         if (missing.isNotEmpty()) {

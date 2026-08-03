@@ -5,9 +5,12 @@
   "type": "module",
   "description": "Vibe Fly WebView UI (Vite + SolidJS + SolidUI + Tailwind CSS v4), served via http://vibefly/",
   "scripts": {
+    "predev": "npm --prefix ../vibefly-uiagent-shared run build",
+    "prebuild": "npm --prefix ../vibefly-uiagent-shared run build",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "pretypecheck": "npm --prefix ../vibefly-uiagent-shared run build",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test 'src/**/*.test.ts'"
   },

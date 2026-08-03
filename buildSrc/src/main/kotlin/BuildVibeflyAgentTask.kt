@@ -85,13 +85,18 @@ abstract class BuildVibeflyAgentTask @Inject constructor(
         val node = BuildVibeflyUiTask.resolveNodeExecutable(nodeCommand.get())
             ?: throw GradleException(
                 "Cannot find 'node'. Install Node.js or set -Pvibefly.node=/path/to/node. " +
-                    "IDE-launched Gradle often misses Homebrew PATH (/opt/homebrew/bin).",
+                    "IDE-launched Gradle often misses Homebrew/nvm PATH.",
+            )
+        val npm = BuildVibeflyUiTask.resolveNpmExecutable(node)
+            ?: throw GradleException(
+                "Cannot find 'npm' next to node at $node. Install Node.js with npm or set -Pvibefly.node.",
             )
 
         val agentRoot = agentRootDir.get().asFile
-        ensureLocalPackageBuilt(node, simpleRpcTsDir.get().asFile)
-        ensureLocalPackageBuilt(node, simpleRpcNodeDir.get().asFile)
-        ensureAgentDist(node, agentRoot)
+        ensureLocalPackageBuilt(node, npm, simpleRpcTsDir.get().asFile)
+        ensureLocalPackageBuilt(node, npm, simpleRpcNodeDir.get().asFile)
+        ensureLocalPackageBuilt(node, npm, uiagentSharedDir.get().asFile)
+        ensureAgentDist(node, npm, agentRoot)
 
         val out = outputDir.get().asFile
         if (out.exists()) {
@@ -140,13 +145,9 @@ abstract class BuildVibeflyAgentTask @Inject constructor(
             dropDevDependencies = true,
         )
 
-        logger.lifecycle("Installing production vibefly-agent runtime with {}", node)
-        // Keep optional deps so host-platform @oh-my-pi/pi-natives-* is installed.
-        // Heavy unused optionals (onnx/sherpa/…) are pruned afterwards.
-        execOperations.exec {
-            workingDir(out)
-            commandLine("npm", "install", "--omit=dev", "--ignore-scripts")
-        }
+        logger.lifecycle("Installing production vibefly-agent runtime with {} ({})", node, npm)
+        // Keep optional pi dependencies during install; heavy unused optionals are pruned below.
+        npmExec(out, npm, node, "install", "--omit=dev", "--ignore-scripts")
 
         pruneHeavyOptionalRuntime(File(out, "node_modules"))
 
@@ -157,50 +158,41 @@ abstract class BuildVibeflyAgentTask @Inject constructor(
         logger.lifecycle("Bundled vibefly-agent → {}", out)
     }
 
-    private fun ensureLocalPackageBuilt(node: String, packageDir: File) {
+    private fun ensureLocalPackageBuilt(node: String, npm: String, packageDir: File) {
         val packageJson = File(packageDir, "package.json")
         if (!packageJson.isFile) {
             throw GradleException("Missing package.json: $packageJson")
         }
         val distIndex = File(packageDir, "dist/index.js")
-        val srcIndexTs = File(packageDir, "src/index.ts")
         val nodeModules = File(packageDir, "node_modules")
         if (!nodeModules.isDirectory) {
             logger.lifecycle("npm install in {}", packageDir)
-            execOperations.exec {
-                workingDir(packageDir)
-                commandLine("npm", "install")
-            }
-        }
-        // Source-only packages (e.g. uiagent-shared) export TypeScript directly.
-        if (srcIndexTs.isFile && packageJson.readText().contains("\"./src/")) {
-            return
+            npmExec(packageDir, npm, node, "install")
         }
         if (!distIndex.isFile) {
             logger.lifecycle("Building local package {}", packageDir.name)
-            execOperations.exec {
-                workingDir(packageDir)
-                commandLine("npm", "run", "build")
-            }
+            npmExec(packageDir, npm, node, "run", "build")
         }
-        if (!distIndex.isFile && !srcIndexTs.isFile) {
-            throw GradleException("Local package build missing $distIndex (and no src/index.ts)")
+        if (!distIndex.isFile) {
+            throw GradleException("Local package build missing $distIndex")
         }
     }
 
-    private fun ensureAgentDist(node: String, agentRoot: File) {
+    private fun ensureAgentDist(node: String, npm: String, agentRoot: File) {
         val nodeModules = File(agentRoot, "node_modules")
         if (!nodeModules.isDirectory) {
             logger.lifecycle("npm install in {}", agentRoot)
-            execOperations.exec {
-                workingDir(agentRoot)
-                commandLine("npm", "install")
-            }
+            npmExec(agentRoot, npm, node, "install")
         }
         logger.lifecycle("Building vibefly-agent TypeScript")
+        npmExec(agentRoot, npm, node, "run", "build")
+    }
+
+    private fun npmExec(workDir: File, npm: String, node: String, vararg args: String) {
         execOperations.exec {
-            workingDir(agentRoot)
-            commandLine("npm", "run", "build")
+            workingDir(workDir)
+            commandLine(listOf(npm) + args)
+            environment("PATH", BuildVibeflyUiTask.pathWithNodeFirst(node))
         }
     }
 
@@ -219,16 +211,13 @@ abstract class BuildVibeflyAgentTask @Inject constructor(
             StandardCopyOption.REPLACE_EXISTING,
         )
 
-        // Prefer compiled dist when present; otherwise ship src (uiagent-shared is TS-source).
+        // Runtime packages must expose compiled JavaScript to the plain Node process.
         val dist = File(from, "dist")
         if (dist.isDirectory) {
             copyDirectory(dist, File(to, "dist"))
         }
-        val src = File(from, "src")
-        val packageText = packageJson.readText()
-        val exportsSrc = packageText.contains("\"./src/")
-        if (src.isDirectory && (!dist.isDirectory || exportsSrc)) {
-            copyDirectory(src, File(to, "src"))
+        if (!dist.isDirectory) {
+            throw GradleException("Runtime package missing compiled dist: $from")
         }
     }
 

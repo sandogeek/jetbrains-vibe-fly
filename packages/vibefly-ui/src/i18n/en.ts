@@ -67,7 +67,7 @@ export const dict = {
     providers: "Providers",
   },
   providers: {
-    subtitle: "API keys and OAuth tokens stay in Oh My Pi agent.db (never IDE XML).",
+    subtitle: "API keys and OAuth tokens stay in pi auth.json (never IDE XML).",
     reload: "Reload from disk",
     defaultModel: "Default model",
     connectedProviders: "Connected Providers",
@@ -78,9 +78,9 @@ export const dict = {
     noMatch: "No built-in providers match the search",
     noBuiltIn: "No built-in providers available",
     disconnectConfirm:
-      "Disconnect {{name}}? This removes stored API keys and OAuth sessions from agent.db.",
+      "Disconnect {{name}}? This removes stored API keys and OAuth sessions from auth.json.",
     deleteConfirm:
-      'Delete custom provider "{{id}}"? This removes it from models.yml and clears its API key.',
+      'Delete custom provider "{{id}}"? This removes it from models.json and clears its API key.',
     saveFailed: "Failed to save provider config",
     logoutFailed: "Logout failed",
     loginFailed: "Login failed",

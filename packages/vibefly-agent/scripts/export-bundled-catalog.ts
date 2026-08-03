@@ -1,5 +1,5 @@
 /**
- * Export build-time provider data from the same-version Oh My Pi packages.
+ * Export build-time provider data from the same-version pi packages.
  *
  * The UI output contains the bundled model catalog and immutable provider
  * metadata. The Agent output contains only immutable provider metadata, so
@@ -11,13 +11,7 @@
 import * as fs from "node:fs"
 import * as path from "node:path"
 import { fileURLToPath } from "node:url"
-import {
-  getBundledModels,
-  getBundledProviders,
-  type GeneratedProvider,
-} from "@oh-my-pi/pi-catalog/models"
-import { buildModelProviderPriorityRank } from "@oh-my-pi/pi-catalog/identity"
-import { getOAuthProviders } from "@oh-my-pi/pi-ai/oauth"
+import { ModelRuntime } from "@earendil-works/pi-coding-agent"
 
 type SlimModel = {
   id: string
@@ -29,7 +23,6 @@ type SlimModel = {
   outputCostPerMTok?: number
   reasoning?: boolean
   toolsUnsupported?: boolean
-  priority?: number
 }
 
 type SlimProvider = {
@@ -64,7 +57,6 @@ function slimModel(m: {
   supportsTools?: boolean
   cost?: { input?: number; output?: number }
   contextWindow?: number | null
-  priority?: number
 }): SlimModel {
   const out: SlimModel = { id: String(m.id) }
   const name = m.name != null ? String(m.name) : ""
@@ -86,52 +78,24 @@ function slimModel(m: {
 
   if (m.reasoning === true) out.reasoning = true
   if (m.supportsTools === false) out.toolsUnsupported = true
-  if (isFiniteNumber(m.priority)) out.priority = m.priority
-
   return out
 }
 
-function buildCatalog(): SlimCatalog {
-  const rank = buildModelProviderPriorityRank()
-  const providerOrder = [...rank.entries()]
-    .sort((a, b) => a[1] - b[1] || a[0].localeCompare(b[0]))
-    .map(([id]) => id)
-
-  const modelsByProvider = new Map<string, SlimModel[]>()
-  for (const provider of getBundledProviders()) {
-    const providerId = String(provider)
-    let models: SlimModel[] = []
-    try {
-      const bundled = getBundledModels(provider as GeneratedProvider)
-      models = bundled.map((m) => slimModel(m as Parameters<typeof slimModel>[0]))
-    } catch {
-      models = []
-    }
-    modelsByProvider.set(providerId, models)
-  }
-
-  const loginProviders = getOAuthProviders()
-  const loginById = new Map(loginProviders.map((provider) => [provider.id, provider]))
-  const providerIds = new Set([
-    ...modelsByProvider.keys(),
-    ...loginProviders.map((provider) => provider.id),
-  ])
-  const providers = [...providerIds]
-    .sort((a, b) => a.localeCompare(b))
-    .map((id): SlimProvider => {
-      const directLogin = loginById.get(id)
-      const mappedLogin = directLogin
-        ? directLogin.id
-        : loginProviders.find((provider) => provider.storeCredentialsAs === id)?.id
-      const provider: SlimProvider = {
-        id,
-        models: modelsByProvider.get(id) ?? [],
+async function buildCatalog(): Promise<SlimCatalog> {
+  const runtime = await ModelRuntime.create({ modelsPath: null })
+  const providers = runtime.getProviders()
+  const providerOrder = providers.map((provider) => provider.id)
+  return {
+    providerOrder,
+    providers: providers.map((provider): SlimProvider => {
+      const auth = provider.auth
+      return {
+        id: provider.id,
+        supportsLogin: Boolean(auth.oauth || auth.apiKey?.login),
+        models: provider.getModels().map((model) => slimModel(model)),
       }
-      if (mappedLogin) provider.supportsLogin = true
-      if (mappedLogin && mappedLogin !== id) provider.loginProviderId = mappedLogin
-      return provider
-    })
-  return { providerOrder, providers }
+    }),
+  }
 }
 
 function renderUiCatalog(catalog: SlimCatalog): string {
@@ -189,7 +153,7 @@ function writeGenerated(outPath: string, contents: string): number {
   return fs.statSync(outPath).size
 }
 
-function main(): void {
+async function main(): Promise<void> {
   const here = path.dirname(fileURLToPath(import.meta.url))
   const repoRoot = path.resolve(here, "../../..")
   const uiOutPath = path.join(
@@ -200,7 +164,7 @@ function main(): void {
     repoRoot,
     "packages/vibefly-agent/src/generated/providerCatalog.ts",
   )
-  const catalog = buildCatalog()
+  const catalog = await buildCatalog()
   const uiBytes = writeGenerated(uiOutPath, renderUiCatalog(catalog))
   const agentBytes = writeGenerated(agentOutPath, renderAgentProviders(catalog))
   const modelCount = catalog.providers.reduce((n, p) => n + p.models.length, 0)
@@ -211,4 +175,4 @@ function main(): void {
   )
 }
 
-main()
+await main()

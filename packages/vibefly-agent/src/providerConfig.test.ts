@@ -3,7 +3,6 @@ import { expect } from "expect"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
-import { setAgentDir } from "@oh-my-pi/pi-utils"
 import {
   applyProvidersPatch,
   getProvidersSnapshot,
@@ -15,11 +14,14 @@ import {
 } from "./providerConfig.js"
 
 function tempAgentDir(prefix = "vibefly-provider-"): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), prefix))
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix))
+  process.env.PI_CODING_AGENT_DIR = dir
+  return dir
 }
 
 afterEach(() => {
   // leave temp dirs for OS cleanup; avoid clobbering real agent dir
+  delete process.env.PI_CODING_AGENT_DIR
 })
 
 describe("providerConfig paths", () => {
@@ -35,23 +37,22 @@ describe("providerConfig paths", () => {
   })
 })
 
-describe("models.yml merge / migration", () => {
+describe("models.json merge / migration", () => {
   test("preserves unknown fields on write", () => {
     const agentDir = tempAgentDir()
-    const yml = path.join(agentDir, "models.yml")
+    const modelsPath = path.join(agentDir, "models.json")
     fs.writeFileSync(
-      yml,
-      `
-providers:
-  openai:
-    baseUrl: https://example.com/v1
-    customExtra: keep-me
-    headers:
-      X-Foo: bar
-  other:
-    discovery:
-      type: ollama
-`.trimStart(),
+      modelsPath,
+      JSON.stringify({
+        providers: {
+          openai: {
+            baseUrl: "https://example.com/v1",
+            customExtra: "keep-me",
+            headers: { "X-Foo": "bar" },
+          },
+          other: { discovery: { type: "ollama" } },
+        },
+      }),
       "utf-8",
     )
 
@@ -67,7 +68,7 @@ providers:
     expect((again.providers as any).other.discovery.type).toBe("ollama")
   })
 
-  test("migrates models.json to models.yml on first write", () => {
+  test("keeps models.json on first write", () => {
     const agentDir = tempAgentDir()
     fs.writeFileSync(
       path.join(agentDir, "models.json"),
@@ -89,17 +90,16 @@ providers:
     expect((raw.providers as any).custom.leftover).toBe(true)
     writeRawModelsConfig(agentDir, raw)
 
-    expect(fs.existsSync(path.join(agentDir, "models.yml"))).toBe(true)
-    const ymlText = fs.readFileSync(path.join(agentDir, "models.yml"), "utf-8")
+    expect(fs.existsSync(path.join(agentDir, "models.json"))).toBe(true)
+    const ymlText = fs.readFileSync(path.join(agentDir, "models.json"), "utf-8")
     expect(ymlText).toContain("leftover")
     expect(ymlText).toContain("llama3")
   })
 })
 
-describe("applyProvidersPatch + AuthStorage", () => {
-  test("writes custom provider without apiKey in YAML and stores key in agent.db", async () => {
+describe("applyProvidersPatch + PiAuthStorage", () => {
+  test("writes custom provider without apiKey and stores key in auth.json", async () => {
     const agentDir = tempAgentDir()
-    setAgentDir(agentDir)
 
     const result = await applyProvidersPatch({
       providers: [
@@ -107,7 +107,6 @@ describe("applyProvidersPatch + AuthStorage", () => {
           id: "my-proxy",
           baseUrl: "https://proxy.example/v1",
           api: "openai-responses",
-          auth: "none",
           models: [{ id: "gpt-test", name: "gpt-test" }],
         },
       ],
@@ -119,23 +118,18 @@ describe("applyProvidersPatch + AuthStorage", () => {
     expect(result.ok).toBe(true)
     expect(result.error).toBeUndefined()
 
-    const yml = fs.readFileSync(path.join(agentDir, "models.yml"), "utf-8")
-    expect(yml).toContain("my-proxy")
-    expect(yml).toContain("https://proxy.example/v1")
-    expect(yml).toMatch(/auth:\s*none/)
-    expect(yml).not.toContain("sk-test-secret")
-    expect(yml).not.toMatch(/apiKey:\s*sk-/)
+    const modelsText = fs.readFileSync(path.join(agentDir, "models.json"), "utf-8")
+    expect(modelsText).toContain("my-proxy")
+    expect(modelsText).toContain("https://proxy.example/v1")
+    expect(modelsText).not.toContain("auth")
+    expect(modelsText).not.toContain("sk-test-secret")
+    expect(modelsText).not.toMatch(/apiKey:\s*sk-/)
 
     const auth = await openAuthStorage(agentDir)
-    try {
-      expect(auth.has("my-proxy")).toBe(true)
-      const cred = auth.get("my-proxy")
-      expect(cred?.type).toBe("api_key")
-      if (cred?.type === "api_key") {
-        expect(cred.key).toBe("sk-test-secret")
-      }
-    } finally {
-      auth.close()
+    const cred = await auth.read("my-proxy")
+    expect(cred?.type).toBe("api_key")
+    if (cred?.type === "api_key") {
+      expect(cred.key).toBe("sk-test-secret")
     }
 
     // clear only api key
@@ -146,17 +140,20 @@ describe("applyProvidersPatch + AuthStorage", () => {
     expect(cleared.ok).toBe(true)
 
     const auth2 = await openAuthStorage(agentDir)
-    try {
-      const rows = auth2.listStoredCredentials("my-proxy")
-      expect(rows.every((r) => r.credential.type !== "api_key")).toBe(true)
-    } finally {
-      auth2.close()
-    }
+    expect(await auth2.read("my-proxy")).toBeUndefined()
   })
 
-  test("forces auth none when patch requests apiKey (keys stay in agent.db)", async () => {
+  test("drops the old auth field when patch requests apiKey", async () => {
     const agentDir = tempAgentDir()
-    setAgentDir(agentDir)
+
+    writeRawModelsConfig(agentDir, {
+      providers: {
+        "local-grok": {
+          auth: "apiKey",
+          apiKey: "sk-old-inline",
+        },
+      },
+    })
 
     const result = await applyProvidersPatch({
       providers: [
@@ -164,7 +161,6 @@ describe("applyProvidersPatch + AuthStorage", () => {
           id: "local-grok",
           baseUrl: "http://127.0.0.1:8000/v1",
           api: "openai-responses",
-          auth: "apiKey",
           models: [{ id: "grok-4.5", name: "grok-4.5" }],
         },
       ],
@@ -175,13 +171,12 @@ describe("applyProvidersPatch + AuthStorage", () => {
     expect(result.ok).toBe(true)
 
     const raw = loadRawModelsConfig(agentDir)
-    expect((raw.providers as any)["local-grok"].auth).toBe("none")
+    expect((raw.providers as any)["local-grok"].auth).toBeUndefined()
     expect((raw.providers as any)["local-grok"].apiKey).toBeUndefined()
   })
 
-  test("repairModelsYmlAuthForOmp rewrites auth apiKey without inline key", async () => {
+  test("repairModelsJsonAuthForPi removes inline apiKey", async () => {
     const agentDir = tempAgentDir()
-    setAgentDir(agentDir)
     writeRawModelsConfig(agentDir, {
       providers: {
         "local-grok": {
@@ -193,16 +188,15 @@ describe("applyProvidersPatch + AuthStorage", () => {
       },
     })
 
-    const { repairModelsYmlAuthForOmp } = await import("./providerConfig.js")
-    expect(repairModelsYmlAuthForOmp(agentDir)).toBe(true)
+    const { repairModelsJsonAuthForPi } = await import("./providerConfig.js")
+    expect(repairModelsJsonAuthForPi(agentDir)).toBe(true)
     const raw = loadRawModelsConfig(agentDir)
-    expect((raw.providers as any)["local-grok"].auth).toBe("none")
-    expect(repairModelsYmlAuthForOmp(agentDir)).toBe(false)
+    expect((raw.providers as any)["local-grok"].auth).toBeUndefined()
+    expect(repairModelsJsonAuthForPi(agentDir)).toBe(false)
   })
 
   test("empty api key set is a no-op (keep existing)", async () => {
     const agentDir = tempAgentDir()
-    setAgentDir(agentDir)
 
     await applyProvidersPatch({
       providers: [],
@@ -214,14 +208,10 @@ describe("applyProvidersPatch + AuthStorage", () => {
     })
 
     const auth = await openAuthStorage(agentDir)
-    try {
-      const cred = auth.get("openai")
-      expect(cred?.type).toBe("api_key")
-      if (cred?.type === "api_key") {
-        expect(cred.key).toBe("sk-keep")
-      }
-    } finally {
-      auth.close()
+    const cred = await auth.read("openai")
+    expect(cred?.type).toBe("api_key")
+    if (cred?.type === "api_key") {
+      expect(cred.key).toBe("sk-keep")
     }
   })
 })
@@ -241,7 +231,6 @@ describe("catalog + snapshot", () => {
 
   test("getProvidersSnapshot returns mutable state for built-in and configured providers", async () => {
     const agentDir = tempAgentDir()
-    setAgentDir(agentDir)
     writeRawModelsConfig(agentDir, {
       providers: {
         "local-custom": {

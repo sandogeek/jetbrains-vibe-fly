@@ -51,7 +51,6 @@ export interface ProviderRuntimeSnapshot {
   isConfigured?: boolean;
   baseUrl?: string | null;
   api?: string | null;
-  auth?: string | null;
   models?: Array<ProviderModelSnapshot>;
   credential?: ProviderCredentialStatus;
 }
@@ -79,7 +78,6 @@ export interface ProviderPatch {
   remove?: boolean;
   baseUrl?: string | null;
   api?: string | null;
-  auth?: string | null;
   models?: Array<ProviderModelPatch> | null;
   clearBaseUrl?: boolean;
   clearApi?: boolean;

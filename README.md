@@ -4,14 +4,14 @@
 
 ![Build](https://github.com/sandogeek/jetbrains-vibe-fly/workflows/Build/badge.svg)
 
-基于 [Oh My Pi](https://github.com/can1357/oh-my-pi) 引擎，在 IDE 内提供聊天式编码助手：多会话对话、代码上下文注入、分级工具审批，以及 AI 生成 Commit Message。
+基于 [pi](https://github.com/earendil-works/pi) 引擎，在 IDE 内提供聊天式编码助手：多会话对话、代码上下文注入、分级工具审批，以及 AI 生成 Commit Message。
 
 ## 功能
 
 | 能力 | 说明 |
 | --- | --- |
 | **工具窗聊天** | `Vibe Fly` Tool Window（JCEF WebView），流式对话与工具调用 |
-| **多会话标签** | 每标签独立 OMP 会话；同项目串行调度，避免并发改代码 |
+| **多会话标签** | 每标签独立 pi 会话；同项目串行调度，避免并发改代码 |
 | **上下文注入** | Floating Toolbar「Add to Vibe Fly」、文件选择、拖拽项目文件 |
 | **工具审批** | `read/grep/glob` 等自动执行；`bash/edit/write` 需确认 |
 | **Commit Message** | VCS 提交区一键生成；可配置语言（跟随 IDE / 英文 / 简体中文） |
@@ -25,7 +25,7 @@
 │         │ JCEF MessageRouter (SimpleRpc)     │
 │         ▼                                    │
 │  WebView UI  ──WebSocket + 票据──► Node Agent │
-│  (SolidJS)                         (Oh My Pi) │
+│  (SolidJS)                               (pi) │
 │         ▲                              │     │
 │         └──── stdio SimpleRpc 控制面 ──┘     │
 └──────────────────────────────────────────────┘
@@ -45,7 +45,7 @@
 | --- | --- |
 | `plugin/` | IntelliJ 插件（Kotlin）：Tool Window、Actions、设置、Agent 进程管理 |
 | `packages/vibefly-jcef/` | JCEF 面板、自定义 `http://vibefly/` Scheme、Host↔UI RPC |
-| `packages/vibefly-agent/` | Node Agent：Oh My Pi 运行时 + stdio / WebSocket 桥 |
+| `packages/vibefly-agent/` | Node Agent：pi 运行时 + stdio / WebSocket 桥 |
 | `packages/vibefly-ui/` | WebView 前端：Vite + SolidJS + SolidUI + Tailwind CSS v4 |
 | `packages/vibefly-uiagent-shared/` | UI ↔ Agent 共享 RPC 契约（TypeScript） |
 | `packages/vibefly-simplerpc/` | SimpleRpc：Kotlin + TypeScript / Node.js 传输与代码生成 |
@@ -64,7 +64,7 @@
 # 安装前端 / Agent 依赖
 cd packages/vibefly-simplerpc/typeScript && npm install && npm run build
 cd ../typeScript-node && npm install && npm run build
-cd ../../vibefly-uiagent-shared && npm install
+cd ../../vibefly-uiagent-shared && npm install && npm run build
 cd ../vibefly-agent && npm install
 cd ../vibefly-ui && npm install
 
@@ -139,13 +139,13 @@ classpath scheme（`http://vibefly/`）无法代理 WebSocket，开发时让 JCE
 ### 约定
 
 - 本仓自有包以 `vibefly-` 开头
-- 上游 Oh My Pi 以 npm 依赖接入；定制放在 `vibefly-*` 适配层，不修改上游包路径
+- 上游 pi 以 npm 依赖接入；定制放在 `vibefly-*` 适配层，不修改上游包路径
 - 若必须 patch 上游：优先包管理器 patch / 独立 patch 目录，并注明来源与原因
 
 ## 路线图（摘录）
 
 - [x] JCEF WebView + SimpleRpc 三通道
-- [x] Node.js Agent（Oh My Pi）子进程管理
+- [x] Node.js Agent（pi）子进程管理
 - [x] Commit Message 生成
 - [x] 选区 / 文件上下文注入
 - [ ] 多会话标签与 FIFO 调度
@@ -155,7 +155,7 @@ classpath scheme（`http://vibefly/`）无法代理 WebSocket，开发时让 JCE
 ## 许可证与致谢
 
 - 插件脚手架基于 [IntelliJ Platform Plugin Template](https://github.com/JetBrains/intellij-platform-plugin-template)
-- 引擎：[Oh My Pi](https://github.com/can1357/oh-my-pi)
+- 引擎：[pi](https://github.com/earendil-works/pi)
 
 ---
 

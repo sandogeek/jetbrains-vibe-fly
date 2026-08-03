@@ -6,7 +6,7 @@ import kotlinx.serialization.Serializable
 data class ProviderCredentialStatus(
     val hasApiKey: Boolean = false,
     val hasOAuth: Boolean = false,
-    /** api_key | oauth | env | runtime | config | fallback | none */
+    /** api_key | oauth | none */
     val originKind: String = "none",
 )
 
@@ -25,8 +25,6 @@ data class ProviderRuntimeSnapshot(
     val isConfigured: Boolean = false,
     val baseUrl: String? = null,
     val api: String? = null,
-    /** apiKey | none | oauth */
-    val auth: String? = null,
     val models: List<ProviderModelSnapshot> = emptyList(),
     val credential: ProviderCredentialStatus = ProviderCredentialStatus(),
 )

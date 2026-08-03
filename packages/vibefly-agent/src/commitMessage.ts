@@ -2,22 +2,18 @@
  * Single-shot conventional commit message generation via pi-ai stream.
  * Logs only via stderr (log.ts); never write to stdout.
  *
- * Model, language, and prompt config come from the RPC request + OMP
+ * Model, language, and prompt config come from the RPC request + pi
  * ModelRegistry only (no commit env-var overrides).
  *
  * While the model is generating, optional [onProgress] keep-alives let the host
  * idle-timeout only when generation is truly silent (not mid-stream).
  */
 import {
-  streamSimple,
   type Api,
   type Context,
   type Model,
   type SimpleStreamOptions,
-} from "@oh-my-pi/pi-ai"
-import { buildModel } from "@oh-my-pi/pi-catalog/build"
-import { minimumSupportedEffort } from "@oh-my-pi/pi-catalog/model-thinking"
-import type { ModelSpec } from "@oh-my-pi/pi-catalog/types"
+} from "@earendil-works/pi-ai"
 import type {
   CommitFileChange,
   GenerateCommitMessageRequest,
@@ -671,22 +667,21 @@ export function buildCustomCommitModel(
   provider: string,
   modelId: string,
   options?: { api?: Api; baseUrl?: string },
-): Model {
+): Model<Api> {
   const api = options?.api ?? ("openai-responses" as Api)
   const baseUrl = options?.baseUrl ?? "https://api.openai.com/v1"
-  const spec: ModelSpec<Api> = {
+  return {
     id: modelId,
     name: modelId,
     api,
-    provider: provider as ModelSpec<Api>["provider"],
+    provider,
     baseUrl,
     reasoning: false,
     input: ["text"],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: 128000,
     maxTokens: 4096,
-  }
-  return buildModel(spec)
+  } as Model<Api>
 }
 
 export type ResolveCommitModelInput = {
@@ -697,21 +692,21 @@ export type ResolveCommitModelInput = {
 }
 
 /**
- * Resolve model from RPC request + OMP ModelRegistry only.
+ * Resolve model from RPC request + pi ModelRegistry only.
  *
  * Priority:
  * 1. request.commitModel
  * 2. request.defaultModel
  * 3. error — no available commit model
  *
- * API key / base URL / API type come only from OMP models.yml + agent.db.
+ * API key / base URL / API type come only from pi models.json + auth.json.
  * Commit-related env vars are ignored.
  */
 export async function resolveCommitModel(
   input: ResolveCommitModelInput = {},
 ): Promise<{
-  model: Model
-  apiKey: string
+  model: Model<Api>
+  apiKey?: string
 }> {
   const commitModel = (input.commitModel || "").trim()
   const defaultModel = (input.defaultModel || "").trim()
@@ -732,32 +727,30 @@ export async function resolveCommitModel(
     )
   }
 
-  const { getOmpRuntime } = await import("./ompRuntime.js")
-  const runtime = await getOmpRuntime()
+  const { getPiRuntime } = await import("./piRuntime.js")
+  const runtime = await getPiRuntime()
   const { registry } = runtime
 
   const model = registry.find(parsed.provider, parsed.modelId)
   if (!model) {
     const loadError = registry.getError()
-    const loadHint = loadError
-      ? ` Config load error: ${loadError.message}`
-      : ""
+    const loadHint = loadError ? ` Config load error: ${loadError}` : ""
     throw new Error(
-      `Model "${selected}" was not found in Oh My Pi config (models.yml).` +
+      `Model "${selected}" was not found in pi config (models.json).` +
         loadHint +
         ` Configure it in Settings > Vibe Fly > Providers.`,
     )
   }
 
-  const apiKey = await registry.getApiKey(model)
-  if (!apiKey) {
+  const auth = await runtime.modelRuntime.getAuth(model)
+  if (!auth) {
     throw new Error(
-      `No API key for provider "${model.provider}". ` +
+      `No credentials for provider "${model.provider}". ` +
         `Configure it in Settings > Vibe Fly > Providers.`,
     )
   }
 
-  return { model, apiKey }
+  return { model, apiKey: auth.auth.apiKey }
 }
 
 function extractText(response: { content: Array<{ type: string; text?: string }> }): string {
@@ -804,12 +797,7 @@ function formatContent(content: unknown): string {
 
 /** Full multi-line dump of the LLM context (debug level only). */
 function logCommitContext(context: Context): void {
-  const systemParts = Array.isArray(context.systemPrompt)
-    ? context.systemPrompt
-    : context.systemPrompt
-      ? [context.systemPrompt]
-      : []
-  const systemText = systemParts.map((p) => String(p)).join("\n")
+  const systemText = context.systemPrompt ?? ""
   const messages = context.messages ?? []
 
   const messageStats = messages.map((m, i) => {
@@ -853,23 +841,13 @@ export type GenerateCommitMessageOptions = {
  * is mandatory…"), so fall back to the lowest supported effort instead.
  */
 export function commitStreamOptions(
-  model: Model,
-  options: Pick<GenerateCommitMessageOptions, "signal"> & { apiKey: string },
+  _model: Model<Api>,
+  options: Pick<GenerateCommitMessageOptions, "signal"> & { apiKey?: string },
 ): SimpleStreamOptions {
-  const base: SimpleStreamOptions = {
+  return {
     apiKey: options.apiKey,
     signal: options.signal,
   }
-  if (!model.reasoning) {
-    return { ...base, disableReasoning: true }
-  }
-  const floor = minimumSupportedEffort(model)
-  if (floor !== undefined) {
-    return { ...base, reasoning: floor }
-  }
-  // Reasoning model without declared efforts: omit disable so providers keep
-  // their mandatory-on default instead of sending enabled:false.
-  return base
 }
 
 export async function generateCommitMessage(
@@ -910,13 +888,11 @@ export async function generateCommitMessage(
 
   report("Building prompt…")
   const context: Context = {
-    systemPrompt: [
-      buildSystemPrompt({
-        language,
-        style: request.style,
-        customPrompt: request.customPrompt,
-      }),
-    ],
+    systemPrompt: buildSystemPrompt({
+      language,
+      style: request.style,
+      customPrompt: request.customPrompt,
+    }),
     messages: [
       {
         role: "user",
@@ -930,7 +906,9 @@ export async function generateCommitMessage(
   logCommitContext(context)
 
   report("Calling model…")
-  const stream = streamSimple(
+  const { getPiRuntime } = await import("./piRuntime.js")
+  const runtime = await getPiRuntime()
+  const stream = runtime.modelRuntime.streamSimple(
     model,
     context,
     commitStreamOptions(model, { apiKey, signal }),

@@ -58,7 +58,7 @@ const DESCRIPTIONS: Record<string, string> = {
   "kimi-coding": "Kimi Coding models",
 }
 
-const DEFAULT_DESCRIPTION = "Bundled models from Oh My Pi catalog"
+const DEFAULT_DESCRIPTION = "Bundled models from pi catalog"
 
 export function displayName(id: string): string {
   const key = id.toLowerCase()
