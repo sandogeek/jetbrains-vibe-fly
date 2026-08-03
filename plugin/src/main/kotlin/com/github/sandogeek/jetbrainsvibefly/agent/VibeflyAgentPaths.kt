@@ -6,31 +6,31 @@ import com.intellij.openapi.util.SystemInfo
 import java.nio.file.Files
 import java.nio.file.Path
 
-/** Shared resolution for Bun binary and vibefly-agent entry. */
+/** Shared resolution for Node.js binary and vibefly-agent entry. */
 object VibeflyAgentPaths {
 
     private const val PLUGIN_ID = "com.github.sandogeek.jetbrainsvibefly"
 
     /**
-     * Absolute path to the Bun binary.
+     * Absolute path to the Node.js binary.
      *
      * Prefer:
-     * 1. Explicit `-Dvibefly.bun` / `VIBEFLY_BUN`
-     * 2. Common install locations (`~/.bun`, Homebrew) — IDE process PATH often
+     * 1. Explicit `-Dvibefly.node` / `VIBEFLY_NODE`
+     * 2. Common Node.js install locations — IDE process PATH often
      *    lacks these after install-from-disk / marketplace packaging
-     * 3. `PATH` lookup (`bun` / `bun.exe`)
+     * 3. `PATH` lookup (`node` / `node.exe`)
      */
-    fun resolveBunCommand(): String {
-        val explicit = System.getProperty("vibefly.bun")?.trim().orEmpty()
-            .ifEmpty { System.getenv("VIBEFLY_BUN")?.trim().orEmpty() }
+    fun resolveNodeCommand(): String {
+        val explicit = System.getProperty("vibefly.node")?.trim().orEmpty()
+            .ifEmpty { System.getenv("VIBEFLY_NODE")?.trim().orEmpty() }
         if (explicit.isNotEmpty()) {
-            return requireExecutable(expandHome(Path.of(explicit)), source = "vibefly.bun / VIBEFLY_BUN")
+            return requireExecutable(expandHome(Path.of(explicit)), source = "vibefly.node / VIBEFLY_NODE")
         }
-        return resolveBunExecutable()
+        return resolveNodeExecutable()
             ?: error(
-                "Cannot find 'bun'. Install Bun (https://bun.sh) or set -Dvibefly.bun=/path/to/bun " +
-                    "(or VIBEFLY_BUN). The IDE process PATH often omits Homebrew (/opt/homebrew/bin) " +
-                    "and ~/.bun/bin, so a packaged plugin cannot spawn the agent with a bare 'bun'.",
+                "Cannot find 'node'. Install Node.js or set -Dvibefly.node=/path/to/node " +
+                    "(or VIBEFLY_NODE). The IDE process PATH often omits common Node.js install locations, " +
+                    "so a packaged plugin cannot spawn the agent with a bare 'node'.",
             )
     }
 
@@ -84,7 +84,7 @@ object VibeflyAgentPaths {
     }
 
     /**
-     * Working directory for the Bun process (needs package.json + node_modules for resolution).
+     * Working directory for the Node.js process (needs package.json + node_modules for resolution).
      * - bundled: `…/agent`
      * - monorepo src: `…/packages/vibefly-agent` (parent of `src`)
      * - monorepo dist: `…/packages/vibefly-agent` (parent of `dist`)
@@ -116,15 +116,15 @@ object VibeflyAgentPaths {
     }
 
     /**
-     * Resolve an absolute Bun executable without requiring it to be on PATH.
+     * Resolve an absolute Node.js executable without requiring it to be on PATH.
      * Returns null when nothing usable is found.
      *
-     * [knownLocations] defaults to [candidateBunPaths]; tests pass an explicit list
+     * [knownLocations] defaults to [candidateNodePaths]; tests pass an explicit list
      * so host Homebrew installs do not leak into unit fixtures.
      */
-    internal fun resolveBunExecutable(
+    internal fun resolveNodeExecutable(
         pathEnv: String? = System.getenv("PATH"),
-        knownLocations: List<Path> = candidateBunPaths(),
+        knownLocations: List<Path> = candidateNodePaths(),
     ): String? {
         for (candidate in knownLocations) {
             if (isExecutable(candidate)) {
@@ -134,31 +134,23 @@ object VibeflyAgentPaths {
         return findOnPath(pathEnv)
     }
 
-    internal fun candidateBunPaths(
+    internal fun candidateNodePaths(
         home: String = System.getProperty("user.home").orEmpty(),
-        bunInstall: String? = System.getenv("BUN_INSTALL"),
     ): List<Path> {
-        val install = bunInstall?.trim().orEmpty()
         return buildList {
-            if (install.isNotEmpty()) {
-                add(Path.of(install, "bin", bunBinaryName()))
-            }
             if (home.isNotEmpty()) {
-                add(Path.of(home, ".bun", "bin", bunBinaryName()))
+                add(Path.of(home, ".nvm", "current", "bin", nodeBinaryName()))
             }
             // macOS Homebrew (Apple Silicon + Intel)
-            add(Path.of("/opt/homebrew/bin", bunBinaryName()))
-            add(Path.of("/usr/local/bin", bunBinaryName()))
-            // Linuxbrew
-            add(Path.of("/home/linuxbrew/.linuxbrew/bin", bunBinaryName()))
-            // Common Linux package layouts
-            add(Path.of("/usr/bin", bunBinaryName()))
+            add(Path.of("/opt/homebrew/bin", nodeBinaryName()))
+            add(Path.of("/usr/local/bin", nodeBinaryName()))
+            add(Path.of("/usr/bin", nodeBinaryName()))
         }
     }
 
     private fun findOnPath(pathEnv: String?): String? {
         if (pathEnv.isNullOrEmpty()) return null
-        val name = bunBinaryName()
+        val name = nodeBinaryName()
         val separator = System.getProperty("path.separator") ?: ":"
         for (dir in pathEnv.split(separator)) {
             if (dir.isEmpty()) continue
@@ -170,8 +162,8 @@ object VibeflyAgentPaths {
         return null
     }
 
-    private fun bunBinaryName(): String =
-        if (SystemInfo.isWindows) "bun.exe" else "bun"
+    private fun nodeBinaryName(): String =
+        if (SystemInfo.isWindows) "node.exe" else "node"
 
     private fun expandHome(path: Path): Path {
         val raw = path.toString()

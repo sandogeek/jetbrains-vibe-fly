@@ -1,11 +1,17 @@
 /**
- * Bun ServerWebSocket adapter: ticket hello handshake then SimpleRpc text frames.
+ * Node WebSocket adapter: ticket hello handshake then SimpleRpc text frames.
  * Pair with @sandogeek/simple-rpc createWebSocketTransport (client).
  */
+import { createServer, type IncomingMessage } from "node:http"
 import {
   SimpleRpcPeer,
   type SimpleRpcTransport,
 } from "@sandogeek/simple-rpc"
+import {
+  WebSocket,
+  WebSocketServer,
+  type RawData,
+} from "ws"
 
 const DEFAULT_HANDSHAKE_TIMEOUT_MS = 10_000
 const DEFAULT_MAX_MESSAGE_BYTES = 8 * 1024 * 1024
@@ -20,13 +26,13 @@ export type AuthenticateHello = (ctx: {
   origin: string
 }) => HelloAuthResult | Promise<HelloAuthResult>
 
-export type BunServerWebSocketRpcSession = {
+export type NodeServerWebSocketRpcSession = {
   readonly peer: SimpleRpcPeer
   readonly origin: string
   close(code?: number, reason?: string): void
 }
 
-export type CreateBunServerWebSocketRpcOptions = {
+export type CreateNodeServerWebSocketRpcOptions = {
   hostname?: string
   /** Upgrade path. Default `/rpc`. */
   pathname?: string
@@ -34,12 +40,12 @@ export type CreateBunServerWebSocketRpcOptions = {
   handshakeTimeoutMs?: number
   authenticate: AuthenticateHello
   /** Called after hello_ack is sent; peer is ready for SimpleRpc. */
-  onSession: (session: BunServerWebSocketRpcSession) => void
+  onSession: (session: NodeServerWebSocketRpcSession) => void
   /** Called when the socket closes after a successful session was established. */
-  onSessionClosed?: (session: BunServerWebSocketRpcSession) => void
+  onSessionClosed?: (session: NodeServerWebSocketRpcSession) => void
 }
 
-export type BunServerWebSocketRpcServer = {
+export type NodeServerWebSocketRpcServer = {
   readonly port: number
   readonly url: string
   close(): void
@@ -51,7 +57,7 @@ type WsData = {
   handshakeBusy: boolean
   handshakeTimer: ReturnType<typeof setTimeout> | null
   transport: ServerWsTransport | null
-  session: BunServerWebSocketRpcSession | null
+  session: NodeServerWebSocketRpcSession | null
 }
 
 class ServerWsTransport implements SimpleRpcTransport {
@@ -98,128 +104,150 @@ class ServerWsTransport implements SimpleRpcTransport {
 }
 
 /**
- * Bun.serve WebSocket server: first text frame must be hello with ticket;
- * after authenticate + hello_ack, frames are SimpleRpc JSON.
+ * Create a Node HTTP/WebSocket server. The first text frame must be hello with
+ * a ticket; after authentication + hello_ack, frames are SimpleRpc JSON.
  */
-export function createBunServerWebSocketRpc(
-  options: CreateBunServerWebSocketRpcOptions,
-): BunServerWebSocketRpcServer {
+export async function createNodeServerWebSocketRpc(
+  options: CreateNodeServerWebSocketRpcOptions,
+): Promise<NodeServerWebSocketRpcServer> {
   const hostname = options.hostname ?? "127.0.0.1"
   const pathname = options.pathname ?? DEFAULT_PATHNAME
   const maxMessageBytes = options.maxMessageBytes ?? DEFAULT_MAX_MESSAGE_BYTES
   const handshakeTimeoutMs =
     options.handshakeTimeoutMs ?? DEFAULT_HANDSHAKE_TIMEOUT_MS
 
-  const server = Bun.serve<WsData>({
-    hostname,
-    port: 0,
-    fetch(req, srv) {
-      const url = new URL(req.url)
-      if (url.pathname !== pathname) {
-        return new Response("Not Found", { status: 404 })
-      }
-      if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") {
-        return new Response("Expected WebSocket", { status: 426 })
-      }
-      const origin = req.headers.get("Origin") ?? ""
-      const upgraded = srv.upgrade(req, {
-        data: {
-          origin,
-          handshakeDone: false,
-          handshakeBusy: false,
-          handshakeTimer: null,
-          transport: null,
-          session: null,
-        },
-      })
-      if (!upgraded) {
-        return new Response("Upgrade failed", { status: 500 })
-      }
-      return undefined as unknown as Response
-    },
-    websocket: {
-      open(ws) {
-        ws.data.handshakeTimer = setTimeout(() => {
-          if (!ws.data.handshakeDone) {
-            ws.close(4000, "handshake timeout")
-          }
-        }, handshakeTimeoutMs)
-      },
-      async message(ws, message) {
-        if (typeof message !== "string") {
-          ws.close(4000, "binary not allowed")
-          return
-        }
-        if (byteLengthUtf8(message) > maxMessageBytes) {
-          ws.close(4000, "message too large")
-          return
-        }
+  const httpServer = createServer((req, res) => {
+    if (requestPath(req) !== pathname) {
+      res.writeHead(404).end("Not Found")
+      return
+    }
+    if (req.headers.upgrade?.toLowerCase() !== "websocket") {
+      res.writeHead(426).end("Expected WebSocket")
+      return
+    }
+    res.writeHead(426).end("WebSocket upgrade required")
+  })
+  const wsServer = new WebSocketServer({ noServer: true })
+  const states = new WeakMap<WebSocket, WsData>()
+  const connections = new Set<WebSocket>()
 
-        if (!ws.data.handshakeDone) {
-          if (ws.data.handshakeBusy) {
-            ws.close(4000, "handshake in progress")
-            return
-          }
-          ws.data.handshakeBusy = true
-          try {
-            await handleHandshake(ws, message, options)
-          } finally {
-            ws.data.handshakeBusy = false
-          }
-          return
-        }
-
-        ws.data.transport?.deliver(message)
-      },
-      close(ws) {
-        if (ws.data.handshakeTimer) {
-          clearTimeout(ws.data.handshakeTimer)
-          ws.data.handshakeTimer = null
-        }
-        const transport = ws.data.transport
-        if (transport) {
-          transport.markClosed()
-        }
-        const session = ws.data.session
-        if (session) {
-          try {
-            session.peer.close()
-          } catch {
-            // ignore
-          }
-          ws.data.session = null
-          try {
-            options.onSessionClosed?.(session)
-          } catch {
-            // ignore
-          }
-        }
-      },
-    },
+  httpServer.on("upgrade", (req, socket, head) => {
+    if (requestPath(req) !== pathname) {
+      socket.write("HTTP/1.1 404 Not Found\r\n\r\n")
+      socket.destroy()
+      return
+    }
+    wsServer.handleUpgrade(req, socket, head, (ws) => {
+      const data: WsData = {
+        origin: req.headers.origin ?? "",
+        handshakeDone: false,
+        handshakeBusy: false,
+        handshakeTimer: null,
+        transport: null,
+        session: null,
+      }
+      states.set(ws, data)
+      connections.add(ws)
+      wsServer.emit("connection", ws, req)
+    })
   })
 
-  const port = server.port
-  if (port == null) {
-    throw new Error("Bun.serve did not bind a port")
+  wsServer.on("connection", (ws: WebSocket) => {
+    const data = states.get(ws)
+    if (!data) {
+      ws.close(4000, "missing connection state")
+      return
+    }
+    data.handshakeTimer = setTimeout(() => {
+      if (!data.handshakeDone) ws.close(4000, "handshake timeout")
+    }, handshakeTimeoutMs)
+
+    ws.on("message", async (raw: RawData, isBinary: boolean) => {
+      if (isBinary) {
+        ws.close(4000, "binary not allowed")
+        return
+      }
+      const message = raw.toString()
+      if (Buffer.byteLength(message, "utf8") > maxMessageBytes) {
+        ws.close(4000, "message too large")
+        return
+      }
+      if (!data.handshakeDone) {
+        if (data.handshakeBusy) {
+          ws.close(4000, "handshake in progress")
+          return
+        }
+        data.handshakeBusy = true
+        try {
+          await handleHandshake(ws, data, message, options)
+        } finally {
+          data.handshakeBusy = false
+        }
+        return
+      }
+      data.transport?.deliver(message)
+    })
+
+    ws.on("close", () => {
+      connections.delete(ws)
+      if (data.handshakeTimer) {
+        clearTimeout(data.handshakeTimer)
+        data.handshakeTimer = null
+      }
+      data.transport?.markClosed()
+      const session = data.session
+      if (!session) return
+      try {
+        session.peer.close()
+      } catch {
+        // ignore
+      }
+      data.session = null
+      try {
+        options.onSessionClosed?.(session)
+      } catch {
+        // ignore
+      }
+    })
+  })
+
+  await new Promise<void>((resolve, reject) => {
+    const onError = (error: Error) => {
+      httpServer.off("listening", onListening)
+      reject(error)
+    }
+    const onListening = () => {
+      httpServer.off("error", onError)
+      resolve()
+    }
+    httpServer.once("error", onError)
+    httpServer.once("listening", onListening)
+    httpServer.listen(0, hostname)
+  })
+
+  const address = httpServer.address()
+  if (address == null || typeof address === "string") {
+    throw new Error("Node WebSocket server did not bind a port")
   }
 
   return {
-    port,
-    url: `ws://${hostname}:${port}${pathname}`,
+    port: address.port,
+    url: `ws://${hostname}:${address.port}${pathname}`,
     close() {
-      server.stop(true)
+      for (const ws of connections) {
+        ws.terminate()
+      }
+      wsServer.close()
+      httpServer.close()
     },
   }
 }
 
 async function handleHandshake(
-  ws: {
-    data: WsData
-    send(data: string): void
-    close(code?: number, reason?: string): void
-  },
+  ws: WebSocket,
+  data: WsData,
   message: string,
-  options: CreateBunServerWebSocketRpcOptions,
+  options: CreateNodeServerWebSocketRpcOptions,
 ): Promise<void> {
   let parsed: unknown
   try {
@@ -237,7 +265,7 @@ async function handleHandshake(
   try {
     auth = await options.authenticate({
       ticket: parsed.ticket,
-      origin: ws.data.origin,
+      origin: data.origin,
     })
   } catch {
     ws.close(4000, "auth failed")
@@ -248,25 +276,20 @@ async function handleHandshake(
     return
   }
 
-  if (ws.data.handshakeTimer) {
-    clearTimeout(ws.data.handshakeTimer)
-    ws.data.handshakeTimer = null
+  if (data.handshakeTimer) {
+    clearTimeout(data.handshakeTimer)
+    data.handshakeTimer = null
   }
-  ws.data.handshakeDone = true
+  data.handshakeDone = true
 
   const transport = new ServerWsTransport((text) => {
-    try {
-      ws.send(text)
-    } catch {
-      // ignore
-    }
+    if (ws.readyState === WebSocket.OPEN) ws.send(text)
   })
-  ws.data.transport = transport
+  data.transport = transport
   const peer = new SimpleRpcPeer(transport)
-
-  const session: BunServerWebSocketRpcSession = {
+  const session: NodeServerWebSocketRpcSession = {
     peer,
-    origin: ws.data.origin,
+    origin: data.origin,
     close(code = 1000, reason = "server close") {
       try {
         peer.close()
@@ -274,14 +297,10 @@ async function handleHandshake(
         // ignore
       }
       transport.markClosed()
-      try {
-        ws.close(code, reason.slice(0, 120))
-      } catch {
-        // ignore
-      }
+      if (ws.readyState === WebSocket.OPEN) ws.close(code, reason.slice(0, 120))
     },
   }
-  ws.data.session = session
+  data.session = session
 
   try {
     options.onSession(session)
@@ -297,6 +316,14 @@ async function handleHandshake(
   }
 }
 
+function requestPath(req: IncomingMessage): string {
+  try {
+    return new URL(req.url ?? "/", "http://127.0.0.1").pathname
+  } catch {
+    return ""
+  }
+}
+
 function isHello(
   value: unknown,
 ): value is { v: 1; kind: "hello"; ticket: string } {
@@ -308,8 +335,4 @@ function isHello(
     typeof o.ticket === "string" &&
     o.ticket.length > 0
   )
-}
-
-function byteLengthUtf8(text: string): number {
-  return new TextEncoder().encode(text).byteLength
 }

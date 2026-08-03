@@ -33,7 +33,7 @@ export type CreateStdioSimpleRpcOptions = {
  * Protocol JSON must be the only data on the RPC streams. Write logs to stderr.
  *
  * ```ts
- * import { createStdioSimpleRpc } from "@sandogeek/simple-rpc-bun"
+ * import { createStdioSimpleRpc } from "@sandogeek/simple-rpc-node"
  *
  * const rpc = createStdioSimpleRpc({
  *   input: process.stdin,

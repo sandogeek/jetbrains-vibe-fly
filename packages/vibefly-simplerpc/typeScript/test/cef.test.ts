@@ -15,7 +15,7 @@ class TestCustomEvent {
   }
 }
 
-/** Minimal window stub for bun/node tests. */
+/** Minimal window stub for Node.js tests. */
 function installWindowStub() {
   const emitter = new EventEmitter()
   const win = {

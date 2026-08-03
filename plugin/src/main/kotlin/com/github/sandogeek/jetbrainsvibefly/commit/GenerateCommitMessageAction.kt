@@ -37,7 +37,7 @@ import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Commit message area action: generate Conventional Commits English message
- * from currently included/checked changes via Host2Agent + Bun pi-ai.
+ * from currently included/checked changes via Host2Agent + Node pi-ai.
  */
 class GenerateCommitMessageAction : AnAction(), DumbAware {
 

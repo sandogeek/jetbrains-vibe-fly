@@ -58,22 +58,22 @@ val buildVibeflyAgent by tasks.registering(BuildVibeflyAgentTask::class) {
     group = "build"
     description = "Build and stage production vibefly-agent runtime for the plugin distribution"
     dependsOn(":vibefly-jcef:exportBundledCatalog")
-    bunCommand.set(providers.gradleProperty("vibefly.bun").orElse("bun"))
+    nodeCommand.set(providers.gradleProperty("vibefly.node").orElse("node"))
     agentRootDir.set(rootProject.layout.projectDirectory.dir("packages/vibefly-agent"))
     agentSourceDir.set(rootProject.layout.projectDirectory.dir("packages/vibefly-agent/src"))
     agentPackageJson.set(rootProject.layout.projectDirectory.file("packages/vibefly-agent/package.json"))
     agentTsconfig.set(rootProject.layout.projectDirectory.file("packages/vibefly-agent/tsconfig.json"))
     simpleRpcTsDir.set(rootProject.layout.projectDirectory.dir("packages/vibefly-simplerpc/typeScript"))
-    simpleRpcBunDir.set(rootProject.layout.projectDirectory.dir("packages/vibefly-simplerpc/typeScript-bun"))
+    simpleRpcNodeDir.set(rootProject.layout.projectDirectory.dir("packages/vibefly-simplerpc/typeScript-node"))
     uiagentSharedDir.set(rootProject.layout.projectDirectory.dir("packages/vibefly-uiagent-shared"))
     dependencyMarkers.from(
         rootProject.layout.projectDirectory.file("packages/vibefly-agent/package.json"),
-        rootProject.layout.projectDirectory.file("packages/vibefly-agent/bun.lock"),
+        rootProject.layout.projectDirectory.file("packages/vibefly-agent/package-lock.json"),
         rootProject.layout.projectDirectory.file("packages/vibefly-simplerpc/typeScript/package.json"),
-        rootProject.layout.projectDirectory.file("packages/vibefly-simplerpc/typeScript-bun/package.json"),
+        rootProject.layout.projectDirectory.file("packages/vibefly-simplerpc/typeScript-node/package.json"),
         rootProject.layout.projectDirectory.file("packages/vibefly-uiagent-shared/package.json"),
         rootProject.layout.projectDirectory.dir("packages/vibefly-simplerpc/typeScript/src"),
-        rootProject.layout.projectDirectory.dir("packages/vibefly-simplerpc/typeScript-bun/src"),
+        rootProject.layout.projectDirectory.dir("packages/vibefly-simplerpc/typeScript-node/src"),
         rootProject.layout.projectDirectory.dir("packages/vibefly-uiagent-shared/src"),
     )
     outputDir.set(vibeflyAgentBundleDir)
@@ -94,8 +94,8 @@ tasks.named<org.jetbrains.intellij.platform.gradle.tasks.PrepareSandboxTask>("pr
 
 // Vite HMR: ./gradlew :plugin:runIde -Pvibefly.ui.dev=true
 // Optional: -Pvibefly.ui.dev.url=http://127.0.0.1:5173/
-// runIde waits for the Vite port (no auto-start). Use IDE "Run UI Dev" / Compound, or bun run dev.
-// Dev also skips :vibefly-jcef:buildVibeflyUi (no bun run build).
+// runIde waits for the Vite port (no auto-start). Use IDE "Run UI Dev" / Compound, or npm run dev.
+// Dev also skips :vibefly-jcef:buildVibeflyUi (no npm run build).
 val isUiDevMode =
     findProperty("vibefly.ui.dev")?.toString() == "true" ||
         !findProperty("vibefly.ui.dev.url")?.toString()?.trim().isNullOrEmpty()
@@ -112,13 +112,11 @@ val waitVibeflyUiDevServer by tasks.registering(WaitVibeflyUiDevServerTask::clas
     readyTimeoutSeconds.set(60)
 }
 
-// Debug: Bun agent inspect + JCEF WebView CDP
+// Debug: Node agent inspect + JCEF WebView CDP
 //   ./gradlew :plugin:runIde -Pvibefly.debug=true
 //   or selectively: -Pvibefly.agent.inspect=6499 -Pvibefly.jcef.debug.port=9222
 // Defaults when -Pvibefly.debug=true: agent inspect 6499, JCEF CDP 9222, internal mode.
-// Bun agent (requires JetBrains Bun plugin):
-//   - Debug Bun Agent → launch packages/vibefly-agent/src/main.ts
-// Plugin-spawned --inspect: use debug.bun.sh or VS Code Attach (Bun plugin has no attach type).
+// Node agent: use the Node.js debugger or VS Code Node launch/attach configurations.
 tasks.named<RunIdeTask>("runIde") {
     val dev = findProperty("vibefly.ui.dev")?.toString()
     if (dev == "true") {

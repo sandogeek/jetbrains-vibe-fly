@@ -1,22 +1,23 @@
 import assert from "node:assert/strict"
 import { describe, it } from "node:test"
+import WebSocket from "ws"
 import { createWebSocketSimpleRpc } from "@sandogeek/simple-rpc"
 import {
-  createBunServerWebSocketRpc,
-  type BunServerWebSocketRpcSession,
+  createNodeServerWebSocketRpc,
+  type NodeServerWebSocketRpcSession,
 } from "../src/index.js"
 
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-describe("createBunServerWebSocketRpc", () => {
+describe("createNodeServerWebSocketRpc", () => {
   it("handshakes with ticket and round-trips RPC", async () => {
     let gotTicket = ""
     let gotOrigin = ""
-    const sessions: BunServerWebSocketRpcSession[] = []
+    const sessions: NodeServerWebSocketRpcSession[] = []
 
-    const server = createBunServerWebSocketRpc({
+    const server = await createNodeServerWebSocketRpc({
       authenticate({ ticket, origin }) {
         gotTicket = ticket
         gotOrigin = origin
@@ -37,6 +38,7 @@ describe("createBunServerWebSocketRpc", () => {
     const peer = createWebSocketSimpleRpc({
       url: server.url,
       ticket: "good-ticket",
+      WebSocketImpl: WebSocket,
     })
 
     for (let i = 0; i < 50; i++) {
@@ -55,7 +57,7 @@ describe("createBunServerWebSocketRpc", () => {
   })
 
   it("rejects invalid ticket", async () => {
-    const server = createBunServerWebSocketRpc({
+    const server = await createNodeServerWebSocketRpc({
       authenticate() {
         return { ok: false, code: 4001, reason: "invalid ticket" }
       },
@@ -66,11 +68,11 @@ describe("createBunServerWebSocketRpc", () => {
 
     const closed = new Promise<number>((resolve) => {
       const ws = new WebSocket(server.url)
-      ws.addEventListener("open", () => {
+      ws.on("open", () => {
         ws.send(JSON.stringify({ v: 1, kind: "hello", ticket: "bad" }))
       })
-      ws.addEventListener("close", (ev) => {
-        resolve((ev as CloseEvent).code)
+      ws.on("close", (code) => {
+        resolve(code)
       })
     })
 
@@ -79,7 +81,7 @@ describe("createBunServerWebSocketRpc", () => {
   })
 
   it("rejects non-hello first frame", async () => {
-    const server = createBunServerWebSocketRpc({
+    const server = await createNodeServerWebSocketRpc({
       authenticate() {
         return { ok: true }
       },
@@ -90,11 +92,11 @@ describe("createBunServerWebSocketRpc", () => {
 
     const closed = new Promise<number>((resolve) => {
       const ws = new WebSocket(server.url)
-      ws.addEventListener("open", () => {
+      ws.on("open", () => {
         ws.send(JSON.stringify({ v: 1, kind: "not_hello" }))
       })
-      ws.addEventListener("close", (ev) => {
-        resolve((ev as CloseEvent).code)
+      ws.on("close", (code) => {
+        resolve(code)
       })
     })
 

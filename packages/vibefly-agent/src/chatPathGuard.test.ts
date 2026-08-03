@@ -1,7 +1,8 @@
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterEach, describe, test } from "node:test"
+import { expect } from "expect"
 import { pathInsideProject, validateToolPaths } from "./chatSessionRegistry.js"
 
 const tempDirs: string[] = []

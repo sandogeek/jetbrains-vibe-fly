@@ -9,29 +9,29 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 /**
- * Pure unit tests for Bun binary resolution used when spawning the packaged agent.
+ * Pure unit tests for Node.js binary resolution used when spawning the packaged agent.
  * Host PATH / Homebrew must not leak into fixtures — pass explicit knownLocations.
  */
 class VibeflyAgentPathsTest {
 
     @Test
-    fun resolveBunExecutablePrefersKnownLocationOverPath() {
-        val tmp = Files.createTempDirectory("vibefly-bun-known")
+    fun resolveNodeExecutablePrefersKnownLocationOverPath() {
+        val tmp = Files.createTempDirectory("vibefly-node-known")
         try {
-            val known = tmp.resolve("known-bun")
-            val onPath = tmp.resolve("path-bun")
+            val known = tmp.resolve("known-node")
+            val onPath = tmp.resolve("path-node")
             Files.writeString(known, "#!/bin/sh\necho known\n")
             Files.writeString(onPath, "#!/bin/sh\necho path\n")
             known.toFile().setExecutable(true)
             onPath.toFile().setExecutable(true)
-            // PATH entry must be named "bun"
+            // PATH entry must be named "node"
             val pathDir = tmp.resolve("bin")
             Files.createDirectories(pathDir)
-            val pathBun = pathDir.resolve("bun")
-            Files.copy(onPath, pathBun)
-            pathBun.toFile().setExecutable(true)
+            val pathNode = pathDir.resolve("node")
+            Files.copy(onPath, pathNode)
+            pathNode.toFile().setExecutable(true)
 
-            val found = VibeflyAgentPaths.resolveBunExecutable(
+            val found = VibeflyAgentPaths.resolveNodeExecutable(
                 pathEnv = pathDir.toString(),
                 knownLocations = listOf(known),
             )
@@ -42,18 +42,18 @@ class VibeflyAgentPathsTest {
     }
 
     @Test
-    fun resolveBunExecutableFallsBackToPath() {
-        val tmp = Files.createTempDirectory("vibefly-bun-path")
+    fun resolveNodeExecutableFallsBackToPath() {
+        val tmp = Files.createTempDirectory("vibefly-node-path")
         try {
             val pathDir = tmp.resolve("bin")
             Files.createDirectories(pathDir)
-            val fake = pathDir.resolve("bun")
+            val fake = pathDir.resolve("node")
             Files.writeString(fake, "#!/bin/sh\necho fake\n")
             fake.toFile().setExecutable(true)
 
-            val found = VibeflyAgentPaths.resolveBunExecutable(
+            val found = VibeflyAgentPaths.resolveNodeExecutable(
                 pathEnv = pathDir.toString(),
-                knownLocations = listOf(tmp.resolve("missing-bun")),
+                knownLocations = listOf(tmp.resolve("missing-node")),
             )
             assertEquals(fake.toAbsolutePath().normalize().toString(), found)
         } finally {
@@ -62,10 +62,10 @@ class VibeflyAgentPathsTest {
     }
 
     @Test
-    fun resolveBunExecutableReturnsNullWhenMissingEverywhere() {
-        val tmp = Files.createTempDirectory("vibefly-bun-missing")
+    fun resolveNodeExecutableReturnsNullWhenMissingEverywhere() {
+        val tmp = Files.createTempDirectory("vibefly-node-missing")
         try {
-            val found = VibeflyAgentPaths.resolveBunExecutable(
+            val found = VibeflyAgentPaths.resolveNodeExecutable(
                 pathEnv = tmp.toString(),
                 knownLocations = listOf(tmp.resolve("nope")),
             )
@@ -76,22 +76,20 @@ class VibeflyAgentPathsTest {
     }
 
     @Test
-    fun candidateBunPathsIncludesHomeInstallAndHomebrew() {
-        val paths = VibeflyAgentPaths.candidateBunPaths(
+    fun candidateNodePathsIncludesNvmAndHomebrew() {
+        val paths = VibeflyAgentPaths.candidateNodePaths(
             home = "/Users/demo",
-            bunInstall = "/opt/bun-install",
         ).map { it.toString().replace('\\', '/') }
-        assertTrue(paths.contains("/opt/bun-install/bin/bun") || paths.contains("/opt/bun-install/bin/bun.exe"))
-        assertTrue(paths.any { it.contains("/Users/demo/.bun/bin/") })
+        assertTrue(paths.any { it.contains("/Users/demo/.nvm/current/bin/node") })
         assertTrue(paths.any { it.contains("/opt/homebrew/bin/") || it.contains("/usr/local/bin/") })
     }
 
     @Test
-    fun liveResolveBunExecutableFindsHostBunWhenPresent() {
-        val found = VibeflyAgentPaths.resolveBunExecutable(pathEnv = "")
-        if (Files.isExecutable(Path.of("/opt/homebrew/bin/bun")) ||
-            Files.isExecutable(Path.of("/usr/local/bin/bun")) ||
-            Files.isExecutable(Path.of(System.getProperty("user.home"), ".bun", "bin", "bun"))
+    fun liveResolveNodeExecutableFindsHostNodeWhenPresent() {
+        val found = VibeflyAgentPaths.resolveNodeExecutable(pathEnv = "")
+        if (Files.isExecutable(Path.of("/opt/homebrew/bin/node")) ||
+            Files.isExecutable(Path.of("/usr/local/bin/node")) ||
+            Files.isExecutable(Path.of("/usr/bin/node"))
         ) {
             assertNotNull(found)
             assertTrue(Files.isExecutable(Path.of(found!!)))

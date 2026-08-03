@@ -26,10 +26,10 @@ SettingsChangeBus         // 多 WebView / 多 Project 同步
 ```
 
 ide启动后，会启动一个setting agent，专门用来处理设置相关功能，不依赖withControlForSettings。
-Agent: Bun YAML + OMP Settings + vibefly 命名空间
+Agent: Node.js YAML + OMP Settings + vibefly 命名空间
 每个project各对应一个agent，用于处理对话等功能
 ### 痛点
-每个 Project → 独立 Bun coding agent（VibeflyAgentService PROJECT）
+每个 Project → 独立 Node.js coding agent（VibeflyAgentService PROJECT）
 设置改动 → stopAllOpenProjects() 重启所有 agent   ← 粗暴
 Providers 写 models.yml / agent.db 在「碰巧被 withControlForSettings 选中的」project agent 上
 多 WebView / 多 project 状态不同步

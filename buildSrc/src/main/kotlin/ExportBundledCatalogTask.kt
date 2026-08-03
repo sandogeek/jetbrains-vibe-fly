@@ -17,20 +17,20 @@ import java.io.File
 import javax.inject.Inject
 
 /**
- * Runs packages/vibefly-agent `bun run export:catalog` to generate provider TS modules.
+ * Runs packages/vibefly-agent `npm run export:catalog` to generate provider TS modules.
  *
  * When agent node_modules is missing, keeps the committed outputs so the plugin can still build.
- * Override bun: -Pvibefly.bun=/path/to/bun
+ * Override node: -Pvibefly.node=/path/to/node
  *
- * Up-to-date inputs are intentional and narrow: only bun path, package.json, export script,
- * and upstream package markers — not the whole agent tree (src/, bun.lock, temps, etc.).
+ * Up-to-date inputs are intentional and narrow: only node path, package.json, export script,
+ * and upstream package markers — not the whole agent tree (src/, package-lock.json, temps, etc.).
  */
 abstract class ExportBundledCatalogTask @Inject constructor(
     private val execOperations: ExecOperations,
 ) : DefaultTask() {
 
     @get:Input
-    abstract val bunCommand: Property<String>
+    abstract val nodeCommand: Property<String>
 
     /** Exec cwd only — not fingerprinted (avoids any agent-tree change busting up-to-date). */
     @get:Internal
@@ -64,7 +64,7 @@ abstract class ExportBundledCatalogTask @Inject constructor(
             if (outputs.all { it.isFile && it.length() > 0L }) {
                 logger.warn(
                     "Skip provider catalog export: missing node_modules at {}. " +
-                        "Using committed outputs. Run: (cd packages/vibefly-agent && bun install && bun run export:catalog)",
+                        "Using committed outputs. Run: (cd packages/vibefly-agent && npm install && npm run export:catalog)",
                     nodeModules,
                 )
                 return
@@ -72,20 +72,20 @@ abstract class ExportBundledCatalogTask @Inject constructor(
             throw GradleException(
                 "Cannot export provider catalog: missing node_modules at $nodeModules " +
                     "and generated outputs are missing. Run: " +
-                    "(cd packages/vibefly-agent && bun install && bun run export:catalog)",
+                "(cd packages/vibefly-agent && npm install && npm run export:catalog)",
             )
         }
 
-        val bun = BuildVibeflyUiTask.resolveBunExecutable(bunCommand.get())
+        val node = BuildVibeflyUiTask.resolveNodeExecutable(nodeCommand.get())
             ?: throw GradleException(
-                "Cannot find 'bun'. Install Bun (https://bun.sh) or set -Pvibefly.bun=/path/to/bun. " +
+                "Cannot find 'node'. Install Node.js or set -Pvibefly.node=/path/to/node. " +
                     "IDE-launched Gradle often misses Homebrew PATH (/opt/homebrew/bin).",
             )
 
-        logger.lifecycle("Exporting bundled model catalog with {}", bun)
+        logger.lifecycle("Exporting bundled model catalog with {}", node)
         execOperations.exec {
             workingDir(workDir)
-            commandLine(bun, "run", "export:catalog")
+            commandLine("npm", "run", "export:catalog")
         }
         val missing = outputs.filterNot { it.isFile && it.length() > 0L }
         if (missing.isNotEmpty()) {

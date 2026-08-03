@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test"
+import { describe, test } from "node:test"
+import { expect } from "expect"
 import { emptyCatalog, type BundledCatalog } from "./catalog"
 import {
   buildBadges,

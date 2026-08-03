@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "Vibe Fly Bun agent: Oh My Pi (omp) engine bridged to JVM via SimpleRpc over stdio",
+  "description": "Vibe Fly Node agent: Oh My Pi (omp) engine bridged to JVM via SimpleRpc over stdio",
   "main": "./dist/main.js",
   "types": "./dist/main.d.ts",
   "exports": {
@@ -21,26 +21,30 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "start": "bun run src/main.ts",
-    "start:dist": "bun run dist/main.js",
-    "export:catalog": "bun run scripts/export-bundled-catalog.ts",
-    "prepublishOnly": "bun run build"
+    "test": "node --import tsx --test 'src/**/*.test.ts'",
+    "start": "tsx src/main.ts",
+    "start:dist": "node dist/main.js",
+    "export:catalog": "tsx scripts/export-bundled-catalog.ts",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "@oh-my-pi/pi-ai": "17.0.6",
     "@oh-my-pi/pi-catalog": "17.0.6",
     "@oh-my-pi/pi-coding-agent": "17.0.6",
     "@sandogeek/simple-rpc": "file:../vibefly-simplerpc/typeScript",
-    "@sandogeek/simple-rpc-bun": "file:../vibefly-simplerpc/typeScript-bun",
+    "@sandogeek/simple-rpc-node": "file:../vibefly-simplerpc/typeScript-node",
     "@vibefly/uiagent-shared": "file:../vibefly-uiagent-shared",
-    "winston": "^3.17.0"
+    "jsonc-parser": "^3.3.1",
+    "winston": "^3.17.0",
+    "yaml": "^2.7.0"
   },
   "devDependencies": {
-    "@types/bun": "latest",
+    "@types/node": "^22.13.10",
+    "expect": "^29.7.0",
+    "tsx": "^4.19.3",
     "typescript": "^5.8.3"
   },
   "engines": {
-    "bun": ">=1.1.0",
     "node": ">=22"
   },
   "license": "UNLICENSED"

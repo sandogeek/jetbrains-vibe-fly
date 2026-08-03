@@ -10,7 +10,8 @@ import {
   type AuthCredential,
 } from "@oh-my-pi/pi-coding-agent"
 import { getAgentDbPath } from "@oh-my-pi/pi-utils"
-import { JSONC, YAML } from "bun"
+import { parse as parseJsonc } from "jsonc-parser"
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml"
 import type {
   CredentialAction,
   ProviderCredentialStatus,
@@ -110,9 +111,9 @@ export function loadRawModelsConfig(agentDir: string): RawModelsFile {
   const text = fs.readFileSync(readPath, "utf-8")
   let parsed: unknown
   if (readPath.endsWith(".json") || readPath.endsWith(".jsonc")) {
-    parsed = JSONC.parse(text)
+    parsed = parseJsonc(text)
   } else {
-    parsed = YAML.parse(text)
+    parsed = parseYaml(text)
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     return { providers: {} }
@@ -167,7 +168,7 @@ export function repairModelsYmlAuthForOmp(agentDir: string): boolean {
 export function writeRawModelsConfig(agentDir: string, data: RawModelsFile): string {
   fs.mkdirSync(agentDir, { recursive: true })
   const writePath = resolveModelsWritePath(agentDir)
-  const body = YAML.stringify(data, null, 2)
+  const body = stringifyYaml(data, { indent: 2 })
   fs.writeFileSync(writePath, body.endsWith("\n") ? body : `${body}\n`, "utf-8")
   return writePath
 }

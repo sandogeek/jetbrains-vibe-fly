@@ -4,7 +4,7 @@ import com.github.sandogeek.simplerpc.annotation.KotlinCallTs
 import com.github.sandogeek.simplerpc.annotation.RpcFun
 
 /**
- * Host → Agent (Kotlin calls Bun) control plane over stdio SimpleRpc.
+ * Host → Agent (Kotlin calls Node) control plane over stdio SimpleRpc.
  * Lifecycle, session tickets, and short request/response helpers (e.g. commit message).
  * Wire service name: Host2Agent.
  */

@@ -7,10 +7,10 @@ export {
 export { ContentLengthDecoder, encodeFrame } from "./framing.js"
 
 export {
-  createBunServerWebSocketRpc,
+  createNodeServerWebSocketRpc,
   type AuthenticateHello,
-  type BunServerWebSocketRpcServer,
-  type BunServerWebSocketRpcSession,
-  type CreateBunServerWebSocketRpcOptions,
+  type NodeServerWebSocketRpcServer,
+  type NodeServerWebSocketRpcSession,
+  type CreateNodeServerWebSocketRpcOptions,
   type HelloAuthResult,
 } from "./websocket-server.js"

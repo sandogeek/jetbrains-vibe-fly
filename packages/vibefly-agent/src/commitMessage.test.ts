@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test"
+import { describe, test } from "node:test"
+import { expect } from "expect"
 import { Effort } from "@oh-my-pi/pi-catalog/effort"
 import {
   buildCustomCommitModel,

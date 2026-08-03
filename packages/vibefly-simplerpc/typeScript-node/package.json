@@ -1,7 +1,7 @@
 {
-  "name": "@sandogeek/simple-rpc-bun",
+  "name": "@sandogeek/simple-rpc-node",
   "version": "0.0.1",
-  "description": "Bun/Node SimpleRpc transports: stdio Content-Length framing and ServerWebSocket hello handshake",
+  "description": "Node SimpleRpc transports: stdio Content-Length framing and WebSocket hello handshake",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -16,20 +16,22 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "bun test ./test",
+    "test": "node --import tsx --test 'test/**/*.test.ts'",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "prepublishOnly": "bun run build"
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
-    "@sandogeek/simple-rpc": "file:../typeScript"
+    "@sandogeek/simple-rpc": "file:../typeScript",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
-    "@types/bun": "latest",
+    "@types/node": "^22.13.10",
+    "@types/ws": "^8.5.13",
+    "tsx": "^4.19.3",
     "typescript": "^5.8.2"
   },
   "engines": {
-    "node": ">=18",
-    "bun": ">=1.0"
+    "node": ">=22"
   },
   "license": "UNLICENSED",
   "private": true

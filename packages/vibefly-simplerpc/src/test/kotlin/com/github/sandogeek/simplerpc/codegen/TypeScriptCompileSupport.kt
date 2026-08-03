@@ -22,7 +22,7 @@ internal object TypeScriptCompileSupport {
             Files.isDirectory(typeScriptRoot),
         )
         assumeTrue(
-            "tsc not found at $tsc — run bun install in packages/vibefly-simplerpc/typeScript",
+            "tsc not found at $tsc — run npm install in packages/vibefly-simplerpc/typeScript",
             Files.isRegularFile(tsc),
         )
 
@@ -93,11 +93,10 @@ internal object TypeScriptCompileSupport {
             } + if (source.endsWith("\n")) "\n" else ""
     }
 
-    /** Prefer bun; fall back to node for running the local tsc binary. */
+    /** Resolve Node.js for running the local TypeScript compiler. */
     private fun resolveJsRuntime(): String {
-        findExecutable("bun")?.let { return it }
         findExecutable("node")?.let { return it }
-        error("bun or node executable not found on PATH")
+        error("node executable not found on PATH")
     }
 
     private fun findExecutable(name: String): String? {

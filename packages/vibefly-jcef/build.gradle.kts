@@ -62,7 +62,7 @@ val agentProviderCatalog =
 val exportBundledCatalog by tasks.registering(ExportBundledCatalogTask::class) {
     group = "build"
     description = "Export immutable provider data from Agent dependencies into generated TS modules"
-    bunCommand.set(providers.gradleProperty("vibefly.bun").orElse("bun"))
+    nodeCommand.set(providers.gradleProperty("vibefly.node").orElse("node"))
     workingDirectory.set(agentRoot)
     packageJson.set(agentRoot.file("package.json"))
     exportScript.set(agentRoot.file("scripts/export-bundled-catalog.ts"))
@@ -76,7 +76,7 @@ val exportBundledCatalog by tasks.registering(ExportBundledCatalogTask::class) {
 }
 
 // vibefly-ui (Vite) → src/main/resources/web for ClasspathResourceHandler
-// Dev (-Pvibefly.ui.dev=true / -Pvibefly.ui.dev.url=...): JCEF loads Vite; skip bun run build
+// Dev (-Pvibefly.ui.dev=true / -Pvibefly.ui.dev.url=...): JCEF loads Vite; skip npm run build
 val uiDevMode =
     findProperty("vibefly.ui.dev")?.toString() == "true" ||
         !findProperty("vibefly.ui.dev.url")?.toString()?.trim().isNullOrEmpty()
@@ -87,9 +87,9 @@ val webOut = layout.projectDirectory.dir("src/main/resources/web")
 val buildVibeflyUi by tasks.registering(BuildVibeflyUiTask::class) {
     group = "build"
     description = "Build packages/vibefly-ui into vibefly-jcef web resources"
-    // Override: -Pvibefly.bun=/opt/homebrew/bin/bun (IDE Gradle often lacks Homebrew PATH)
+    // Override: -Pvibefly.node=/opt/homebrew/bin/node (IDE Gradle often lacks Homebrew PATH)
     dependsOn(exportBundledCatalog)
-    bunCommand.set(providers.gradleProperty("vibefly.bun").orElse("bun"))
+    nodeCommand.set(providers.gradleProperty("vibefly.node").orElse("node"))
     workingDirectory.set(uiRoot)
     uiSourceDir.set(uiRoot.dir("src"))
     packageJson.set(uiRoot.file("package.json"))
@@ -99,7 +99,7 @@ val buildVibeflyUi by tasks.registering(BuildVibeflyUiTask::class) {
     outputDir.set(webOut)
 }
 
-// Dev: JCEF loads Vite — skip bun run build, but still refresh generated provider data.
+// Dev: JCEF loads Vite — skip npm run build, but still refresh generated provider data.
 if (!uiDevMode) {
     tasks.named("processResources") {
         dependsOn(buildVibeflyUi)

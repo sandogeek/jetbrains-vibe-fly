@@ -24,7 +24,7 @@
 │  Tool Window / Actions / Settings / VCS      │
 │         │ JCEF MessageRouter (SimpleRpc)     │
 │         ▼                                    │
-│  WebView UI  ──WebSocket + 票据──►  Bun Agent │
+│  WebView UI  ──WebSocket + 票据──► Node Agent │
 │  (SolidJS)                         (Oh My Pi) │
 │         ▲                              │     │
 │         └──── stdio SimpleRpc 控制面 ──┘     │
@@ -45,10 +45,10 @@
 | --- | --- |
 | `plugin/` | IntelliJ 插件（Kotlin）：Tool Window、Actions、设置、Agent 进程管理 |
 | `packages/vibefly-jcef/` | JCEF 面板、自定义 `http://vibefly/` Scheme、Host↔UI RPC |
-| `packages/vibefly-agent/` | Bun Agent：Oh My Pi 运行时 + stdio / WebSocket 桥 |
+| `packages/vibefly-agent/` | Node Agent：Oh My Pi 运行时 + stdio / WebSocket 桥 |
 | `packages/vibefly-ui/` | WebView 前端：Vite + SolidJS + SolidUI + Tailwind CSS v4 |
 | `packages/vibefly-uiagent-shared/` | UI ↔ Agent 共享 RPC 契约（TypeScript） |
-| `packages/vibefly-simplerpc/` | SimpleRpc：Kotlin + TypeScript / Bun 传输与代码生成 |
+| `packages/vibefly-simplerpc/` | SimpleRpc：Kotlin + TypeScript / Node.js 传输与代码生成 |
 
 ## 安装
 
@@ -57,23 +57,23 @@
 前置：
 
 - JDK 21+
-- [Bun](https://bun.sh) ≥ 1.1
+- Node.js ≥ 22（包含 npm）
 - 可访问的 IntelliJ Platform 依赖（Gradle 会拉取）
 
 ```bash
 # 安装前端 / Agent 依赖
-cd packages/vibefly-simplerpc/typeScript && bun install && bun run build
-cd ../typeScript-bun && bun install && bun run build
-cd ../../vibefly-uiagent-shared && bun install
-cd ../vibefly-agent && bun install
-cd ../vibefly-ui && bun install
+cd packages/vibefly-simplerpc/typeScript && npm install && npm run build
+cd ../typeScript-node && npm install && npm run build
+cd ../../vibefly-uiagent-shared && npm install
+cd ../vibefly-agent && npm install
+cd ../vibefly-ui && npm install
 
 # 回到仓库根目录，启动 IDE 沙箱
 cd ../../..
 ./gradlew :plugin:runIde
 ```
 
-Gradle 在打包资源前会构建 UI（`buildVibeflyUi`）与 Agent；未 `bun install` 时相关任务会跳过并打日志。
+Gradle 在打包资源前会构建 UI（`buildVibeflyUi`）与 Agent；未 `npm install` 时相关任务会跳过并打日志。
 
 ### 手动安装构建产物
 
@@ -94,7 +94,7 @@ Gradle 在打包资源前会构建 UI（`buildVibeflyUi`）与 Agent；未 `bun 
 | **Run Plugin** | 启动插件沙箱 |
 | **Run Plugin + UI Dev** | 沙箱 + Vite HMR（推荐改 UI 时用） |
 | **Run UI Dev** | 仅启动 Vite（`http://127.0.0.1:5173`） |
-| **Debug Bun Agent** | 断点调试 Agent 入口（需 Bun 插件） |
+| **Debug Node Agent** | 断点调试 Agent 入口（Node.js 调试器） |
 | **Run Tests** / **Run Verifications** | 测试与校验 |
 
 ### UI 热更新
@@ -120,7 +120,7 @@ classpath scheme（`http://vibefly/`）无法代理 WebSocket，开发时让 JCE
 ```
 
 - VS Code：`.vscode/launch.json` → **Attach vibefly-agent**（粘贴 stderr 中的 `ws://…`）
-- 浏览器：打开日志里的 `https://debug.bun.sh/#…`
+- 浏览器：使用 Node.js Inspector 或 VS Code Node.js 调试器附加到日志中的 `ws://…` 地址
 
 ### 日志
 
@@ -145,7 +145,7 @@ classpath scheme（`http://vibefly/`）无法代理 WebSocket，开发时让 JCE
 ## 路线图（摘录）
 
 - [x] JCEF WebView + SimpleRpc 三通道
-- [x] Bun Agent（Oh My Pi）子进程管理
+- [x] Node.js Agent（Oh My Pi）子进程管理
 - [x] Commit Message 生成
 - [x] 选区 / 文件上下文注入
 - [ ] 多会话标签与 FIFO 调度

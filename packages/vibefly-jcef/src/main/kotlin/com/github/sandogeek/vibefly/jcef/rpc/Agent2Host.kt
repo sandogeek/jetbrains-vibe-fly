@@ -4,7 +4,7 @@ import com.github.sandogeek.simplerpc.annotation.RpcFun
 import com.github.sandogeek.simplerpc.annotation.TsCallKotlin
 
 /**
- * Agent → Host (Bun calls Kotlin) control-plane callbacks over stdio SimpleRpc.
+ * Agent → Host (Node calls Kotlin) control-plane callbacks over stdio SimpleRpc.
  * Used for interactive provider login (open browser, prompt, progress) and
  * in-flight commit-message generation progress / keep-alive.
  * Wire service name: Agent2Host.

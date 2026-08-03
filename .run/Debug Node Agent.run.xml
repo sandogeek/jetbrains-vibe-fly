@@ -1,0 +1,9 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Debug Node Agent" type="JavaScriptDebugType" factoryName="Node.js">
+    <option name="NODE_INTERPRETER" value="project" />
+    <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/packages/vibefly-agent" />
+    <option name="JS_FILE" value="$PROJECT_DIR$/packages/vibefly-agent/src/main.ts" />
+    <option name="APPLICATION_PARAMETERS" value="--import tsx" />
+    <method v="2" />
+  </configuration>
+</component>

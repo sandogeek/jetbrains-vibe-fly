@@ -18,7 +18,7 @@ import kotlinx.coroutines.SupervisorJob
  * Transports:
  * - [CefMessageRouterTransport] — JCEF WebView (`createCefSimpleRpc` on TS)
  * - [com.github.sandogeek.simplerpc.stdio.StdioRpcTransport] — process stdio with
- *   Content-Length framing (`createStdioSimpleRpc` from `@sandogeek/simple-rpc-bun`)
+ *   Content-Length framing (`createStdioSimpleRpc` from `@sandogeek/simple-rpc-node`)
  */
 object SimpleRpc {
 

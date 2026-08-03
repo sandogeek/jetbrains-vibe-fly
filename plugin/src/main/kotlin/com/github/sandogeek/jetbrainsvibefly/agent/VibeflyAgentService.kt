@@ -30,7 +30,7 @@ import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration.Companion.milliseconds
 
 /**
- * Project-level Bun agent lifecycle over stdio SimpleRpc control plane.
+ * Project-level Node agent lifecycle over stdio SimpleRpc control plane.
  * UI business traffic uses a separate authenticated WebSocket (not stdio).
  */
 @Service(Service.Level.PROJECT)

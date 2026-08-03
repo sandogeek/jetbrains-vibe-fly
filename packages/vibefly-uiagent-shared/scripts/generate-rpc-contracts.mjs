@@ -291,7 +291,7 @@ export function generateRpcContracts(inputPath, outputPath, check = false) {
     }
     if (current !== output) {
       throw new Error(
-        `${outputPath} is stale; run \"bun run generate\" in ${packageRoot}`,
+        `${outputPath} is stale; run \"npm run generate\" in ${packageRoot}`,
       )
     }
     return

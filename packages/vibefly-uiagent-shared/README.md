@@ -30,5 +30,5 @@ accepts synchronous or asynchronous implementations.
 
 Optional wire rename: `@rpcService("WireName")`.
 
-Run `bun run generate` after changing a contract. `bun run typecheck` also verifies
+Run `npm run generate` after changing a contract. `npm run typecheck` also verifies
 that `src/contracts.generated.ts` is current.

@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test"
+import { describe, test } from "node:test"
+import { expect } from "expect"
 import { resolveCefQueryFns } from "./client"
 
 type ResolverWindow = Parameters<typeof resolveCefQueryFns>[0]

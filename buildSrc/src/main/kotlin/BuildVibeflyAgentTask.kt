@@ -21,7 +21,7 @@ import javax.inject.Inject
 
 /**
  * Builds packages/vibefly-agent and stages a production runtime tree for the plugin zip:
- * `dist/`, rewritten local file deps, `bun install --production`, then prune of optional/heavy
+ * `dist/`, rewritten local file deps, `npm install --omit=dev`, then prune of optional/heavy
  * packages that are not required for agent boot (onnx/sherpa/react TUI/puppeteer, etc.).
  *
  * Output layout (plugin root):
@@ -31,18 +31,18 @@ import javax.inject.Inject
  *   dist/main.js
  *   node_modules/...
  *   simple-rpc-ts/
- *   simple-rpc-bun/
+ *   simple-rpc-node/
  *   uiagent-shared/
  * ```
  *
- * Override bun: `-Pvibefly.bun=/path/to/bun`
+ * Override node: `-Pvibefly.node=/path/to/node`
  */
 abstract class BuildVibeflyAgentTask @Inject constructor(
     private val execOperations: ExecOperations,
 ) : DefaultTask() {
 
     @get:Input
-    abstract val bunCommand: Property<String>
+    abstract val nodeCommand: Property<String>
 
     /** Package root used for exec/cwd — not fingerprinted (node_modules is huge). */
     @get:Internal
@@ -64,7 +64,7 @@ abstract class BuildVibeflyAgentTask @Inject constructor(
     abstract val simpleRpcTsDir: DirectoryProperty
 
     @get:Internal
-    abstract val simpleRpcBunDir: DirectoryProperty
+    abstract val simpleRpcNodeDir: DirectoryProperty
 
     @get:Internal
     abstract val uiagentSharedDir: DirectoryProperty
@@ -82,16 +82,16 @@ abstract class BuildVibeflyAgentTask @Inject constructor(
 
     @TaskAction
     fun build() {
-        val bun = BuildVibeflyUiTask.resolveBunExecutable(bunCommand.get())
+        val node = BuildVibeflyUiTask.resolveNodeExecutable(nodeCommand.get())
             ?: throw GradleException(
-                "Cannot find 'bun'. Install Bun (https://bun.sh) or set -Pvibefly.bun=/path/to/bun. " +
+                "Cannot find 'node'. Install Node.js or set -Pvibefly.node=/path/to/node. " +
                     "IDE-launched Gradle often misses Homebrew PATH (/opt/homebrew/bin).",
             )
 
         val agentRoot = agentRootDir.get().asFile
-        ensureLocalPackageBuilt(bun, simpleRpcTsDir.get().asFile)
-        ensureLocalPackageBuilt(bun, simpleRpcBunDir.get().asFile)
-        ensureAgentDist(bun, agentRoot)
+        ensureLocalPackageBuilt(node, simpleRpcTsDir.get().asFile)
+        ensureLocalPackageBuilt(node, simpleRpcNodeDir.get().asFile)
+        ensureAgentDist(node, agentRoot)
 
         val out = outputDir.get().asFile
         if (out.exists()) {
@@ -102,15 +102,15 @@ abstract class BuildVibeflyAgentTask @Inject constructor(
         }
 
         val stagedSimpleRpcTs = File(out, "simple-rpc-ts")
-        val stagedSimpleRpcBun = File(out, "simple-rpc-bun")
+        val stagedSimpleRpcNode = File(out, "simple-rpc-node")
         val stagedShared = File(out, "uiagent-shared")
         copyRuntimePackage(simpleRpcTsDir.get().asFile, stagedSimpleRpcTs)
-        copyRuntimePackage(simpleRpcBunDir.get().asFile, stagedSimpleRpcBun)
+        copyRuntimePackage(simpleRpcNodeDir.get().asFile, stagedSimpleRpcNode)
         copyRuntimePackage(uiagentSharedDir.get().asFile, stagedShared)
 
         // Nested file: deps must resolve inside the staged tree.
         rewritePackageJsonFileDeps(
-            File(stagedSimpleRpcBun, "package.json"),
+            File(stagedSimpleRpcNode, "package.json"),
             mapOf("@sandogeek/simple-rpc" to "file:../simple-rpc-ts"),
         )
         rewritePackageJsonFileDeps(
@@ -134,18 +134,18 @@ abstract class BuildVibeflyAgentTask @Inject constructor(
             rootPackage,
             mapOf(
                 "@sandogeek/simple-rpc" to "file:./simple-rpc-ts",
-                "@sandogeek/simple-rpc-bun" to "file:./simple-rpc-bun",
+                "@sandogeek/simple-rpc-node" to "file:./simple-rpc-node",
                 "@vibefly/uiagent-shared" to "file:./uiagent-shared",
             ),
             dropDevDependencies = true,
         )
 
-        logger.lifecycle("Installing production vibefly-agent runtime with {}", bun)
+        logger.lifecycle("Installing production vibefly-agent runtime with {}", node)
         // Keep optional deps so host-platform @oh-my-pi/pi-natives-* is installed.
         // Heavy unused optionals (onnx/sherpa/…) are pruned afterwards.
         execOperations.exec {
             workingDir(out)
-            commandLine(bun, "install", "--production")
+            commandLine("npm", "install", "--omit=dev", "--ignore-scripts")
         }
 
         pruneHeavyOptionalRuntime(File(out, "node_modules"))
@@ -157,7 +157,7 @@ abstract class BuildVibeflyAgentTask @Inject constructor(
         logger.lifecycle("Bundled vibefly-agent → {}", out)
     }
 
-    private fun ensureLocalPackageBuilt(bun: String, packageDir: File) {
+    private fun ensureLocalPackageBuilt(node: String, packageDir: File) {
         val packageJson = File(packageDir, "package.json")
         if (!packageJson.isFile) {
             throw GradleException("Missing package.json: $packageJson")
@@ -166,10 +166,10 @@ abstract class BuildVibeflyAgentTask @Inject constructor(
         val srcIndexTs = File(packageDir, "src/index.ts")
         val nodeModules = File(packageDir, "node_modules")
         if (!nodeModules.isDirectory) {
-            logger.lifecycle("bun install in {}", packageDir)
+            logger.lifecycle("npm install in {}", packageDir)
             execOperations.exec {
                 workingDir(packageDir)
-                commandLine(bun, "install")
+                commandLine("npm", "install")
             }
         }
         // Source-only packages (e.g. uiagent-shared) export TypeScript directly.
@@ -180,7 +180,7 @@ abstract class BuildVibeflyAgentTask @Inject constructor(
             logger.lifecycle("Building local package {}", packageDir.name)
             execOperations.exec {
                 workingDir(packageDir)
-                commandLine(bun, "run", "build")
+                commandLine("npm", "run", "build")
             }
         }
         if (!distIndex.isFile && !srcIndexTs.isFile) {
@@ -188,19 +188,19 @@ abstract class BuildVibeflyAgentTask @Inject constructor(
         }
     }
 
-    private fun ensureAgentDist(bun: String, agentRoot: File) {
+    private fun ensureAgentDist(node: String, agentRoot: File) {
         val nodeModules = File(agentRoot, "node_modules")
         if (!nodeModules.isDirectory) {
-            logger.lifecycle("bun install in {}", agentRoot)
+            logger.lifecycle("npm install in {}", agentRoot)
             execOperations.exec {
                 workingDir(agentRoot)
-                commandLine(bun, "install")
+                commandLine("npm", "install")
             }
         }
         logger.lifecycle("Building vibefly-agent TypeScript")
         execOperations.exec {
             workingDir(agentRoot)
-            commandLine(bun, "run", "build")
+            commandLine("npm", "run", "build")
         }
     }
 
@@ -332,7 +332,7 @@ abstract class BuildVibeflyAgentTask @Inject constructor(
         nodeModules.listFiles()
             ?.filter { it.name.startsWith("sherpa-onnx-") }
             ?.forEach { it.deleteRecursively() }
-        // Gradle Sync cannot follow dangling bin symlinks after prune; agent runs via `bun dist/main.js`.
+        // Gradle Sync cannot follow dangling bin symlinks after prune; agent runs via `node dist/main.js`.
         File(nodeModules, ".bin").takeIf { it.exists() }?.deleteRecursively()
     }
 }

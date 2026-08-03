@@ -15,16 +15,16 @@ import java.io.File
 import javax.inject.Inject
 
 /**
- * Runs `bun run build` in packages/vibefly-ui (Vite → vibefly-jcef resources/web).
- * Resolves `bun` via property, PATH, and common install locations (IDE Gradle often lacks Homebrew PATH).
+ * Runs `npm run build` in packages/vibefly-ui (Vite → vibefly-jcef resources/web).
+ * Resolves `node` via property, PATH, and common install locations.
  */
 abstract class BuildVibeflyUiTask @Inject constructor(
     private val execOperations: ExecOperations,
 ) : DefaultTask() {
 
-    /** Command name or absolute path. Default: `bun`. */
+    /** Command name or absolute path. Default: `node`. */
     @get:Input
-    abstract val bunCommand: Property<String>
+    abstract val nodeCommand: Property<String>
 
     @get:InputDirectory
     @get:PathSensitive(PathSensitivity.RELATIVE)
@@ -60,27 +60,27 @@ abstract class BuildVibeflyUiTask @Inject constructor(
         val nodeModules = File(workDir, "node_modules")
         if (!nodeModules.isDirectory) {
             logger.warn(
-                "Skip vibefly-ui build: missing node_modules at {}. Run: (cd packages/vibefly-ui && bun install)",
+                "Skip vibefly-ui build: missing node_modules at {}. Run: (cd packages/vibefly-ui && npm install)",
                 nodeModules,
             )
             return
         }
 
-        val bun = resolveBunExecutable(bunCommand.get())
+        val node = resolveNodeExecutable(nodeCommand.get())
             ?: throw GradleException(
-                "Cannot find 'bun'. Install Bun (https://bun.sh) or set -Pvibefly.bun=/path/to/bun. " +
+                "Cannot find 'node'. Install Node.js or set -Pvibefly.node=/path/to/node. " +
                     "IDE-launched Gradle often misses Homebrew PATH (/opt/homebrew/bin).",
             )
 
-        logger.info("Building vibefly-ui with {}", bun)
+        logger.info("Building vibefly-ui with {}", node)
         execOperations.exec {
             workingDir(workDir)
-            commandLine(bun, "run", "build")
+            commandLine("npm", "run", "build")
         }
     }
 
     companion object {
-        fun resolveBunExecutable(configured: String): String? {
+        fun resolveNodeExecutable(configured: String): String? {
             val candidate = configured.trim()
             if (candidate.isEmpty()) return null
 
@@ -91,8 +91,8 @@ abstract class BuildVibeflyUiTask @Inject constructor(
             }
 
             // Bare command: search known locations then PATH
-            if (candidate == "bun") {
-                for (path in candidateBunPaths()) {
+            if (candidate == "node") {
+                for (path in candidateNodePaths()) {
                     val file = File(path)
                     if (file.isFile && file.canExecute()) return file.absolutePath
                 }
@@ -101,16 +101,13 @@ abstract class BuildVibeflyUiTask @Inject constructor(
             return findOnPath(candidate)
         }
 
-        private fun candidateBunPaths(): List<String> {
+        private fun candidateNodePaths(): List<String> {
             val home = System.getProperty("user.home").orEmpty()
-            val bunInstall = System.getenv("BUN_INSTALL").orEmpty()
             return buildList {
-                if (bunInstall.isNotEmpty()) add("$bunInstall/bin/bun")
-                add("$home/.bun/bin/bun")
-                add("/opt/homebrew/bin/bun")
-                add("/usr/local/bin/bun")
-                // Linux package managers
-                add("/home/linuxbrew/.linuxbrew/bin/bun")
+                add("$home/.nvm/current/bin/node")
+                add("/opt/homebrew/bin/node")
+                add("/usr/local/bin/node")
+                add("/usr/bin/node")
             }
         }
 

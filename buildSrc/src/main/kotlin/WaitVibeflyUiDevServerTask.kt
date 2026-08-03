@@ -10,7 +10,7 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Waits until the vibefly-ui Vite dev server is listening (no auto-start).
- * Use with IDE **Run UI Dev** / Compound **Run Plugin + UI Dev**, or `bun run dev`.
+ * Use with IDE **Run UI Dev** / Compound **Run Plugin + UI Dev**, or `npm run dev`.
  */
 abstract class WaitVibeflyUiDevServerTask : DefaultTask() {
 

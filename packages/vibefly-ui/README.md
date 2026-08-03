@@ -65,15 +65,15 @@ Kotlin 侧在 `VibeflyBrowserPanel` 经 `VibeflyUiRpc` 挂上 `CefMessageRouter`
 
 ## 开发
 
-需要 [Bun](https://bun.sh)。
+需要 Node.js ≥ 22（包含 npm）。
 
 ```bash
 cd packages/vibefly-ui
-bun install
-bun run dev        # http://127.0.0.1:5173 （Vite HMR）
-bun run build      # 输出到 ../vibefly-jcef/src/main/resources/web
-bun run typecheck
-bun run preview
+npm install
+npm run dev        # http://127.0.0.1:5173 （Vite HMR）
+npm run build      # 输出到 ../vibefly-jcef/src/main/resources/web
+npm run typecheck
+npm run preview
 ```
 
 ### 在 IDE 沙箱中接 Vite 热更
@@ -87,7 +87,7 @@ classpath scheme（`http://vibefly/`）无法代理 WebSocket，HMR 需让 JCEF 
 - CLI：`./gradlew runVibeflyUiDev`，另开终端 `./gradlew :plugin:runIde -Pvibefly.ui.dev=true`
 - 自定义 URL：`./gradlew :plugin:runIde -Pvibefly.ui.dev.url=http://127.0.0.1:5173/`
 
-**Run UI Dev** 走 Gradle 任务 `runVibeflyUiDev`（前台 `bun run dev`，日志在 IDE Run / Gradle 控制台）。  
+**Run UI Dev** 走 Gradle 任务 `runVibeflyUiDev`（前台 `npm run dev`，日志在 IDE Run / Gradle 控制台）。
 ui.dev 模式下 `runIde` 依赖 `waitVibeflyUiDevServer`（默认等 `127.0.0.1:5173`，超时 60s）。
 
 对应 JVM 属性：
@@ -109,7 +109,7 @@ ui.dev 模式下 `runIde` 依赖 `waitVibeflyUiDevServer`（默认等 `127.0.0.1
 | 开发 URL | `http://127.0.0.1:5173/`（Vite HMR） |
 | 资源服务 | `ClasspathResourceHandler`（classpath `web/**`） |
 
-Gradle 在 `:vibefly-jcef:processResources` 前会执行 `buildVibeflyUi`（`bun run build`）。若尚未 `bun install`，该任务会跳过构建并打日志。  
+Gradle 在 `:vibefly-jcef:processResources` 前会执行 `buildVibeflyUi`（`npm run build`）。若尚未 `npm install`，该任务会跳过构建并打日志。
 使用 `-Pvibefly.ui.dev=true` 或 `-Pvibefly.ui.dev.url=...` 时不跑 `buildVibeflyUi`（JCEF 直连 Vite）。
 
 ## 约定

@@ -21,7 +21,9 @@ function resolveLevel(): LevelName {
   } catch {
     // ignore (SSR / restricted storage)
   }
-  const fromEnv = import.meta.env.VIBEFLY_LOG_LEVEL
+  const fromEnv = (
+    import.meta as ImportMeta & { env?: Record<string, unknown> }
+  ).env?.VIBEFLY_LOG_LEVEL
   if (typeof fromEnv === "string" && fromEnv) return normalizeLevel(fromEnv)
   return "info"
 }

@@ -1,6 +1,6 @@
 # @vibefly/agent
 
-Vibe Fly Bun agent：对接 [Oh My Pi](https://github.com/can1357/oh-my-pi)（`@oh-my-pi/pi-coding-agent`），经 SimpleRpc stdio 与 JVM 插件通信。
+Vibe Fly Node agent：对接 [Oh My Pi](https://github.com/can1357/oh-my-pi)（`@oh-my-pi/pi-coding-agent`），经 SimpleRpc stdio 与 JVM 插件通信。
 
 ## 职责
 
@@ -17,7 +17,7 @@ Vibe Fly Bun agent：对接 [Oh My Pi](https://github.com/can1357/oh-my-pi)（`@
 
 - `stdout` 仅承载 SimpleRpc Content-Length 帧
 - 日志一律写 `stderr`（winston，禁止污染 stdout）
-- 由插件启动并管理 Bun 子进程
+- 由插件启动并管理 Node.js 子进程
 
 ## 日志
 
@@ -32,7 +32,7 @@ Vibe Fly Bun agent：对接 [Oh My Pi](https://github.com/can1357/oh-my-pi)（`@
 | commit dump | 模型/预算摘要为 `info`；systemPrompt / messages **全文** 仅在 `debug`（及更低）输出 |
 
 ```bash
-VIBEFLY_LOG_LEVEL=debug bun run start
+VIBEFLY_LOG_LEVEL=debug npm run start
 ```
 
 ## 目录
@@ -48,18 +48,18 @@ packages/vibefly-agent/
 
 ## 开发
 
-需要 [Bun](https://bun.sh) ≥ 1.1。
+需要 Node.js ≥ 22（包含 npm）。
 
 ```bash
-# 先构建 SimpleRpc Bun 传输（若尚未 build）
-cd packages/vibefly-simplerpc/typeScript && bun install && bun run build
-cd ../typeScript-bun && bun install && bun run build
+# 先构建 SimpleRpc Node 传输（若尚未 build）
+cd packages/vibefly-simplerpc/typeScript && npm install && npm run build
+cd ../typeScript-node && npm install && npm run build
 
 cd packages/vibefly-agent
-bun install
-bun run typecheck
-bun run build
-bun run start          # 前台 stdio 模式，供插件子进程或手工联调
+npm install
+npm run typecheck
+npm run build
+npm run start          # 前台 stdio 模式，供插件子进程或手工联调
 ```
 
 ### 手工联调
@@ -67,20 +67,18 @@ bun run start          # 前台 stdio 模式，供插件子进程或手工联调
 插件侧用 `ProcessBuilder` 启动，例如：
 
 ```text
-bun run /path/to/packages/vibefly-agent/src/main.ts
+node --import tsx /path/to/packages/vibefly-agent/src/main.ts
 # 或
-bun run /path/to/packages/vibefly-agent/dist/main.js
+node /path/to/packages/vibefly-agent/dist/main.js
 ```
 
 stdin/stdout 走 Content-Length SimpleRpc 控制面（`Host2Agent`）；业务 RPC 走 WebSocket（`Ui2Agent` / `Agent2Ui`）。
 
 ### 调试
 
-#### IntelliJ（JetBrains Bun 插件）
+#### IntelliJ / VS Code（Node.js 调试器）
 
-安装 **Bun** 插件后，用 **Debug Bun Agent**（`.run/`）直接 launch `src/main.ts` 断点调试。
-
-当前 Bun 插件只注册了 launch 配置类型（`BunRunConfiguration`），**没有**可用的 attach 类型；插件子进程 `--inspect` 请用下面 VS Code / 浏览器方式。
+使用 Node.js 调试器或 VS Code 的 Node.js launch/attach 配置调试 `src/main.ts`。
 
 #### VS Code / 浏览器（attach 到插件拉起的 agent）
 
@@ -90,12 +88,12 @@ stdin/stdout 走 Content-Length SimpleRpc 控制面（`Host2Agent`）；业务 R
 ```
 
 - VS Code：`.vscode/launch.json` → **Attach vibefly-agent**（粘贴 stderr 的 `ws://...`）
-- 浏览器：打开日志中的 `https://debug.bun.sh/#...`
+- 浏览器：使用 Node.js Inspector 打开日志中的 `ws://...` 地址
 
 ## 依赖
 
 - `@oh-my-pi/pi-coding-agent` / `@oh-my-pi/pi-ai`：引擎
-- `@sandogeek/simple-rpc-bun`：stdio Content-Length + peer（本仓 `packages/vibefly-simplerpc`）
+- `@sandogeek/simple-rpc-node`：stdio Content-Length + peer（本仓 `packages/vibefly-simplerpc`）
 - `winston`：stderr 日志（与 omp `@oh-my-pi/pi-utils` 一致）
 
 定制与桥接只放在本包，不修改上游 Oh My Pi 包路径。

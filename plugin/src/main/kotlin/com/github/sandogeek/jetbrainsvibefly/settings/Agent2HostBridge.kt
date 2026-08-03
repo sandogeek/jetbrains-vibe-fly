@@ -10,7 +10,7 @@ import com.intellij.openapi.diagnostic.logger
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * Reverse RPC (Bun → Kotlin) during provider login and commit generation.
+ * Reverse RPC (Node → Kotlin) during provider login and commit generation.
  * Active [ProviderLoginUi] is set while a login dialog is running.
  * Active [CommitMessageProgressListener] is set while commit generation is in flight.
  */

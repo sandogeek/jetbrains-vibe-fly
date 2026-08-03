@@ -13,7 +13,7 @@ import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 
 /**
- * Shared Bun agent process launcher for project lifecycle Host2Agent control.
+ * Shared Node agent process launcher for project lifecycle Host2Agent control.
  */
 object VibeflyAgentProcess {
     private val log = logger<VibeflyAgentProcess>()
@@ -68,12 +68,12 @@ object VibeflyAgentProcess {
 
         val resolveStartedAt = System.nanoTime()
         val entry = VibeflyAgentPaths.resolveAgentEntry()
-        val bun = VibeflyAgentPaths.resolveBunCommand()
+        val node = VibeflyAgentPaths.resolveNodeCommand()
         val workDir = VibeflyAgentPaths.resolveAgentWorkingDirectory(entry)
         val resolveMs = (System.nanoTime() - resolveStartedAt) / 1_000_000L
 
-        val command = mutableListOf(bun)
-        command.addAll(resolveBunInspectArgs())
+        val command = mutableListOf(node)
+        command.addAll(resolveNodeInspectArgs())
         command.add(entry.toString())
         log.info(
             "Starting vibefly-agent: ${command.joinToString(" ")} (cwd=$workDir, resolveMs=$resolveMs)",
@@ -101,8 +101,8 @@ object VibeflyAgentProcess {
             builder.start()
         } catch (e: Exception) {
             throw IllegalStateException(
-                "Failed to start vibefly-agent with bun=$bun entry=$entry cwd=$workDir. " +
-                    "Install Bun (https://bun.sh) or set -Dvibefly.bun=/path/to/bun.",
+                "Failed to start vibefly-agent with node=$node entry=$entry cwd=$workDir. " +
+                    "Install Node.js or set -Dvibefly.node=/path/to/node.",
                 e,
             )
         }
@@ -127,7 +127,7 @@ object VibeflyAgentProcess {
         return Handle(process, transport, session, control)
     }
 
-    fun resolveBunInspectArgs(): List<String> {
+    fun resolveNodeInspectArgs(): List<String> {
         val raw = System.getProperty("vibefly.agent.inspect")?.trim().orEmpty()
             .ifEmpty { System.getenv("VIBEFLY_AGENT_INSPECT")?.trim().orEmpty() }
         if (raw.isEmpty() || raw.equals("false", ignoreCase = true) || raw == "0") {

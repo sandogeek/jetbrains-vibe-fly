@@ -1,10 +1,10 @@
 /**
- * Vibe Fly Bun agent entrypoint.
+ * Vibe Fly Node agent entrypoint.
  * stdout: SimpleRpc Content-Length frames only (control plane)
  * stderr: logs
  * WebSocket: UI business SimpleRpc after ticket handshake
  */
-import { createStdioSimpleRpc } from "@sandogeek/simple-rpc-bun"
+import { createStdioSimpleRpc } from "@sandogeek/simple-rpc-node"
 import { rpcOptions } from "@sandogeek/simple-rpc"
 import {
   createAgent2UiProxy,
@@ -70,7 +70,7 @@ async function main(): Promise<void> {
 
   const wsStarted = performance.now()
   const ticketStore = createTicketStore()
-  const wsServer = createAgentWsServer({ ticketStore })
+  const wsServer = await createAgentWsServer({ ticketStore })
   log.info("ws listening", {
     url: wsServer.url,
     elapsedMs: Math.round(performance.now() - wsStarted),

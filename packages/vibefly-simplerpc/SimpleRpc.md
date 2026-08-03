@@ -5,8 +5,8 @@ Kotlin/JVM 与 TypeScript 之间的双向 RPC 桥。契约、生成器、取消/
 | 场景 | Kotlin transport | TypeScript |
 |------|------------------|------------|
 | JCEF WebView ↔ 插件 | `CefMessageRouterTransport` | `@sandogeek/simple-rpc` → `createCefSimpleRpc` |
-| Node/Bun 子进程 ↔ 插件 | `StdioRpcTransport` | `@sandogeek/simple-rpc-bun` → `createStdioSimpleRpc` |
-| UI ↔ Bun agent WebSocket | — | 客户端 `@sandogeek/simple-rpc` → `createWebSocketSimpleRpc`；服务端 `@sandogeek/simple-rpc-bun` → `createBunServerWebSocketRpc` |
+| Node 子进程 ↔ 插件 | `StdioRpcTransport` | `@sandogeek/simple-rpc-node` → `createStdioSimpleRpc` |
+| UI ↔ Node agent WebSocket | — | 客户端 `@sandogeek/simple-rpc` → `createWebSocketSimpleRpc`；服务端 `@sandogeek/simple-rpc-node` → `createNodeServerWebSocketRpc` |
 
 JCEF：CefMessageRouter（TS → Kotlin）+ executeJavaScript / DOM CustomEvent（Kotlin → TS）。  
 stdio：子进程 `stdin`/`stdout` 上 **Content-Length** 分帧 UTF-8 JSON；`stdout` 仅承载协议，日志写 `stderr`。
@@ -56,7 +56,7 @@ packages/vibefly-simplerpc/
 ├── typeScript/                 # @sandogeek/simple-rpc（浏览器 / JCEF，无 Node 依赖）
 │   ├── package.json
 │   └── src/
-├── typeScript-bun/             # @sandogeek/simple-rpc-bun（stdio + Bun ServerWebSocket）
+├── typeScript-node/            # @sandogeek/simple-rpc-node（stdio + Node WebSocket）
 │   ├── package.json
 │   └── src/
 └── src/
@@ -103,7 +103,7 @@ val session = SimpleRpc.open(transport)
 ```
 
 ```ts
-import { createStdioSimpleRpc } from "@sandogeek/simple-rpc-bun"
+import { createStdioSimpleRpc } from "@sandogeek/simple-rpc-node"
 
 // Node 作为子进程时：
 // input EOF 时 peer 自动 close，未完成的 call（含 timeoutMs: 0）立即 reject
@@ -303,10 +303,10 @@ SimpleRpc.requireSuspendMethods<HostApi>()
 ./gradlew :vibefly-simplerpc:test
 
 # TypeScript（浏览器 / JCEF 核心）
-cd packages/vibefly-simplerpc/typeScript && bun install --frozen-lockfile && bun test && bun run build
+cd packages/vibefly-simplerpc/typeScript && npm ci && npm test && npm run build
 
-# TypeScript（Bun/Node stdio）
-cd packages/vibefly-simplerpc/typeScript-bun && bun install --frozen-lockfile && bun test && bun run build
+# TypeScript（Node stdio + WebSocket）
+cd packages/vibefly-simplerpc/typeScript-node && npm ci && npm test && npm run build
 ```
 
 ## 超时与取消

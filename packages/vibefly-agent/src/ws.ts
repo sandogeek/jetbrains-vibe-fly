@@ -1,12 +1,12 @@
 /**
  * Agent WebSocket session: ticket store, origin check, single active UI session.
- * Transport + hello handshake live in @sandogeek/simple-rpc-bun.
+ * Transport + hello handshake live in @sandogeek/simple-rpc-node.
  */
 import type { SimpleRpcPeer } from "@sandogeek/simple-rpc"
 import {
-  createBunServerWebSocketRpc,
-  type BunServerWebSocketRpcSession,
-} from "@sandogeek/simple-rpc-bun"
+  createNodeServerWebSocketRpc,
+  type NodeServerWebSocketRpcSession,
+} from "@sandogeek/simple-rpc-node"
 import { log } from "./log.js"
 
 export type TicketRecord = {
@@ -57,15 +57,15 @@ export function createTicketStore(): SessionTicketStore {
   }
 }
 
-export function createAgentWsServer(options: {
+export async function createAgentWsServer(options: {
   ticketStore: SessionTicketStore
   hostname?: string
-}): AgentWsServer {
+}): Promise<AgentWsServer> {
   let sessionFactory: ((peer: SimpleRpcPeer) => void | (() => void)) | null = null
-  let active: BunServerWebSocketRpcSession | null = null
+  let active: NodeServerWebSocketRpcSession | null = null
   let activeCleanup: (() => void) | null = null
 
-  const server = createBunServerWebSocketRpc({
+  const server = await createNodeServerWebSocketRpc({
     hostname: options.hostname,
     authenticate({ ticket, origin }) {
       const rec = options.ticketStore.take(ticket)

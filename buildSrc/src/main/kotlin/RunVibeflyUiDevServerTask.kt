@@ -12,16 +12,16 @@ import java.io.File
 import javax.inject.Inject
 
 /**
- * Runs `bun run dev` for packages/vibefly-ui in the foreground (IDE Run / Gradle console).
+ * Runs `npm run dev` for packages/vibefly-ui in the foreground (IDE Run / Gradle console).
  * If the Vite port is already listening, exits successfully without starting another process.
  */
 abstract class RunVibeflyUiDevServerTask @Inject constructor(
     private val execOperations: ExecOperations,
 ) : DefaultTask() {
 
-    /** Command name or absolute path. Default: `bun`. */
+    /** Command name or absolute path. Default: `node`. */
     @get:Input
-    abstract val bunCommand: Property<String>
+    abstract val nodeCommand: Property<String>
 
     @get:InputDirectory
     @get:PathSensitive(PathSensitivity.RELATIVE)
@@ -46,20 +46,20 @@ abstract class RunVibeflyUiDevServerTask @Inject constructor(
         if (!nodeModules.isDirectory) {
             throw GradleException(
                 "Cannot start vibefly-ui dev server: missing node_modules at $nodeModules. " +
-                    "Run: (cd packages/vibefly-ui && bun install)",
+                    "Run: (cd packages/vibefly-ui && npm install)",
             )
         }
 
-        val bun = BuildVibeflyUiTask.resolveBunExecutable(bunCommand.get())
+        val node = BuildVibeflyUiTask.resolveNodeExecutable(nodeCommand.get())
             ?: throw GradleException(
-                "Cannot find 'bun'. Install Bun (https://bun.sh) or set -Pvibefly.bun=/path/to/bun. " +
+                "Cannot find 'node'. Install Node.js or set -Pvibefly.node=/path/to/node. " +
                     "IDE-launched Gradle often misses Homebrew PATH (/opt/homebrew/bin).",
             )
 
-        logger.lifecycle("Starting vibefly-ui: {} run dev (cwd={})", bun, workDir)
+        logger.lifecycle("Starting vibefly-ui: npm run dev (node={}, cwd={})", node, workDir)
         execOperations.exec {
             workingDir(workDir)
-            commandLine(bun, "run", "dev")
+            commandLine("npm", "run", "dev")
         }
     }
 }
