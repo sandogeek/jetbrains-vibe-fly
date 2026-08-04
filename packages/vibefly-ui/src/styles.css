@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+@source "../node_modules/streamdown/dist/*.js";
+@source "../node_modules/@streamdown/code/dist/*.js";
+@source "../node_modules/@streamdown/cjk/dist/*.js";
+
 :root {
   color-scheme: dark;
   --vf-fg: #d7d9dc;
@@ -47,7 +51,7 @@ html[data-jb-theme="dark"] {
   color-scheme: dark;
 }
 
-/* SolidUI-compatible semantic tokens, mapped onto JetBrains-themed --vf-* values */
+/* UI semantic tokens mapped onto JetBrains-themed --vf-* values. */
 @theme {
   --color-fg: var(--vf-fg);
   --color-muted: var(--vf-muted);
@@ -428,6 +432,17 @@ html[data-jb-theme="dark"] {
   overflow-y: auto;
   scrollbar-color: #4b4e54 transparent;
   scrollbar-width: thin;
+}
+
+.assistant-thread {
+  min-height: 0;
+  flex: 1;
+  display: flex;
+}
+
+.assistant-viewport {
+  width: 100%;
+  height: 100%;
 }
 
 .message-stream {
@@ -1022,27 +1037,6 @@ html[data-jb-theme="dark"] {
 
 .composer-thinking-select {
   max-width: 105px;
-}
-
-.composer-select-content {
-  max-height: min(240px, var(--kb-popper-content-available-height));
-  border-radius: 5px;
-  background: var(--vf-surface-raised);
-}
-
-.composer-select-content [role="listbox"] {
-  max-height: min(240px, var(--kb-popper-content-available-height));
-}
-
-.composer-select-item {
-  min-height: 28px;
-  padding-block: 6px;
-  color: var(--vf-fg);
-  font-size: 11px;
-}
-
-.composer-select-item[data-highlighted] {
-  background: color-mix(in srgb, var(--vf-accent) 16%, var(--vf-surface-raised));
 }
 
 .send-button,

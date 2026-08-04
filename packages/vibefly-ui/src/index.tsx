@@ -1,6 +1,6 @@
-/* @refresh reload */
-import { HashRouter, Navigate, Route } from "@solidjs/router"
-import { render } from "solid-js/web"
+import { StrictMode } from "react"
+import { createRoot } from "react-dom/client"
+import { HashRouter, Navigate, Route, Routes } from "react-router-dom"
 import { App } from "./App"
 import { I18nProvider } from "./i18n"
 import { SettingsShell } from "./settings/SettingsShell"
@@ -11,19 +11,16 @@ if (!root) {
   throw new Error("Missing #root")
 }
 
-render(
-  () => (
+createRoot(root).render(
+  <StrictMode>
     <I18nProvider>
       <HashRouter>
-        <Route path="/" component={App} />
-        <Route path="/settings" component={SettingsShell}>
-          <Route path="/" component={() => <Navigate href="/settings/providers" />} />
-          <Route path="/providers" component={() => null} />
-          <Route path="/commit-message" component={() => null} />
-        </Route>
-        <Route path="*404" component={() => <Navigate href="/" />} />
+        <Routes>
+          <Route path="/" element={<App />} />
+          <Route path="/settings/*" element={<SettingsShell />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
       </HashRouter>
     </I18nProvider>
-  ),
-  root,
+  </StrictMode>,
 )

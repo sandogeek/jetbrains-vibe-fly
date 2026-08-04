@@ -1,10 +1,6 @@
-import { Navigate, Route, useLocation, useNavigate } from "@solidjs/router"
-import {
-  Search,
-  Settings2,
-  SlidersHorizontal,
-} from "lucide-solid"
-import { createSignal, onCleanup, onMount, Show, type JSX } from "solid-js"
+import { Search, Settings2, SlidersHorizontal } from "lucide-react"
+import { useEffect, useRef, useState, type ReactNode } from "react"
+import { useLocation, useNavigate } from "react-router-dom"
 import type {
   Host2UiService,
   IdeSettingsDto,
@@ -17,10 +13,7 @@ import { bindConsoleToHost } from "../rpc/console"
 import { applyJbTheme } from "../theme"
 import { CommitMessagePage } from "./CommitMessagePage"
 import { ProvidersPage } from "./ProvidersPage"
-import {
-  mergeProvidersSnapshot,
-  type ProvidersSnapshot,
-} from "./providerSnapshots"
+import { mergeProvidersSnapshot, type ProvidersSnapshot } from "./providerSnapshots"
 import { PROVIDER_CONFIG_RPC_OPTIONS } from "./rpcOptions"
 import { emptySettings, initialState, normalizeSettings, type SettingsState } from "./settingsStore"
 import {
@@ -29,7 +22,6 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
@@ -46,44 +38,35 @@ type LoginHandlers = {
   onRequestInput: (prompt: string, placeholder: string | null) => Promise<LoginInputResponse>
 }
 
-/**
- * Shared settings layout + data. Mounted as HashRouter root for /settings/*.
- */
-export function SettingsShell(props: { children?: JSX.Element }) {
+export function SettingsShell() {
   const t = useT()
   const navigate = useNavigate()
   const location = useLocation()
-  const [search, setSearch] = createSignal("")
-  const [state, setState] = createSignal<SettingsState>(initialState())
-  const [ui2Host, setUi2Host] = createSignal<Ui2Host | null>(null)
-  let peerClose: (() => void) | null = null
-  let unbindConsole: (() => void) | null = null
-  let loginHandlers: LoginHandlers | null = null
+  const [search, setSearch] = useState("")
+  const [state, setState] = useState<SettingsState>(() => initialState())
+  const [ui2Host, setUi2Host] = useState<Ui2Host | null>(null)
+  const loginHandlers = useRef<LoginHandlers | null>(null)
 
-  onCleanup(() => {
-    peerClose?.()
-    peerClose = null
-    unbindConsole?.()
-    unbindConsole = null
-  })
-
-  onMount(() => {
+  useEffect(() => {
+    let cancelled = false
+    let peerClose: (() => void) | undefined
+    let unbindConsole: (() => void) | undefined
     const host2Ui: Host2UiService = {
-      async setStatus(message: string) {
-        setState((s) => ({ ...s, status: message }))
+      async setStatus(message) {
+        if (!cancelled) setState((current) => ({ ...current, status: message }))
       },
-      async loginOpenUrl(url: string, launchUrl: string | null) {
-        loginHandlers?.onOpenUrl(url, launchUrl)
+      async loginOpenUrl(url, launchUrl) {
+        loginHandlers.current?.onOpenUrl(url, launchUrl)
       },
-      async loginProgress(message: string) {
-        loginHandlers?.onProgress(message)
+      async loginProgress(message) {
+        loginHandlers.current?.onProgress(message)
       },
-      async requestLoginInput(prompt: string, placeholder: string | null) {
-        if (!loginHandlers) return { text: "", cancelled: true }
-        return loginHandlers.onRequestInput(prompt, placeholder)
+      async requestLoginInput(prompt, placeholder) {
+        if (!loginHandlers.current) return { text: "", cancelled: true }
+        return loginHandlers.current.onRequestInput(prompt, placeholder)
       },
       async addChatContexts() {},
-      async setTheme(mode: string) {
+      async setTheme(mode) {
         applyJbTheme(mode)
       },
     }
@@ -95,229 +78,140 @@ export function SettingsShell(props: { children?: JSX.Element }) {
       unbindConsole = bindConsoleToHost(rpc.ui2Host)
     }
 
-    void bootstrap(rpc?.ui2Host ?? null)
-  })
+    void (async () => {
+      setState((current) => ({ ...current, busy: true, loadError: null }))
+      let settings = emptySettings()
+      let snapshot: ProvidersSnapshot | null = null
+      let loadError: string | null = null
+      const host = rpc?.ui2Host ?? null
 
-  const bootstrap = async (host: Ui2Host | null) => {
-    setState((s) => ({ ...s, busy: true, loadError: null }))
-    let settings = emptySettings()
-    let snapshot: ProvidersSnapshot | null = null
-    let loadError: string | null = null
-
-    if (host) {
-      try {
-        settings = normalizeSettings(await host.getIdeSettings())
-      } catch (e) {
-        loadError = e instanceof Error ? e.message : String(e)
-      }
-      try {
-        const refresh = await host.refreshProviders(PROVIDER_CONFIG_RPC_OPTIONS)
-        if (refresh.ok) {
-          snapshot = mergeProvidersSnapshot(refresh.snapshot, state().catalog)
-        } else {
-          loadError = loadError ?? refresh.error ?? t("settings.refreshFailed")
+      if (host) {
+        try {
+          settings = normalizeSettings(await host.getIdeSettings())
+        } catch (error) {
+          loadError = error instanceof Error ? error.message : String(error)
         }
-      } catch (e) {
-        loadError = loadError ?? (e instanceof Error ? e.message : String(e))
+        try {
+          const refresh = await host.refreshProviders(PROVIDER_CONFIG_RPC_OPTIONS)
+          if (refresh.ok) snapshot = mergeProvidersSnapshot(refresh.snapshot, state.catalog)
+          else loadError = loadError ?? refresh.error ?? t("settings.refreshFailed")
+        } catch (error) {
+          loadError = loadError ?? (error instanceof Error ? error.message : String(error))
+        }
+      } else {
+        loadError = t("settings.hostUnavailable")
       }
-    } else {
-      loadError = t("settings.hostUnavailable")
-    }
 
-    setState((s) => ({
-      ...s,
-      settings,
-      snapshot,
-      loadError,
-      busy: false,
-    }))
-  }
+      if (!cancelled) setState((current) => ({ ...current, settings, snapshot, loadError, busy: false }))
+    })()
+
+    return () => {
+      cancelled = true
+      peerClose?.()
+      unbindConsole?.()
+      setUi2Host(null)
+    }
+  }, [t])
 
   const saveSettings = async (settings: IdeSettingsDto) => {
-    const host = ui2Host()
+    const host = ui2Host
     if (!host) return
     try {
       await host.saveIdeSettings(settings)
       const fresh = normalizeSettings(await host.getIdeSettings())
-      setState((s) => ({ ...s, settings: fresh }))
-    } catch (e) {
-      setState((s) => ({
-        ...s,
-        status: e instanceof Error ? e.message : String(e),
-      }))
+      setState((current) => ({ ...current, settings: fresh }))
+    } catch (error) {
+      setState((current) => ({ ...current, status: error instanceof Error ? error.message : String(error) }))
     }
   }
 
-  const registerLoginHandlers = (handlers: LoginHandlers | null) => {
-    loginHandlers = handlers
-  }
-
-  const activePath = () => location.pathname
-  const hasSearch = (label: string) =>
-    !search().trim() || label.toLowerCase().includes(search().trim().toLowerCase())
+  const activePath = location.pathname
+  const hasSearch = (label: string) => !search.trim() || label.toLowerCase().includes(search.trim().toLowerCase())
+  const showingCommit = activePath.includes("/commit-message")
 
   return (
-    <SidebarProvider class="h-full min-h-0 overflow-hidden">
+    <SidebarProvider className="h-full min-h-0 overflow-hidden">
       <Sidebar>
         <SidebarHeader>
-          <div class="flex justify-end px-1">
-            <SidebarTrigger label={t("settings.title")} />
-          </div>
-          <SidebarSearch
-            value={search()}
-            placeholder={t("sidebar.search")}
-            shortcut={t("sidebar.searchShortcut")}
-            onInput={setSearch}
-          />
+          <div className="flex justify-end px-1"><SidebarTrigger label={t("settings.title")} /></div>
+          <SidebarSearch value={search} placeholder={t("sidebar.search")} shortcut={t("sidebar.searchShortcut")} onInput={setSearch} />
         </SidebarHeader>
-
         <SidebarContent>
           <SidebarGroup>
             <SidebarGroupContent>
               <SidebarMenu>
-                <Show when={hasSearch(t("settings.providers"))}>
-                  <SettingsNavItem
-                    label={t("settings.providers")}
-                    icon={<Settings2 />}
-                    active={activePath().includes("/settings/providers")}
-                    onSelect={() => navigate("/settings/providers")}
-                  />
-                </Show>
-                <Show when={hasSearch(t("settings.commitMessage"))}>
-                  <SettingsNavItem
-                    label={t("settings.commitMessage")}
-                    icon={<SlidersHorizontal />}
-                    active={activePath().includes("/settings/commit-message")}
-                    onSelect={() => navigate("/settings/commit-message")}
-                  />
-                </Show>
+                {hasSearch(t("settings.providers")) && (
+                  <SettingsNavItem label={t("settings.providers")} icon={<Settings2 />} active={activePath.includes("/settings/providers")} onSelect={() => navigate("/settings/providers")} />
+                )}
+                {hasSearch(t("settings.commitMessage")) && (
+                  <SettingsNavItem label={t("settings.commitMessage")} icon={<SlidersHorizontal />} active={activePath.includes("/settings/commit-message")} onSelect={() => navigate("/settings/commit-message")} />
+                )}
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
         </SidebarContent>
-
         <SidebarFooter>
-          <Show when={state().status}>
-            {(msg) => <div class="truncate px-2 text-[11px] text-muted" title={msg()}>{msg()}</div>}
-          </Show>
+          {state.status && <div className="truncate px-2 text-[11px] text-muted" title={state.status}>{state.status}</div>}
         </SidebarFooter>
       </Sidebar>
-      <SidebarInset class="flex h-full min-h-0 flex-col overflow-hidden">
-        <Show when={state().loadError}>
-          {(e) => (
-            <div class="border-b border-border bg-surface px-4 py-2 text-xs text-muted">{e()}</div>
-          )}
-        </Show>
-        {/* Route outlet: children from nested Route components */}
-        <Show
-          when={useLocation().pathname.includes("/commit-message")}
-          fallback={
-            <ProvidersPage
-              ui2Host={ui2Host()}
-              settings={state().settings}
-              snapshot={state().snapshot}
-              catalog={state().catalog}
-              busy={state().busy}
-              onSettings={(settings) => setState((s) => ({ ...s, settings }))}
-              onSnapshot={(snapshot) => setState((s) => ({ ...s, snapshot }))}
-              onBusy={(busy) => setState((s) => ({ ...s, busy }))}
-              onStatus={(status) => setState((s) => ({ ...s, status }))}
-              onSave={saveSettings}
-              registerLoginHandlers={registerLoginHandlers}
-            />
-          }
-        >
+      <SidebarInset className="flex h-full min-h-0 flex-col overflow-hidden">
+        {state.loadError && <div className="border-b border-border bg-surface px-4 py-2 text-xs text-muted">{state.loadError}</div>}
+        {showingCommit ? (
           <CommitMessagePage
-            settings={state().settings}
-            snapshot={state().snapshot}
-            catalog={state().catalog}
-            busy={state().busy}
-            onSettings={(settings) => setState((s) => ({ ...s, settings }))}
+            settings={state.settings}
+            snapshot={state.snapshot}
+            catalog={state.catalog}
+            busy={state.busy}
+            onSettings={(settings) => setState((current) => ({ ...current, settings }))}
             onSave={saveSettings}
           />
-        </Show>
-        {props.children}
+        ) : (
+          <ProvidersPage
+            ui2Host={ui2Host}
+            settings={state.settings}
+            snapshot={state.snapshot}
+            catalog={state.catalog}
+            busy={state.busy}
+            onSettings={(settings) => setState((current) => ({ ...current, settings }))}
+            onSnapshot={(snapshot) => setState((current) => ({ ...current, snapshot }))}
+            onBusy={(busy) => setState((current) => ({ ...current, busy }))}
+            onStatus={(status) => setState((current) => ({ ...current, status }))}
+            onSave={saveSettings}
+            registerLoginHandlers={(handlers) => { loginHandlers.current = handlers }}
+          />
+        )}
       </SidebarInset>
     </SidebarProvider>
   )
 }
 
-function SettingsNavItem(props: {
-  label: string
-  icon: JSX.Element
-  active?: boolean
-  disabled?: boolean
-  hidden?: boolean
-  onSelect?: () => void
-}) {
-  return (
-    <Show when={!props.hidden}>
-      <SidebarMenuItem>
-        <SidebarMenuButton
-          title={props.label}
-          active={props.active}
-          disabled={props.disabled}
-          onClick={() => props.onSelect?.()}
-        >
-          {props.icon}
-        </SidebarMenuButton>
-      </SidebarMenuItem>
-    </Show>
-  )
+function SettingsNavItem({ label, icon, active, disabled, onSelect }: { label: string; icon: ReactNode; active?: boolean; disabled?: boolean; onSelect?: () => void }) {
+  return <SidebarMenuItem><SidebarMenuButton title={label} active={active} disabled={disabled} onClick={onSelect}>{icon}</SidebarMenuButton></SidebarMenuItem>
 }
 
-function SidebarSearch(props: {
-  value: string
-  placeholder: string
-  shortcut: string
-  onInput: (value: string) => void
-}) {
+function SidebarSearch({ value, placeholder, shortcut, onInput }: { value: string; placeholder: string; shortcut: string; onInput: (value: string) => void }) {
   const sidebar = useSidebar()
-  let inputElement: HTMLInputElement | undefined
-
-  onMount(() => {
+  const inputRef = useRef<HTMLInputElement>(null)
+  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") {
         event.preventDefault()
         sidebar.setOpen(true)
-        requestAnimationFrame(() => inputElement?.focus())
+        requestAnimationFrame(() => inputRef.current?.focus())
       }
     }
     window.addEventListener("keydown", onKeyDown)
-    onCleanup(() => window.removeEventListener("keydown", onKeyDown))
-  })
+    return () => window.removeEventListener("keydown", onKeyDown)
+  }, [sidebar])
 
+  if (!sidebar.open) {
+    return <button type="button" className="mx-auto mt-2 grid size-9 place-items-center rounded-md text-muted hover:bg-surface-raised hover:text-fg" title={placeholder} aria-label={placeholder} onClick={sidebar.toggle}><Search className="size-4" /></button>
+  }
   return (
-    <Show
-      when={sidebar.open()}
-      fallback={
-        <button
-          type="button"
-          class="mx-auto mt-2 grid size-9 place-items-center rounded-md text-muted hover:bg-surface-raised hover:text-fg"
-          title={props.placeholder}
-          aria-label={props.placeholder}
-          onClick={sidebar.toggle}
-        >
-          <Search class="size-4" />
-        </button>
-      }
-    >
-      <label class="relative mt-2 block">
-        <Search class="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted" />
-        <input
-          ref={inputElement}
-          class="h-9 w-full rounded-md border border-border bg-surface/70 pl-8 pr-12 text-xs text-fg outline-none placeholder:text-muted focus-visible:ring-2 focus-visible:ring-ring"
-          value={props.value}
-          onInput={(event) => props.onInput(event.currentTarget.value)}
-          placeholder={props.placeholder}
-          aria-label={props.placeholder}
-        />
-        <kbd class="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded border border-border bg-surface-raised px-1.5 py-0.5 text-[10px] text-muted">
-          {props.shortcut}
-        </kbd>
-      </label>
-    </Show>
+    <label className="relative mt-2 block">
+      <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted" />
+      <input ref={inputRef} className="h-9 w-full rounded-md border border-border bg-surface/70 pl-8 pr-12 text-xs text-fg outline-none placeholder:text-muted focus-visible:ring-2 focus-visible:ring-ring" value={value} onChange={(event) => onInput(event.currentTarget.value)} placeholder={placeholder} aria-label={placeholder} />
+      <kbd className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded border border-border bg-surface-raised px-1.5 py-0.5 text-[10px] text-muted">{shortcut}</kbd>
+    </label>
   )
 }
-
-export { Route }

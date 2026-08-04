@@ -1,40 +1,18 @@
-import DOMPurify from "dompurify"
 import {
-  AlertTriangle,
-  Bot,
-  Brain,
-  Check,
-  ChevronDown,
-  CircleStop,
-  Clock3,
-  FileCode2,
-  FolderOpen,
-  GitCompareArrows,
-  History,
-  LoaderCircle,
-  MessageSquareText,
-  MoreHorizontal,
-  Paperclip,
-  Plus,
-  RotateCcw,
-  Send,
-  Settings2,
-  ShieldCheck,
-  Sparkles,
-  Wrench,
-  X,
-} from "lucide-solid"
-import { marked } from "marked"
-import {
-  For,
-  Show,
-  createMemo,
-  createSignal,
-  onCleanup,
-  onMount,
-  type JSX,
-} from "solid-js"
+  AssistantRuntimeProvider,
+  ComposerPrimitive,
+  MessagePrimitive,
+  ThreadPrimitive,
+  useAuiState,
+  useExternalStoreRuntime,
+  type AppendMessage,
+  type DataMessagePartProps,
+  type ToolCallMessagePartProps,
+} from "@assistant-ui/react"
+import { StreamdownTextPrimitive } from "@assistant-ui/react-streamdown"
 import type { SimpleRpcPeer } from "@sandogeek/simple-rpc"
+import { cjk } from "@streamdown/cjk"
+import { code } from "@streamdown/code"
 import type {
   ChatContextItem,
   ChatEvent,
@@ -52,14 +30,41 @@ import type {
   UserInputRequest,
   UserInputResponse,
 } from "@vibefly/uiagent-shared"
-import type { ModelPreferencesDto, Ui2Host } from "./generated/rpc"
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "./components/ui/select"
+  AlertTriangle,
+  Bot,
+  Brain,
+  Check,
+  ChevronDown,
+  CircleStop,
+  Clock3,
+  FileCode2,
+  GitCompareArrows,
+  History,
+  LoaderCircle,
+  MessageSquareText,
+  MoreHorizontal,
+  Paperclip,
+  Plus,
+  RotateCcw,
+  Send,
+  Settings2,
+  ShieldCheck,
+  Sparkles,
+  Wrench,
+  X,
+} from "lucide-react"
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from "react"
+import remarkBreaks from "remark-breaks"
+import { convertChatMessage, type ToolArtifact } from "./chatMessageAdapter"
+import type { ModelPreferencesDto, Ui2Host } from "./generated/rpc"
 import { useT } from "./i18n"
 import { log } from "./log"
 import { connectAgentRpc, type AgentStatus } from "./rpc/agent"
@@ -86,55 +91,6 @@ type ThinkingOption = {
 }
 
 const MAX_OPEN_TABS = 8
-const renderer = new marked.Renderer()
-renderer.html = ({ text }: { text: string }) => escapeHtml(text)
-
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-}
-
-function markdown(value: string): string {
-  const html = marked.parse(value, { gfm: true, breaks: true, renderer }) as string
-  return DOMPurify.sanitize(html, {
-    ALLOWED_TAGS: [
-      "p",
-      "br",
-      "strong",
-      "em",
-      "del",
-      "code",
-      "pre",
-      "blockquote",
-      "ul",
-      "ol",
-      "li",
-      "h1",
-      "h2",
-      "h3",
-      "h4",
-      "a",
-      "table",
-      "thead",
-      "tbody",
-      "tr",
-      "th",
-      "td",
-      "hr",
-    ],
-    ALLOWED_ATTR: ["href", "title", "target", "rel"],
-  })
-}
-
-function textPart(message: ChatMessage): string {
-  return message.parts
-    .filter((part): part is Extract<ChatPart, { kind: "text" }> => part.kind === "text")
-    .map((part) => part.text)
-    .join("")
-}
 
 function modelLabel(modelId: string | undefined, fallback: string): string {
   if (!modelId) return fallback
@@ -220,83 +176,474 @@ function demoTab(): ChatTab {
 
 export function App() {
   const t = useT()
-  const [hostStatus, setHostStatus] = createSignal("connecting")
-  const [agentStatus, setAgentStatus] = createSignal<AgentStatus>("idle")
-  const [tabs, setTabs] = createSignal<ChatTab[]>([])
-  const [activeId, setActiveId] = createSignal("")
-  const [drafts, setDrafts] = createSignal<Record<string, string>>({})
-  const [contexts, setContexts] = createSignal<Record<string, ChatContextItem[]>>({})
-  const [models, setModels] = createSignal<Record<string, ChatModelOption[]>>({})
-  const [modelPreferences, setModelPreferences] = createSignal<ModelPreferencesDto>({
+  const [hostStatus, setHostStatus] = useState("connecting")
+  const [agentStatus, setAgentStatus] = useState<AgentStatus>("idle")
+  const [tabs, setTabs] = useState<ChatTab[]>([])
+  const [activeId, setActiveId] = useState("")
+  const [drafts, setDrafts] = useState<Record<string, string>>({})
+  const [contexts, setContexts] = useState<Record<string, ChatContextItem[]>>({})
+  const [models, setModels] = useState<Record<string, ChatModelOption[]>>({})
+  const [modelPreferences, setModelPreferences] = useState<ModelPreferencesDto>({
     recentModelSpecs: [],
     pinnedModelSpecs: [],
   })
-  const [recent, setRecent] = createSignal<RecentChatSession[]>([])
-  const [recentOpen, setRecentOpen] = createSignal(false)
-  const [error, setError] = createSignal<string | null>(null)
-  const [pendingPermission, setPendingPermission] = createSignal<PendingPermission | null>(null)
-  const [pendingInput, setPendingInput] = createSignal<PendingInput | null>(null)
-  const [inputReply, setInputReply] = createSignal("")
-  const [offline, setOffline] = createSignal(false)
-  let host: Ui2Host | null = null
-  let agent: Ui2Agent | null = null
-  let projectRoot = ""
-  let peer: SimpleRpcPeer | null = null
-  let stopAgent: (() => void) | null = null
-  let unbindConsole: (() => void) | null = null
-  let modelPreferencesSave = Promise.resolve()
-  let cancelled = false
-  let conversationElement: HTMLElement | undefined
-  let dragSessionId: string | null = null
+  const [recent, setRecent] = useState<RecentChatSession[]>([])
+  const [recentOpen, setRecentOpen] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [pendingPermission, setPendingPermission] = useState<PendingPermission | null>(null)
+  const [pendingInput, setPendingInput] = useState<PendingInput | null>(null)
+  const [inputReply, setInputReply] = useState("")
+  const [offline, setOffline] = useState(false)
 
-  const activeTab = createMemo(() => tabs().find((tab) => tab.summary.sessionId === activeId()) ?? null)
-  const activeDraft = createMemo(() => drafts()[activeId()] ?? "")
-  const activeContexts = createMemo(() => contexts()[activeId()] ?? [])
-  const activeModelOptions = createMemo<ModelPickerOption[]>(() =>
-    (models()[activeId()] ?? []).map((option) => ({
-      spec: option.id,
-      providerId: option.provider,
-      modelId: option.model,
-      modelLabel: option.label,
-      reasoning: option.supportsThinking,
-    })),
+  const hostRef = useRef<Ui2Host | null>(null)
+  const agentRef = useRef<Ui2Agent | null>(null)
+  const projectRootRef = useRef("")
+  const peerRef = useRef<SimpleRpcPeer | null>(null)
+  const stopAgentRef = useRef<(() => void) | null>(null)
+  const unbindConsoleRef = useRef<(() => void) | null>(null)
+  const modelPreferencesSaveRef = useRef(Promise.resolve())
+  const dragSessionIdRef = useRef<string | null>(null)
+  const tabsRef = useRef<ChatTab[]>([])
+  const activeIdRef = useRef("")
+  const contextsRef = useRef<Record<string, ChatContextItem[]>>({})
+  const modelsRef = useRef<Record<string, ChatModelOption[]>>({})
+  const offlineRef = useRef(false)
+  const pendingPermissionRef = useRef<PendingPermission | null>(null)
+  const pendingInputRef = useRef<PendingInput | null>(null)
+
+  const updateTabs = useCallback((update: ChatTab[] | ((current: ChatTab[]) => ChatTab[])) => {
+    const next = typeof update === "function" ? update(tabsRef.current) : update
+    tabsRef.current = next
+    setTabs(next)
+  }, [])
+
+  const updateActiveId = useCallback((sessionId: string) => {
+    activeIdRef.current = sessionId
+    setActiveId(sessionId)
+  }, [])
+
+  const updateContexts = useCallback(
+    (
+      update:
+        | Record<string, ChatContextItem[]>
+        | ((current: Record<string, ChatContextItem[]>) => Record<string, ChatContextItem[]>),
+    ) => {
+      const next = typeof update === "function" ? update(contextsRef.current) : update
+      contextsRef.current = next
+      setContexts(next)
+    },
+    [],
   )
-  const thinkingOptions = createMemo<ThinkingOption[]>(() => [
-    { value: "off", label: t("chat.thinkingOff") },
-    { value: "low", label: "Low" },
-    { value: "medium", label: "Medium" },
-    { value: "high", label: "High" },
-    { value: "xhigh", label: "XHigh" },
-    { value: "auto", label: "Auto" },
-  ])
-  const selectedThinking = createMemo(
-    () => thinkingOptions().find((option) => option.value === (activeTab()?.summary.thinkingLevel ?? "off")) ?? null,
+
+  const updateModels = useCallback(
+    (
+      update:
+        | Record<string, ChatModelOption[]>
+        | ((current: Record<string, ChatModelOption[]>) => Record<string, ChatModelOption[]>),
+    ) => {
+      const next = typeof update === "function" ? update(modelsRef.current) : update
+      modelsRef.current = next
+      setModels(next)
+    },
+    [],
   )
-  const isBusy = createMemo(() => {
-    const state = activeTab()?.summary.state
-    return state === "running" || state === "waiting_permission" || state === "waiting_input"
-  })
-  const isQueued = createMemo(() => activeTab()?.summary.state === "queued")
 
-  onCleanup(() => {
-    cancelled = true
-    stopAgent?.()
-    stopAgent = null
-    unbindConsole?.()
-    unbindConsole = null
-    peer?.close()
-    peer = null
-    pendingPermission()?.resolve({
-      requestId: pendingPermission()!.request.requestId,
-      decision: "cancelled",
-    })
-    pendingInput()?.resolve({
-      requestId: pendingInput()!.request.requestId,
-      cancelled: true,
-    })
-  })
+  const updateOffline = useCallback((value: boolean) => {
+    offlineRef.current = value
+    setOffline(value)
+  }, [])
 
-  onMount(() => {
+  const updatePendingPermission = useCallback((value: PendingPermission | null) => {
+    pendingPermissionRef.current = value
+    setPendingPermission(value)
+  }, [])
+
+  const updatePendingInput = useCallback((value: PendingInput | null) => {
+    pendingInputRef.current = value
+    setPendingInput(value)
+  }, [])
+
+  const activeTab = useMemo(
+    () => tabs.find((tab) => tab.summary.sessionId === activeId) ?? null,
+    [activeId, tabs],
+  )
+  const activeContexts = contexts[activeId] ?? []
+  const activeDraft = drafts[activeId] ?? ""
+  const activeModelOptions = useMemo<ModelPickerOption[]>(
+    () =>
+      (models[activeId] ?? []).map((option) => ({
+        spec: option.id,
+        providerId: option.provider,
+        modelId: option.model,
+        modelLabel: option.label,
+        reasoning: option.supportsThinking,
+      })),
+    [activeId, models],
+  )
+  const thinkingOptions = useMemo<ThinkingOption[]>(
+    () => [
+      { value: "off", label: t("chat.thinkingOff") },
+      { value: "low", label: "Low" },
+      { value: "medium", label: "Medium" },
+      { value: "high", label: "High" },
+      { value: "xhigh", label: "XHigh" },
+      { value: "auto", label: "Auto" },
+    ],
+    [t],
+  )
+  const isBusy = ["running", "waiting_permission", "waiting_input"].includes(
+    activeTab?.summary.state ?? "",
+  )
+  const isQueued = activeTab?.summary.state === "queued"
+
+  const appendContexts = useCallback(
+    (sessionId: string, incoming: ChatContextItem[]) => {
+      if (!sessionId || incoming.length === 0) return
+      updateContexts((current) => {
+        const existing = current[sessionId] ?? []
+        const keys = new Set(
+          existing.map(
+            (item) => `${item.kind}:${item.path}:${item.startLine ?? ""}:${item.endLine ?? ""}`,
+          ),
+        )
+        const added = incoming.filter((item) => {
+          const key = `${item.kind}:${item.path}:${item.startLine ?? ""}:${item.endLine ?? ""}`
+          if (!item.path || keys.has(key)) return false
+          keys.add(key)
+          return true
+        })
+        return { ...current, [sessionId]: [...existing, ...added] }
+      })
+    },
+    [updateContexts],
+  )
+
+  const updateMessages = useCallback(
+    (sessionId: string, update: (messages: ChatMessage[]) => ChatMessage[]) => {
+      updateTabs((current) =>
+        current.map((tab) =>
+          tab.summary.sessionId === sessionId
+            ? { ...tab, messages: update(tab.messages) }
+            : tab,
+        ),
+      )
+    },
+    [updateTabs],
+  )
+
+  const updateMessage = useCallback(
+    (sessionId: string, messageId: string, update: (message: ChatMessage) => ChatMessage) => {
+      updateMessages(sessionId, (messages) => {
+        const exists = messages.some((message) => message.id === messageId)
+        const source = exists
+          ? messages
+          : [
+              ...messages,
+              {
+                id: messageId,
+                role: "assistant" as const,
+                parts: [],
+                createdAt: Date.now(),
+                status: "streaming" as const,
+              },
+            ]
+        return source.map((message) => (message.id === messageId ? update(message) : message))
+      })
+    },
+    [updateMessages],
+  )
+
+  const applyEvent = useCallback(
+    (event: ChatEvent) => {
+      if (event.kind === "snapshot") {
+        updateTabs((current) => {
+          const index = current.findIndex(
+            (tab) => tab.summary.sessionId === event.snapshot.summary.sessionId,
+          )
+          if (index < 0) return [...current, event.snapshot]
+          return current.map((tab, tabIndex) => (tabIndex === index ? event.snapshot : tab))
+        })
+        return
+      }
+      if (event.kind === "summary") {
+        updateTabs((current) =>
+          current.map((tab) =>
+            tab.summary.sessionId === event.summary.sessionId
+              ? {
+                  ...tab,
+                  summary: {
+                    ...tab.summary,
+                    ...event.summary,
+                    unread:
+                      event.summary.sessionId === activeIdRef.current
+                        ? false
+                        : event.summary.unread,
+                  },
+                }
+              : tab,
+          ),
+        )
+        return
+      }
+      if (event.kind === "message") {
+        updateMessages(event.sessionId, (messages) => {
+          const duplicate = messages.some((message) => message.id === event.message.id)
+          if (duplicate) {
+            return messages.map((message) =>
+              message.id === event.message.id ? event.message : message,
+            )
+          }
+          return [...messages, event.message]
+        })
+        return
+      }
+      if (event.kind === "partDelta") {
+        updateMessage(event.sessionId, event.messageId, (message) => {
+          const index = message.parts.findIndex((part) => part.kind === event.partKind)
+          if (index < 0) {
+            return {
+              ...message,
+              parts: [...message.parts, { kind: event.partKind, text: event.delta }],
+            }
+          }
+          const parts = [...message.parts]
+          const part = parts[index] as Extract<ChatPart, { kind: "text" | "thinking" }>
+          parts[index] = { ...part, text: part.text + event.delta }
+          return { ...message, parts }
+        })
+        return
+      }
+      if (event.kind === "messageStatus") {
+        updateMessage(event.sessionId, event.messageId, (message) => ({
+          ...message,
+          status: event.status,
+        }))
+        return
+      }
+      if (event.kind === "tool") {
+        updateMessage(event.sessionId, event.messageId, (message) => {
+          const index = message.parts.findIndex(
+            (part) => part.kind === "tool" && part.toolCallId === event.part.toolCallId,
+          )
+          if (index < 0) return { ...message, parts: [...message.parts, event.part] }
+          const parts = [...message.parts]
+          parts[index] = {
+            ...(parts[index] as Extract<ChatPart, { kind: "tool" }>),
+            ...event.part,
+          }
+          return { ...message, parts }
+        })
+        if (
+          event.part.status === "completed" &&
+          (event.part.name === "edit" || event.part.name === "write") &&
+          event.part.locations?.length
+        ) {
+          void hostRef.current
+            ?.refreshProjectFiles(event.part.locations.map((location) => location.path))
+            .catch(() => {})
+        }
+        return
+      }
+      if (event.kind === "turnComplete") {
+        updateTabs((current) =>
+          current.map((tab) =>
+            tab.summary.sessionId === event.sessionId
+              ? {
+                  ...tab,
+                  summary: {
+                    ...tab.summary,
+                    state: event.ok ? "completed" : event.aborted ? "idle" : "error",
+                    unread: event.sessionId !== activeIdRef.current,
+                  },
+                }
+              : tab,
+          ),
+        )
+        if (event.error && !event.aborted) setError(event.error)
+        return
+      }
+      if (event.kind === "sessionReleased") {
+        updateTabs((current) =>
+          current.filter((tab) => tab.summary.sessionId !== event.sessionId),
+        )
+        return
+      }
+      if (event.kind === "disconnected") setError(event.message)
+    },
+    [updateMessage, updateMessages, updateTabs],
+  )
+
+  const applyBatch = useCallback(
+    (batch: ChatEventBatch) => {
+      for (const event of batch.events) applyEvent(event)
+    },
+    [applyEvent],
+  )
+
+  const loadModelPreferences = useCallback(async (ui2Host: Ui2Host) => {
+    try {
+      const preferences = (await ui2Host.getIdeSettings()).modelPreferences
+      setModelPreferences({
+        recentModelSpecs: [...(preferences?.recentModelSpecs ?? [])],
+        pinnedModelSpecs: [...(preferences?.pinnedModelSpecs ?? [])],
+      })
+    } catch (preferencesError) {
+      log.warn("model preferences unavailable", preferencesError)
+    }
+  }, [])
+
+  const loadModels = useCallback(
+    async (sessionId: string) => {
+      const chatAgent = agentRef.current
+      if (!chatAgent || modelsRef.current[sessionId]) return
+      try {
+        const options = await chatAgent.listChatModels(sessionId)
+        updateModels((current) => ({ ...current, [sessionId]: options }))
+      } catch (modelError) {
+        log.debug("model list unavailable", modelError)
+      }
+    },
+    [updateModels],
+  )
+
+  const persistWorkspace = useCallback(async () => {
+    const chatHost = hostRef.current
+    if (!chatHost || offlineRef.current) return
+    try {
+      await chatHost.saveChatWorkspaceState({
+        sessionIds: tabsRef.current
+          .map((tab) => tab.summary.sessionId)
+          .slice(0, MAX_OPEN_TABS),
+        activeSessionId: activeIdRef.current,
+      })
+    } catch (persistError) {
+      log.debug("workspace state save failed", persistError)
+    }
+  }, [])
+
+  const bootstrap = useCallback(
+    async (ui2Host: Ui2Host, isDisposed: () => boolean) => {
+      try {
+        await ui2Host.getAppVersion()
+        await ui2Host.chatUiReady()
+        projectRootRef.current = await ui2Host.getProjectRoot()
+        const [workspace] = await Promise.all([
+          ui2Host.getChatWorkspaceState(),
+          loadModelPreferences(ui2Host),
+        ])
+        if (isDisposed()) return
+        setHostStatus("connected")
+
+        const connection = connectAgentRpc({
+          ui2Host,
+          isStopped: isDisposed,
+          onReady(proxy) {
+            agentRef.current = proxy
+          },
+          onStatus(status) {
+            setAgentStatus(status)
+          },
+          onChatEvents(batch) {
+            applyBatch(batch)
+          },
+          requestToolPermission(request) {
+            return new Promise((resolve) => {
+              updatePendingPermission({ request, resolve })
+            })
+          },
+          requestUserInput(request) {
+            return new Promise((resolve) => {
+              setInputReply("")
+              updatePendingInput({ request, resolve })
+            })
+          },
+        })
+        stopAgentRef.current = connection.stop
+
+        const deadline = Date.now() + 30_000
+        while (!agentRef.current && Date.now() < deadline && !isDisposed()) {
+          await new Promise((resolve) => setTimeout(resolve, 50))
+        }
+        if (!agentRef.current) throw new Error(t("chat.agentTimeout"))
+
+        const restored: ChatTab[] = []
+        for (const sessionId of (workspace.sessionIds ?? []).slice(0, MAX_OPEN_TABS)) {
+          try {
+            restored.push(
+              await agentRef.current.openChatSession({
+                projectRoot: projectRootRef.current,
+                sessionId,
+              }),
+            )
+          } catch (restoreError) {
+            log.warn("chat session restore failed", sessionId, restoreError)
+          }
+        }
+        if (restored.length === 0) {
+          const recentSessions = await agentRef.current.listRecentChatSessions({
+            projectRoot: projectRootRef.current,
+          })
+          setRecent(recentSessions)
+          for (const recentSession of recentSessions) {
+            try {
+              restored.push(
+                await agentRef.current.openChatSession({
+                  projectRoot: projectRootRef.current,
+                  sessionId: recentSession.sessionId,
+                  sessionFile: recentSession.sessionFile,
+                }),
+              )
+              break
+            } catch (restoreError) {
+              log.warn(
+                "recent chat session restore failed",
+                recentSession.sessionId,
+                restoreError,
+              )
+            }
+          }
+          if (restored.length === 0) {
+            restored.push(
+              await agentRef.current.createChatSession({
+                projectRoot: projectRootRef.current,
+              }),
+            )
+          }
+        }
+        if (isDisposed()) return
+        updateTabs(restored)
+        const savedActiveId = workspace.activeSessionId ?? ""
+        const restoredActive = restored.some(
+          (tab) => tab.summary.sessionId === savedActiveId,
+        )
+          ? savedActiveId
+          : restored[0]!.summary.sessionId
+        updateActiveId(restoredActive)
+        await loadModels(restoredActive)
+        void persistWorkspace()
+      } catch (bootstrapError) {
+        if (isDisposed()) return
+        const message = errorText(bootstrapError)
+        log.error("chat bootstrap failed", message)
+        setError(message)
+        setHostStatus("error")
+      }
+    },
+    [
+      applyBatch,
+      loadModelPreferences,
+      loadModels,
+      persistWorkspace,
+      t,
+      updateActiveId,
+      updatePendingInput,
+      updatePendingPermission,
+      updateTabs,
+    ],
+  )
+
+  useEffect(() => {
+    let disposed = false
     const rpc = createUiRpc({
       setStatus(message) {
         setHostStatus(message)
@@ -325,265 +672,52 @@ export function App() {
     })
 
     if (!rpc) {
-      setOffline(true)
+      updateOffline(true)
       setHostStatus("browser preview")
       setAgentStatus("unavailable")
       const demo = demoTab()
-      setTabs([demo])
-      setActiveId(demo.summary.sessionId)
-      scrollToBottom()
-      return
+      updateTabs([demo])
+      updateActiveId(demo.summary.sessionId)
+    } else {
+      hostRef.current = rpc.ui2Host
+      peerRef.current = rpc.peer
+      unbindConsoleRef.current = bindConsoleToHost(rpc.ui2Host)
+      void bootstrap(rpc.ui2Host, () => disposed)
     }
 
-    host = rpc.ui2Host
-    peer = rpc.peer
-    unbindConsole = bindConsoleToHost(rpc.ui2Host)
-    void bootstrap(rpc.ui2Host)
-  })
-
-  const bootstrap = async (ui2Host: Ui2Host) => {
-    try {
-      await ui2Host.getAppVersion()
-      await ui2Host.chatUiReady()
-      projectRoot = await ui2Host.getProjectRoot()
-      const [workspace] = await Promise.all([
-        ui2Host.getChatWorkspaceState(),
-        loadModelPreferences(ui2Host),
-      ])
-      if (cancelled) return
-      setHostStatus("connected")
-
-      const connection = connectAgentRpc({
-        ui2Host,
-        isStopped: () => cancelled,
-        onReady(proxy) {
-          currentAgentProxy = proxy
-          agent = proxy
-        },
-        onStatus(status) {
-          setAgentStatus(status)
-        },
-        onChatEvents(batch) {
-          applyBatch(batch)
-        },
-        requestToolPermission(request) {
-          return new Promise((resolve) => {
-            setPendingPermission({ request, resolve })
-          })
-        },
-        requestUserInput(request) {
-          return new Promise((resolve) => {
-            setInputReply("")
-            setPendingInput({ request, resolve })
-          })
-        },
-      })
-      stopAgent = connection.stop
-
-      await waitForAgent()
-      const restored: ChatTab[] = []
-      for (const sessionId of (workspace.sessionIds ?? []).slice(0, MAX_OPEN_TABS)) {
-        try {
-          restored.push(await agent!.openChatSession({ projectRoot, sessionId }))
-        } catch (restoreError) {
-          log.warn("chat session restore failed", sessionId, restoreError)
-        }
+    return () => {
+      disposed = true
+      stopAgentRef.current?.()
+      stopAgentRef.current = null
+      unbindConsoleRef.current?.()
+      unbindConsoleRef.current = null
+      peerRef.current?.close()
+      peerRef.current = null
+      agentRef.current = null
+      const permission = pendingPermissionRef.current
+      if (permission) {
+        permission.resolve({ requestId: permission.request.requestId, decision: "cancelled" })
+        updatePendingPermission(null)
       }
-      if (restored.length === 0) {
-        const recentSessions = await agent!.listRecentChatSessions({ projectRoot })
-        setRecent(recentSessions)
-        for (const recentSession of recentSessions) {
-          try {
-            restored.push(
-              await agent!.openChatSession({
-                projectRoot,
-                sessionId: recentSession.sessionId,
-                sessionFile: recentSession.sessionFile,
-              }),
-            )
-            break
-          } catch (restoreError) {
-            log.warn("recent chat session restore failed", recentSession.sessionId, restoreError)
-          }
-        }
-        if (restored.length === 0) restored.push(await agent!.createChatSession({ projectRoot }))
+      const input = pendingInputRef.current
+      if (input) {
+        input.resolve({ requestId: input.request.requestId, cancelled: true })
+        updatePendingInput(null)
       }
-      if (cancelled) return
-      setTabs(restored)
-      const savedActiveId = workspace.activeSessionId ?? ""
-      const restoredActive = restored.some((tab) => tab.summary.sessionId === savedActiveId)
-        ? savedActiveId
-        : restored[0]!.summary.sessionId
-      setActiveId(restoredActive)
-      await loadModels(restoredActive)
-      scrollToBottom()
-      void persistWorkspace()
-    } catch (bootstrapError) {
-      const message = bootstrapError instanceof Error ? bootstrapError.message : String(bootstrapError)
-      log.error("chat bootstrap failed", message)
-      setError(message)
-      setHostStatus("error")
     }
-  }
-
-  const waitForAgent = async () => {
-    const deadline = Date.now() + 30_000
-    while (!agent && Date.now() < deadline && !cancelled) {
-      await new Promise((resolve) => setTimeout(resolve, 50))
-      // The connection helper exposes the proxy through its ready callback below.
-      if (agentStatus() === "ready") agent = currentAgentProxy
-    }
-    if (!agent) throw new Error(t("chat.agentTimeout"))
-  }
-
-  let currentAgentProxy: Ui2Agent | null = null
-
-  const loadModelPreferences = async (ui2Host: Ui2Host) => {
-    try {
-      const preferences = (await ui2Host.getIdeSettings()).modelPreferences
-      setModelPreferences({
-        recentModelSpecs: [...(preferences?.recentModelSpecs ?? [])],
-        pinnedModelSpecs: [...(preferences?.pinnedModelSpecs ?? [])],
-      })
-    } catch (preferencesError) {
-      log.warn("model preferences unavailable", preferencesError)
-    }
-  }
-
-  const applyBatch = (batch: ChatEventBatch) => {
-    for (const event of batch.events) applyEvent(event)
-    queueMicrotask(scrollToBottom)
-  }
-
-  const applyEvent = (event: ChatEvent) => {
-    if (event.kind === "snapshot") {
-      upsertTab(event.snapshot)
-      return
-    }
-    if (event.kind === "summary") {
-      setTabs((current) =>
-        current.map((tab) =>
-          tab.summary.sessionId === event.summary.sessionId
-            ? {
-                ...tab,
-                summary: {
-                  ...tab.summary,
-                  ...event.summary,
-                  unread: event.summary.sessionId === activeId() ? false : event.summary.unread,
-                },
-              }
-            : tab,
-        ),
-      )
-      return
-    }
-    if (event.kind === "message") {
-      updateMessages(event.sessionId, (messages) => {
-        const duplicate = messages.find((message) => message.id === event.message.id)
-        if (duplicate) return messages.map((message) => (message.id === event.message.id ? event.message : message))
-        return [...messages, event.message]
-      })
-      return
-    }
-    if (event.kind === "partDelta") {
-      updateMessage(event.sessionId, event.messageId, (message) => {
-        const index = message.parts.findIndex((part) => part.kind === event.partKind)
-        if (index < 0) {
-          return { ...message, parts: [...message.parts, { kind: event.partKind, text: event.delta }] }
-        }
-        const parts = [...message.parts]
-        const part = parts[index] as Extract<ChatPart, { kind: "text" | "thinking" }>
-        parts[index] = { ...part, text: part.text + event.delta }
-        return { ...message, parts }
-      })
-      return
-    }
-    if (event.kind === "messageStatus") {
-      updateMessage(event.sessionId, event.messageId, (message) => ({ ...message, status: event.status }))
-      return
-    }
-    if (event.kind === "tool") {
-      updateMessage(event.sessionId, event.messageId, (message) => {
-        const index = message.parts.findIndex(
-          (part) => part.kind === "tool" && part.toolCallId === event.part.toolCallId,
-        )
-        if (index < 0) return { ...message, parts: [...message.parts, event.part] }
-        const parts = [...message.parts]
-        parts[index] = { ...(parts[index] as Extract<ChatPart, { kind: "tool" }>), ...event.part }
-        return { ...message, parts }
-      })
-      if (
-        event.part.status === "completed" &&
-        (event.part.name === "edit" || event.part.name === "write") &&
-        event.part.locations?.length
-      ) {
-        void host?.refreshProjectFiles(event.part.locations.map((location) => location.path)).catch(() => {})
-      }
-      return
-    }
-    if (event.kind === "turnComplete") {
-      setTabs((current) =>
-        current.map((tab) =>
-          tab.summary.sessionId === event.sessionId
-            ? {
-                ...tab,
-                summary: {
-                  ...tab.summary,
-                  state: event.ok ? "completed" : event.aborted ? "idle" : "error",
-                  unread: event.sessionId !== activeId(),
-                },
-              }
-            : tab,
-        ),
-      )
-      if (event.error && !event.aborted) setError(event.error)
-      return
-    }
-    if (event.kind === "sessionReleased") {
-      setTabs((current) => current.filter((tab) => tab.summary.sessionId !== event.sessionId))
-      return
-    }
-    if (event.kind === "disconnected") setError(event.message)
-  }
-
-  const upsertTab = (snapshot: ChatTab) => {
-    setTabs((current) => {
-      const index = current.findIndex((tab) => tab.summary.sessionId === snapshot.summary.sessionId)
-      if (index < 0) return [...current, snapshot]
-      return current.map((tab, tabIndex) => (tabIndex === index ? snapshot : tab))
-    })
-  }
-
-  const updateMessages = (sessionId: string, update: (messages: ChatMessage[]) => ChatMessage[]) => {
-    setTabs((current) =>
-      current.map((tab) =>
-        tab.summary.sessionId === sessionId ? { ...tab, messages: update(tab.messages) } : tab,
-      ),
-    )
-  }
-
-  const updateMessage = (sessionId: string, messageId: string, update: (message: ChatMessage) => ChatMessage) => {
-    updateMessages(sessionId, (messages) => {
-      const exists = messages.some((message) => message.id === messageId)
-      const source = exists
-        ? messages
-        : [
-            ...messages,
-            {
-              id: messageId,
-              role: "assistant" as const,
-              parts: [],
-              createdAt: Date.now(),
-              status: "streaming" as const,
-            },
-          ]
-      return source.map((message) => (message.id === messageId ? update(message) : message))
-    })
-  }
+  }, [
+    appendContexts,
+    bootstrap,
+    updateActiveId,
+    updateOffline,
+    updatePendingInput,
+    updatePendingPermission,
+    updateTabs,
+  ])
 
   const activate = async (sessionId: string) => {
-    setActiveId(sessionId)
-    setTabs((current) =>
+    updateActiveId(sessionId)
+    updateTabs((current) =>
       current.map((tab) =>
         tab.summary.sessionId === sessionId
           ? { ...tab, summary: { ...tab.summary, unread: false } }
@@ -591,30 +725,19 @@ export function App() {
       ),
     )
     await persistWorkspace()
-    if (agent && !offline()) {
-      void agent.markChatSessionRead(sessionId).catch(() => {})
+    if (agentRef.current && !offlineRef.current) {
+      void agentRef.current.markChatSessionRead(sessionId).catch(() => {})
       await loadModels(sessionId)
-    }
-    scrollToBottom()
-  }
-
-  const loadModels = async (sessionId: string) => {
-    if (!agent || models()[sessionId]) return
-    try {
-      const options = await agent.listChatModels(sessionId)
-      setModels((current) => ({ ...current, [sessionId]: options }))
-    } catch (modelError) {
-      log.debug("model list unavailable", modelError)
     }
   }
 
   const newSession = async () => {
     setRecentOpen(false)
-    if (tabs().length >= MAX_OPEN_TABS) {
+    if (tabsRef.current.length >= MAX_OPEN_TABS) {
       setError(t("chat.maxSessions"))
       return
     }
-    if (offline()) {
+    if (offlineRef.current) {
       const id = `demo-${Date.now()}`
       const tab: ChatTab = {
         summary: {
@@ -627,36 +750,46 @@ export function App() {
         },
         messages: [],
       }
-      setTabs((current) => [...current, tab])
-      setActiveId(id)
+      updateTabs((current) => [...current, tab])
+      updateActiveId(id)
       return
     }
-    if (!agent) return
+    if (!agentRef.current) return
     try {
-      const snapshot = await agent.createChatSession({ projectRoot })
-      setTabs((current) => [...current, snapshot])
+      const snapshot = await agentRef.current.createChatSession({
+        projectRoot: projectRootRef.current,
+      })
+      updateTabs((current) => [...current, snapshot])
       await activate(snapshot.summary.sessionId)
     } catch (createError) {
       setError(errorText(createError))
     }
   }
 
-  const closeSession = async (sessionId: string, event: MouseEvent) => {
+  const closeSession = async (sessionId: string, event: ReactMouseEvent) => {
     event.stopPropagation()
-    const tab = tabs().find((item) => item.summary.sessionId === sessionId)
+    const tab = tabsRef.current.find((item) => item.summary.sessionId === sessionId)
     if (!tab) return
-    const running = ["running", "waiting_permission", "waiting_input"].includes(tab.summary.state)
+    const running = ["running", "waiting_permission", "waiting_input"].includes(
+      tab.summary.state,
+    )
     if (running && !window.confirm(t("chat.closeRunning"))) return
     try {
-      if (running && agent) await agent.abortChatTurn(sessionId)
-      if (agent && !offline()) await agent.releaseChatSession(sessionId)
-      let nextTabs = tabs().filter((item) => item.summary.sessionId !== sessionId)
-      setTabs(nextTabs)
+      if (running && agentRef.current) await agentRef.current.abortChatTurn(sessionId)
+      if (agentRef.current && !offlineRef.current) {
+        await agentRef.current.releaseChatSession(sessionId)
+      }
+      let nextTabs = tabsRef.current.filter(
+        (item) => item.summary.sessionId !== sessionId,
+      )
+      updateTabs(nextTabs)
       if (nextTabs.length === 0) {
         await newSession()
-        nextTabs = tabs()
+        nextTabs = tabsRef.current
       }
-      if (activeId() === sessionId && nextTabs[0]) await activate(nextTabs[0].summary.sessionId)
+      if (activeIdRef.current === sessionId && nextTabs[0]) {
+        await activate(nextTabs[0].summary.sessionId)
+      }
       void persistWorkspace()
     } catch (closeError) {
       setError(errorText(closeError))
@@ -664,10 +797,15 @@ export function App() {
   }
 
   const refreshRecent = async () => {
-    setRecentOpen((open) => !open)
-    if (!recentOpen() || !agent || offline()) return
+    const open = !recentOpen
+    setRecentOpen(open)
+    if (!open || !agentRef.current || offlineRef.current) return
     try {
-      setRecent(await agent.listRecentChatSessions({ projectRoot }))
+      setRecent(
+        await agentRef.current.listRecentChatSessions({
+          projectRoot: projectRootRef.current,
+        }),
+      )
     } catch (recentError) {
       setError(errorText(recentError))
     }
@@ -675,122 +813,115 @@ export function App() {
 
   const openRecent = async (session: RecentChatSession) => {
     setRecentOpen(false)
-    const existing = tabs().find((tab) => tab.summary.sessionId === session.sessionId)
+    const existing = tabsRef.current.find(
+      (tab) => tab.summary.sessionId === session.sessionId,
+    )
     if (existing) {
       await activate(existing.summary.sessionId)
       return
     }
-    if (tabs().length >= MAX_OPEN_TABS || !agent) {
+    if (tabsRef.current.length >= MAX_OPEN_TABS || !agentRef.current) {
       setError(t("chat.closeSessionFirst"))
       return
     }
     try {
-      const snapshot = await agent.openChatSession({
-        projectRoot,
+      const snapshot = await agentRef.current.openChatSession({
+        projectRoot: projectRootRef.current,
         sessionId: session.sessionId,
         sessionFile: session.sessionFile,
       })
-      setTabs((current) => [...current, snapshot])
+      updateTabs((current) => [...current, snapshot])
       await activate(snapshot.summary.sessionId)
     } catch (openError) {
       setError(errorText(openError))
     }
   }
 
-  const sendMessage = async () => {
-    const sessionId = activeId()
-    const text = activeDraft().trim()
-    if (!sessionId || !text || isBusy() || isQueued()) return
-    if (offline()) {
-      updateMessages(sessionId, (messages) => [
-        ...messages,
-        { id: `local-${Date.now()}`, role: "user", parts: [{ kind: "text", text }], createdAt: Date.now(), status: "complete" },
-      ])
-      setDraft(sessionId, "")
+  const sendMessage = async (sessionId: string, text: string) => {
+    const trimmed = text.trim()
+    const tab = tabsRef.current.find((item) => item.summary.sessionId === sessionId)
+    if (!sessionId || !trimmed || !tab) return
+    if (["running", "waiting_permission", "waiting_input", "queued"].includes(tab.summary.state)) {
       return
     }
-    if (!agent) return
-    const clientMessageId = crypto.randomUUID()
-    setDraft(sessionId, "")
+    if (!offlineRef.current && !agentRef.current) return
+    setDrafts((current) => ({ ...current, [sessionId]: "" }))
+    if (offlineRef.current) {
+      updateMessages(sessionId, (messages) => [
+        ...messages,
+        {
+          id: `local-${Date.now()}`,
+          role: "user",
+          parts: [{ kind: "text", text: trimmed }],
+          createdAt: Date.now(),
+          status: "complete",
+        },
+      ])
+      return
+    }
+    if (!agentRef.current) return
     setError(null)
     try {
-      await agent.sendChatMessage({
+      await agentRef.current.sendChatMessage({
         sessionId,
-        text,
-        contexts: activeContexts(),
-        clientMessageId,
+        text: trimmed,
+        contexts: contextsRef.current[sessionId] ?? [],
+        clientMessageId: crypto.randomUUID(),
       })
-      setContexts((current) => ({ ...current, [sessionId]: [] }))
+      updateContexts((current) => ({ ...current, [sessionId]: [] }))
     } catch (sendError) {
-      setDraft(sessionId, text)
+      setDrafts((current) => ({ ...current, [sessionId]: text }))
       setError(errorText(sendError))
     }
   }
 
-  const stopOrCancel = async () => {
-    if (!agent || offline()) return
+  const stopOrCancel = async (sessionId = activeIdRef.current) => {
+    if (!agentRef.current || offlineRef.current || !sessionId) return
+    const tab = tabsRef.current.find((item) => item.summary.sessionId === sessionId)
     try {
-      if (isQueued()) await agent.cancelQueuedTurn(activeId())
-      else await agent.abortChatTurn(activeId())
+      if (tab?.summary.state === "queued") {
+        await agentRef.current.cancelQueuedTurn(sessionId)
+      } else {
+        await agentRef.current.abortChatTurn(sessionId)
+      }
     } catch (abortError) {
       setError(errorText(abortError))
     }
   }
 
-  const setDraft = (sessionId: string, value: string) => {
-    setDrafts((current) => ({ ...current, [sessionId]: value }))
-  }
-
-  const appendFileContexts = (sessionId: string, relativePaths: string[]) => {
-    appendContexts(
-      sessionId,
-      relativePaths.map((relativePath) => ({
-        id: crypto.randomUUID(),
-        kind: "file",
-        path: relativePath,
-      })),
-    )
-  }
-
-  const appendContexts = (sessionId: string, incoming: ChatContextItem[]) => {
-    if (!sessionId || incoming.length === 0) return
-    setContexts((current) => {
-      const existing = current[sessionId] ?? []
-      const keys = new Set(existing.map((item) => `${item.kind}:${item.path}:${item.startLine ?? ""}:${item.endLine ?? ""}`))
-      const added = incoming.filter((item) => {
-        const key = `${item.kind}:${item.path}:${item.startLine ?? ""}:${item.endLine ?? ""}`
-        if (!item.path || keys.has(key)) return false
-        keys.add(key)
-        return true
-      })
-      return { ...current, [sessionId]: [...existing, ...added] }
-    })
-  }
-
   const chooseContextFiles = async () => {
-    if (!host || offline() || !activeId()) return
+    const sessionId = activeIdRef.current
+    if (!hostRef.current || offlineRef.current || !sessionId) return
     try {
-      appendFileContexts(activeId(), await host.selectChatContextFiles())
+      const relativePaths = await hostRef.current.selectChatContextFiles()
+      appendContexts(
+        sessionId,
+        relativePaths.map((relativePath) => ({
+          id: crypto.randomUUID(),
+          kind: "file",
+          path: relativePath,
+        })),
+      )
     } catch (chooseError) {
       setError(errorText(chooseError))
     }
   }
 
   const setModel = async (modelId: string) => {
-    if (!agent || offline() || !activeId()) return
+    if (!agentRef.current || offlineRef.current || !activeIdRef.current) return
     try {
-      await agent.setChatModel(activeId(), modelId)
+      await agentRef.current.setChatModel(activeIdRef.current, modelId)
     } catch (modelError) {
       setError(errorText(modelError))
     }
   }
 
   const persistModelPreferences = (preferences: ModelPreferencesDto) => {
-    if (!host || offline()) return
-    const targetHost = host
-    modelPreferencesSave = modelPreferencesSave.then(async () => {
+    if (!hostRef.current || offlineRef.current) return
+    const chatHost = hostRef.current
+    modelPreferencesSaveRef.current = modelPreferencesSaveRef.current.then(async () => {
       try {
-        await targetHost.saveIdeSettings({ modelPreferences: preferences })
+        await chatHost.saveIdeSettings({ modelPreferences: preferences })
       } catch (preferencesError) {
         log.warn("model preferences save failed", preferencesError)
         setError(errorText(preferencesError))
@@ -805,40 +936,23 @@ export function App() {
     }
     setModelPreferences(preferences)
     persistModelPreferences(preferences)
-    if (spec && spec !== activeTab()?.summary.modelId) void setModel(spec)
+    if (spec && spec !== activeTab?.summary.modelId) void setModel(spec)
   }
 
   const setThinking = async (level: string) => {
-    if (!agent || offline() || !activeId()) return
+    if (!agentRef.current || offlineRef.current || !activeIdRef.current) return
     try {
-      await agent.setChatThinkingLevel(activeId(), level)
+      await agentRef.current.setChatThinkingLevel(activeIdRef.current, level)
     } catch (thinkingError) {
       setError(errorText(thinkingError))
     }
   }
 
-  const persistWorkspace = async () => {
-    if (!host || offline()) return
-    try {
-      await host.saveChatWorkspaceState({
-        sessionIds: tabs().map((tab) => tab.summary.sessionId).slice(0, MAX_OPEN_TABS),
-        activeSessionId: activeId(),
-      })
-    } catch (persistError) {
-      log.debug("workspace state save failed", persistError)
-    }
-  }
-
-  const scrollToBottom = () => {
-    requestAnimationFrame(() => {
-      if (conversationElement) conversationElement.scrollTop = conversationElement.scrollHeight
-    })
-  }
-
   const reorderTabs = (targetId: string) => {
-    if (!dragSessionId || dragSessionId === targetId) return
-    setTabs((current) => {
-      const from = current.findIndex((tab) => tab.summary.sessionId === dragSessionId)
+    const draggedId = dragSessionIdRef.current
+    if (!draggedId || draggedId === targetId) return
+    updateTabs((current) => {
+      const from = current.findIndex((tab) => tab.summary.sessionId === draggedId)
       const to = current.findIndex((tab) => tab.summary.sessionId === targetId)
       if (from < 0 || to < 0) return current
       const reordered = [...current]
@@ -846,461 +960,683 @@ export function App() {
       reordered.splice(to, 0, moved!)
       return reordered
     })
-    dragSessionId = null
+    dragSessionIdRef.current = null
     void persistWorkspace()
   }
 
   const respondPermission = (decision: ToolPermissionDecision) => {
-    const pending = pendingPermission()
+    const pending = pendingPermissionRef.current
     if (!pending) return
-    setPendingPermission(null)
+    updatePendingPermission(null)
     pending.resolve({ requestId: pending.request.requestId, decision })
   }
 
   const respondInput = (cancelInput = false) => {
-    const pending = pendingInput()
+    const pending = pendingInputRef.current
     if (!pending) return
-    setPendingInput(null)
+    updatePendingInput(null)
     pending.resolve({
       requestId: pending.request.requestId,
-      text: cancelInput ? undefined : inputReply(),
+      text: cancelInput ? undefined : inputReply,
       cancelled: cancelInput,
     })
     setInputReply("")
   }
 
-  const onComposerKeyDown: JSX.EventHandler<HTMLTextAreaElement, KeyboardEvent> = (event) => {
-    if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
-      event.preventDefault()
-      void sendMessage()
-    }
-  }
+  const openLocation = useCallback((path: string, line?: number) => {
+    if (!offlineRef.current) void hostRef.current?.openProjectFile(path, line ?? null)
+  }, [])
 
-  const onMarkdownClick: JSX.EventHandler<HTMLElement, MouseEvent> = (event) => {
+  const showDiff = useCallback((path: string) => {
+    if (!offlineRef.current) void hostRef.current?.showProjectDiff(path)
+  }, [])
+
+  const onMarkdownClick = (event: ReactMouseEvent<HTMLElement>) => {
     const anchor = (event.target as HTMLElement).closest("a")
-    if (!anchor) return
-    const href = anchor.getAttribute("href")
+    const href = anchor?.getAttribute("href")
     if (!href) return
     event.preventDefault()
-    if (/^https?:\/\//i.test(href)) void host?.openExternalUrl(href)
-  }
-
-  const openLocation = (path: string, line?: number) => {
-    if (!offline()) void host?.openProjectFile(path, line ?? null)
-  }
-
-  const showDiff = (path: string) => {
-    if (!offline()) void host?.showProjectDiff(path)
+    if (/^https?:\/\//i.test(href)) void hostRef.current?.openExternalUrl(href)
   }
 
   return (
-    <main class="chat-app">
-      <header class="session-bar">
-        <div class="session-tabs" role="tablist">
-          <For each={tabs()}>
-            {(tab) => (
-              <button
-                class="session-tab"
-                classList={{ active: tab.summary.sessionId === activeId() }}
-                role="tab"
-                title={tab.summary.title}
-                draggable
-                onDragStart={() => {
-                  dragSessionId = tab.summary.sessionId
-                }}
-                onDragOver={(event) => event.preventDefault()}
-                onDrop={() => reorderTabs(tab.summary.sessionId)}
-                onClick={() => void activate(tab.summary.sessionId)}
+    <main className="chat-app">
+      <header className="session-bar">
+        <div className="session-tabs" role="tablist">
+          {tabs.map((tab) => (
+            <button
+              key={tab.summary.sessionId}
+              className={`session-tab ${tab.summary.sessionId === activeId ? "active" : ""}`}
+              role="tab"
+              aria-selected={tab.summary.sessionId === activeId}
+              title={tab.summary.title}
+              draggable
+              onDragStart={() => {
+                dragSessionIdRef.current = tab.summary.sessionId
+              }}
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={() => reorderTabs(tab.summary.sessionId)}
+              onClick={() => void activate(tab.summary.sessionId)}
+            >
+              <StatusDot state={tab.summary.state} unread={tab.summary.unread} />
+              <span className="session-title">{tab.summary.title}</span>
+              {tab.summary.queuePosition ? (
+                <span className="queue-badge">{tab.summary.queuePosition}</span>
+              ) : null}
+              <span
+                className="tab-close"
+                role="button"
+                title={t("chat.closeSession")}
+                onClick={(event) => void closeSession(tab.summary.sessionId, event)}
               >
-                <StatusDot state={tab.summary.state} unread={tab.summary.unread} />
-                <span class="session-title">{tab.summary.title}</span>
-                <Show when={tab.summary.queuePosition}>
-                  {(position) => <span class="queue-badge">{position()}</span>}
-                </Show>
-                <span
-                  class="tab-close"
-                  role="button"
-                  title={t("chat.closeSession")}
-                  onClick={(event) => void closeSession(tab.summary.sessionId, event)}
-                >
-                  <X size={13} stroke-width={1.8} />
-                </span>
-              </button>
-            )}
-          </For>
+                <X size={13} strokeWidth={1.8} />
+              </span>
+            </button>
+          ))}
         </div>
-        <div class="session-actions">
-          <button class="icon-button" title={t("chat.newSession")} onClick={() => void newSession()}>
+        <div className="session-actions">
+          <button
+            className="icon-button"
+            title={t("chat.newSession")}
+            onClick={() => void newSession()}
+          >
             <Plus size={17} />
           </button>
-          <button class="icon-button" title={t("chat.recentSessions")} onClick={() => void refreshRecent()}>
+          <button
+            className="icon-button"
+            title={t("chat.recentSessions")}
+            onClick={() => void refreshRecent()}
+          >
             <History size={16} />
           </button>
           <button
-            class="icon-button"
+            className="icon-button"
             title={t("chat.openSettings")}
-            onClick={() => void host?.openIdeSettings()}
+            onClick={() => void hostRef.current?.openIdeSettings()}
           >
             <Settings2 size={16} />
           </button>
-          <span class="connection-dot" classList={{ ready: agentStatus() === "ready", offline: offline() }} title={`${hostStatus()} / ${agentStatus()}`} />
+          <span
+            className={`connection-dot ${agentStatus === "ready" ? "ready" : ""} ${offline ? "offline" : ""}`}
+            title={`${hostStatus} / ${agentStatus}`}
+          />
         </div>
-        <Show when={recentOpen()}>
-          <div class="recent-menu">
-            <div class="recent-menu-title">{t("chat.recentSessions")}</div>
-            <Show when={recent().length > 0} fallback={<div class="empty-menu">{t("chat.noRecent")}</div>}>
-              <For each={recent()}>
-                {(session) => (
-                  <button class="recent-item" onClick={() => void openRecent(session)}>
-                    <MessageSquareText size={14} />
-                    <span>
-                      <strong>{session.title}</strong>
-                      <small>{new Date(session.updatedAt).toLocaleString()}</small>
-                    </span>
-                  </button>
-                )}
-              </For>
-            </Show>
+        {recentOpen ? (
+          <div className="recent-menu">
+            <div className="recent-menu-title">{t("chat.recentSessions")}</div>
+            {recent.length > 0 ? (
+              recent.map((session) => (
+                <button
+                  key={session.sessionId}
+                  className="recent-item"
+                  onClick={() => void openRecent(session)}
+                >
+                  <MessageSquareText size={14} />
+                  <span>
+                    <strong>{session.title}</strong>
+                    <small>{new Date(session.updatedAt).toLocaleString()}</small>
+                  </span>
+                </button>
+              ))
+            ) : (
+              <div className="empty-menu">{t("chat.noRecent")}</div>
+            )}
           </div>
-        </Show>
+        ) : null}
       </header>
 
-      <Show when={pendingPermission() && pendingPermission()!.request.sessionId !== activeId()}>
-        <button class="attention-bar" onClick={() => void activate(pendingPermission()!.request.sessionId)}>
+      {pendingPermission && pendingPermission.request.sessionId !== activeId ? (
+        <button
+          className="attention-bar"
+          onClick={() => void activate(pendingPermission.request.sessionId)}
+        >
           <ShieldCheck size={15} />
           <span>{t("chat.backgroundPermission")}</span>
           <span>{t("common.open")}</span>
         </button>
-      </Show>
-      <Show when={pendingInput() && pendingInput()!.request.sessionId !== activeId()}>
-        <button class="attention-bar" onClick={() => void activate(pendingInput()!.request.sessionId)}>
+      ) : null}
+      {pendingInput && pendingInput.request.sessionId !== activeId ? (
+        <button
+          className="attention-bar"
+          onClick={() => void activate(pendingInput.request.sessionId)}
+        >
           <MessageSquareText size={15} />
           <span>{t("chat.backgroundInput")}</span>
           <span>{t("common.open")}</span>
         </button>
-      </Show>
+      ) : null}
 
-      <section class="conversation" ref={conversationElement} onClick={onMarkdownClick}>
-        <Show
-          when={activeTab()}
-          fallback={
-            <div class="empty-state">
-              <LoaderCircle class="spin" size={22} />
-              <span>{t("chat.loadingSession")}</span>
-            </div>
+      {activeTab ? (
+        <AssistantChat
+          key={activeTab.summary.sessionId}
+          tab={activeTab}
+          draft={activeDraft}
+          contexts={activeContexts}
+          modelOptions={activeModelOptions}
+          modelPreferences={modelPreferences}
+          thinkingOptions={thinkingOptions}
+          busy={isBusy}
+          queued={isQueued}
+          connected={agentStatus === "ready"}
+          offline={offline}
+          error={error}
+          pendingPermission={
+            pendingPermission?.request.sessionId === activeTab.summary.sessionId
+              ? pendingPermission
+              : null
           }
-        >
-          {(tab) => (
-            <div class="message-stream">
-              <Show when={tab().messages.length === 0}>
-                <div class="new-session-state">
-                  <div class="new-session-mark"><Sparkles size={22} /></div>
-                  <h1>{t("chat.startSession")}</h1>
-                  <p>{modelLabel(tab().summary.modelId, t("chat.defaultModel"))}</p>
-                </div>
-              </Show>
-              <For each={tab().messages}>{(message) => <MessageView message={message} openLocation={openLocation} showDiff={showDiff} />}</For>
-
-              <Show when={pendingPermission()?.request.sessionId === tab().summary.sessionId ? pendingPermission() : null}>
-                {(pending) => (
-                  <div class="interaction-card permission-card">
-                    <div class="interaction-heading">
-                      <ShieldCheck size={17} />
-                      <span>{t("chat.toolApproval")}</span>
-                    </div>
-                    <strong>{pending().request.title}</strong>
-                    <Show when={pending().request.command}>
-                      {(command) => <pre class="permission-command">$ {command()}</pre>}
-                    </Show>
-                    <Show when={pending().request.locations?.length}>
-                      <For each={pending().request.locations}>
-                        {(location) => (
-                          <button class="file-link" onClick={() => openLocation(location.path, location.line)}>
-                            <FileCode2 size={13} /> {location.path}
-                          </button>
-                        )}
-                      </For>
-                    </Show>
-                    <div class="permission-actions">
-                      <button class="secondary-button" onClick={() => respondPermission("reject_once")}>{t("common.reject")}</button>
-                      <button class="secondary-button" onClick={() => respondPermission("reject_always")}>{t("chat.alwaysReject")}</button>
-                      <button class="secondary-button" onClick={() => respondPermission("allow_always")}>{t("chat.alwaysAllow")}</button>
-                      <button class="primary-button" onClick={() => respondPermission("allow_once")}>{t("chat.allowOnce")}</button>
-                    </div>
-                  </div>
-                )}
-              </Show>
-
-              <Show when={pendingInput()?.request.sessionId === tab().summary.sessionId ? pendingInput() : null}>
-                {(pending) => (
-                  <div class="interaction-card input-card">
-                    <div class="interaction-heading">
-                      <MessageSquareText size={17} />
-                      <span>{t("chat.agentNeedsInput")}</span>
-                    </div>
-                    <p>{pending().request.prompt}</p>
-                    <textarea
-                      value={inputReply()}
-                      placeholder={pending().request.placeholder}
-                      onInput={(event) => setInputReply(event.currentTarget.value)}
-                    />
-                    <div class="permission-actions">
-                      <button class="secondary-button" onClick={() => respondInput(true)}>{t("common.cancel")}</button>
-                      <button class="primary-button" onClick={() => respondInput(false)}>{t("common.submit")}</button>
-                    </div>
-                  </div>
-                )}
-              </Show>
-              <div />
-            </div>
-          )}
-        </Show>
-      </section>
-
-      <Show when={error()}>
-        {(message) => (
-          <div class="error-banner">
-            <AlertTriangle size={15} />
-            <span>{message()}</span>
-            <button class="icon-button" title={t("common.dismiss")} onClick={() => setError(null)}><X size={14} /></button>
-          </div>
-        )}
-      </Show>
-
-      <footer class="composer-shell">
-        <Show when={activeContexts().length > 0}>
-          <div class="context-list">
-            <For each={activeContexts()}>
-              {(context) => (
-                <span class="context-chip" title={context.path}>
-                  <FileCode2 size={13} />
-                  <span>{context.path}</span>
-                  <button
-                    title={t("chat.removeContext")}
-                    onClick={() =>
-                      setContexts((current) => ({
-                        ...current,
-                        [activeId()]: (current[activeId()] ?? []).filter((item) => item.id !== context.id),
-                      }))
-                    }
-                  >
-                    <X size={12} />
-                  </button>
-                </span>
-              )}
-            </For>
-          </div>
-        </Show>
-        <textarea
-          class="composer-input"
-          value={activeDraft()}
-          placeholder={t("chat.typeMessage")}
-          onInput={(event) => setDraft(activeId(), event.currentTarget.value)}
-          onKeyDown={onComposerKeyDown}
+          pendingInput={
+            pendingInput?.request.sessionId === activeTab.summary.sessionId
+              ? pendingInput
+              : null
+          }
+          inputReply={inputReply}
+          onInputReplyChange={setInputReply}
+          onRespondPermission={respondPermission}
+          onRespondInput={respondInput}
+          onDismissError={() => setError(null)}
+          onDraftChange={(value) =>
+            setDrafts((current) => ({
+              ...current,
+              [activeTab.summary.sessionId]: value,
+            }))
+          }
+          onSend={(text) => sendMessage(activeTab.summary.sessionId, text)}
+          onCancel={() => stopOrCancel(activeTab.summary.sessionId)}
+          onChooseContextFiles={chooseContextFiles}
+          onRemoveContext={(contextId) =>
+            updateContexts((current) => ({
+              ...current,
+              [activeTab.summary.sessionId]: (
+                current[activeTab.summary.sessionId] ?? []
+              ).filter((item) => item.id !== contextId),
+            }))
+          }
+          onModelChange={onChatModelChange}
+          onThinkingChange={setThinking}
+          onOpenLocation={openLocation}
+          onShowDiff={showDiff}
+          onMarkdownClick={onMarkdownClick}
         />
-        <div class="composer-toolbar">
-          <div class="composer-selectors">
-            <button class="toolbar-button" title={t("chat.addFileContext")} disabled={offline()} onClick={() => void chooseContextFiles()}>
+      ) : (
+        <section className="conversation">
+          <div className="empty-state">
+            <LoaderCircle className="spin" size={22} />
+            <span>{t("chat.loadingSession")}</span>
+          </div>
+        </section>
+      )}
+    </main>
+  )
+}
+
+type AssistantChatProps = {
+  tab: ChatTab
+  draft: string
+  contexts: ChatContextItem[]
+  modelOptions: ModelPickerOption[]
+  modelPreferences: ModelPreferencesDto
+  thinkingOptions: ThinkingOption[]
+  busy: boolean
+  queued: boolean
+  connected: boolean
+  offline: boolean
+  error: string | null
+  pendingPermission: PendingPermission | null
+  pendingInput: PendingInput | null
+  inputReply: string
+  onInputReplyChange: (value: string) => void
+  onRespondPermission: (decision: ToolPermissionDecision) => void
+  onRespondInput: (cancelled?: boolean) => void
+  onDismissError: () => void
+  onDraftChange: (value: string) => void
+  onSend: (text: string) => Promise<void>
+  onCancel: () => Promise<void>
+  onChooseContextFiles: () => Promise<void>
+  onRemoveContext: (contextId: string) => void
+  onModelChange: (spec: string, pinned: string[], recent: string[]) => void
+  onThinkingChange: (level: string) => Promise<void>
+  onOpenLocation: (path: string, line?: number) => void
+  onShowDiff: (path: string) => void
+  onMarkdownClick: (event: ReactMouseEvent<HTMLElement>) => void
+}
+
+function AssistantChat(props: AssistantChatProps) {
+  const t = useT()
+  const running = props.busy || props.queued
+  const runtime = useExternalStoreRuntime<ChatMessage>({
+    messages: props.tab.messages,
+    convertMessage: convertChatMessage,
+    isRunning: running,
+    isSendDisabled: running || (!props.offline && !props.connected),
+    onNew: async (message: AppendMessage) => {
+      const text = message.content
+        .filter((part) => part.type === "text")
+        .map((part) => part.text)
+        .join("")
+      await props.onSend(text)
+    },
+    onCancel: props.onCancel,
+  })
+
+  useEffect(() => {
+    if (runtime.thread.composer.getState().text !== props.draft) {
+      runtime.thread.composer.setText(props.draft)
+    }
+  }, [props.draft, runtime])
+
+  return (
+    <AssistantRuntimeProvider runtime={runtime}>
+      <ThreadPrimitive.Root className="assistant-thread">
+        <ThreadPrimitive.Viewport
+          className="conversation assistant-viewport"
+          autoScroll
+          onClick={props.onMarkdownClick}
+        >
+          <div className="message-stream">
+            <ThreadPrimitive.Empty>
+              <div className="new-session-state">
+                <div className="new-session-mark">
+                  <Sparkles size={22} />
+                </div>
+                <h1>{t("chat.startSession")}</h1>
+                <p>{modelLabel(props.tab.summary.modelId, t("chat.defaultModel"))}</p>
+              </div>
+            </ThreadPrimitive.Empty>
+            <ThreadPrimitive.Messages
+              components={{
+                Message: () => (
+                  <ChatMessageView
+                    onOpenLocation={props.onOpenLocation}
+                    onShowDiff={props.onShowDiff}
+                  />
+                ),
+              }}
+            />
+
+            {props.pendingPermission ? (
+              <PermissionCard
+                pending={props.pendingPermission}
+                onRespond={props.onRespondPermission}
+                onOpenLocation={props.onOpenLocation}
+              />
+            ) : null}
+            {props.pendingInput ? (
+              <InputCard
+                pending={props.pendingInput}
+                value={props.inputReply}
+                onChange={props.onInputReplyChange}
+                onRespond={props.onRespondInput}
+              />
+            ) : null}
+          </div>
+        </ThreadPrimitive.Viewport>
+      </ThreadPrimitive.Root>
+
+      {props.error ? (
+        <div className="error-banner">
+          <AlertTriangle size={15} />
+          <span>{props.error}</span>
+          <button
+            className="icon-button"
+            title={t("common.dismiss")}
+            onClick={props.onDismissError}
+          >
+            <X size={14} />
+          </button>
+        </div>
+      ) : null}
+
+      <ComposerPrimitive.Root className="composer-shell">
+        {props.contexts.length > 0 ? (
+          <div className="context-list">
+            {props.contexts.map((context) => (
+              <span key={context.id} className="context-chip" title={context.path}>
+                <FileCode2 size={13} />
+                <span>{context.path}</span>
+                <button
+                  type="button"
+                  title={t("chat.removeContext")}
+                  onClick={() => props.onRemoveContext(context.id)}
+                >
+                  <X size={12} />
+                </button>
+              </span>
+            ))}
+          </div>
+        ) : null}
+        <ComposerPrimitive.Input
+          className="composer-input"
+          placeholder={t("chat.typeMessage")}
+          submitMode="enter"
+          onChange={(event) => props.onDraftChange(event.currentTarget.value)}
+        />
+        <div className="composer-toolbar">
+          <div className="composer-selectors">
+            <button
+              type="button"
+              className="toolbar-button"
+              title={t("chat.addFileContext")}
+              disabled={props.offline}
+              onClick={() => void props.onChooseContextFiles()}
+            >
               <Paperclip size={15} />
             </button>
             <ModelPicker
-              options={activeModelOptions()}
-              value={activeTab()?.summary.modelId ?? ""}
-              pinnedSpecs={modelPreferences().pinnedModelSpecs ?? []}
-              recentSpecs={modelPreferences().recentModelSpecs ?? []}
+              options={props.modelOptions}
+              value={props.tab.summary.modelId ?? ""}
+              pinnedSpecs={props.modelPreferences.pinnedModelSpecs ?? []}
+              recentSpecs={props.modelPreferences.recentModelSpecs ?? []}
               variant="compact"
               placeholder={t("chat.defaultModel")}
               ariaLabel={t("chat.model")}
-              disabled={isBusy() || isQueued() || offline()}
-              onChange={onChatModelChange}
+              disabled={running || props.offline}
+              onChange={props.onModelChange}
             />
-            <Select<ThinkingOption>
-              options={thinkingOptions()}
-              optionValue="value"
-              optionTextValue="label"
-              value={selectedThinking()}
-              disabled={isBusy() || isQueued() || offline()}
-              placement="top-start"
-              gutter={4}
-              fitViewport
-              overflowPadding={8}
-              onChange={(option) => option && void setThinking(option.value)}
-              itemComponent={(props) => (
-                <SelectItem item={props.item} class="composer-select-item">
-                  {props.item.rawValue.label}
-                </SelectItem>
-              )}
+            <select
+              className="composer-select-trigger composer-thinking-select"
+              aria-label={t("chat.thinkingLevel")}
+              value={props.tab.summary.thinkingLevel ?? "off"}
+              disabled={running || props.offline}
+              onChange={(event) => void props.onThinkingChange(event.currentTarget.value)}
             >
-              <SelectTrigger class="composer-select-trigger composer-thinking-select" aria-label={t("chat.thinkingLevel")}>
-                <SelectValue<ThinkingOption>>
-                  {(state) => <span>{state.selectedOption().label}</span>}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent class="composer-select-content composer-thinking-content" />
-            </Select>
+              {props.thinkingOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           </div>
-          <div class="composer-actions">
-            <button class="toolbar-button" title={t("common.more")}><MoreHorizontal size={16} /></button>
-            <Show
-              when={isBusy() || isQueued()}
-              fallback={
-                <button class="send-button" title={t("chat.send")} disabled={!activeDraft().trim()} onClick={() => void sendMessage()}>
-                  <Send size={17} fill="currentColor" />
-                </button>
-              }
-            >
-              <button class="stop-button" title={isQueued() ? t("chat.cancelQueued") : t("chat.stop")} onClick={() => void stopOrCancel()}>
+          <div className="composer-actions">
+            <button type="button" className="toolbar-button" title={t("common.more")}>
+              <MoreHorizontal size={16} />
+            </button>
+            {running ? (
+              <ComposerPrimitive.Cancel
+                className="stop-button"
+                title={props.queued ? t("chat.cancelQueued") : t("chat.stop")}
+              >
                 <CircleStop size={18} />
-              </button>
-            </Show>
+              </ComposerPrimitive.Cancel>
+            ) : (
+              <ComposerPrimitive.Send className="send-button" title={t("chat.send")}>
+                <Send size={17} fill="currentColor" />
+              </ComposerPrimitive.Send>
+            )}
           </div>
         </div>
-      </footer>
-    </main>
+      </ComposerPrimitive.Root>
+    </AssistantRuntimeProvider>
+  )
+}
+
+function ChatMessageView({
+  onOpenLocation,
+  onShowDiff,
+}: {
+  onOpenLocation: (path: string, line?: number) => void
+  onShowDiff: (path: string) => void
+}) {
+  const t = useT()
+  const role = useAuiState((state) => state.message.role)
+  const status = useAuiState((state) => state.message.status)
+  const ToolRenderer = useCallback(
+    (part: ToolCallMessagePartProps) => (
+      <ToolPart part={part} onOpenLocation={onOpenLocation} onShowDiff={onShowDiff} />
+    ),
+    [onOpenLocation, onShowDiff],
+  )
+
+  if (role === "user") {
+    return (
+      <MessagePrimitive.Root className="chat-message user">
+        <MessagePrimitive.Parts components={{ Text: UserText }} />
+      </MessagePrimitive.Root>
+    )
+  }
+
+  return (
+    <MessagePrimitive.Root className={`chat-message ${role}`}>
+      <div className="assistant-gutter">
+        {role === "assistant" ? <Bot size={16} /> : <AlertTriangle size={15} />}
+      </div>
+      <div className="assistant-content">
+        <MessagePrimitive.Parts
+          components={{
+            Text: MarkdownText,
+            Reasoning: ReasoningPart,
+            tools: { Fallback: ToolRenderer },
+            data: { by_name: { "vibefly-notice": NoticePart } },
+          }}
+        />
+        {status?.type === "running" ? <span className="streaming-caret" /> : null}
+        {status?.type === "incomplete" && status.reason === "error" ? (
+          <button className="retry-button">
+            <RotateCcw size={13} /> {t("chat.retry")}
+          </button>
+        ) : null}
+      </div>
+    </MessagePrimitive.Root>
+  )
+}
+
+function UserText({ text }: { text: string }) {
+  return <div className="user-message-text">{text}</div>
+}
+
+function MarkdownText() {
+  return (
+    <StreamdownTextPrimitive
+      containerClassName="markdown-body"
+      plugins={{ code, cjk }}
+      remarkPlugins={[remarkBreaks]}
+      controls={{ code: true, table: false }}
+      linkSafety={{ enabled: false }}
+      security={{
+        allowedProtocols: ["http", "https"],
+        allowedLinkPrefixes: ["*"],
+        allowedImagePrefixes: [],
+        allowDataImages: false,
+      }}
+    />
+  )
+}
+
+function ReasoningPart({ text }: { text: string }) {
+  const t = useT()
+  const [open, setOpen] = useState(true)
+  return (
+    <div className={`thinking-block ${open ? "open" : ""}`}>
+      <button className="thinking-toggle" onClick={() => setOpen((value) => !value)}>
+        <Brain size={15} />
+        <span>{t("chat.reasoning")}</span>
+        <ChevronDown size={14} />
+      </button>
+      {open ? <div className="thinking-content">{text}</div> : null}
+    </div>
+  )
+}
+
+type NoticeData = { level: "info" | "warning" | "error"; text: string }
+
+function NoticePart({ data }: DataMessagePartProps<NoticeData>) {
+  return (
+    <div className={`notice-part ${data.level === "error" ? "error" : ""}`}>
+      <AlertTriangle size={14} />
+      {data.text}
+    </div>
+  )
+}
+
+function ToolPart({
+  part,
+  onOpenLocation,
+  onShowDiff,
+}: {
+  part: ToolCallMessagePartProps
+  onOpenLocation: (path: string, line?: number) => void
+  onShowDiff: (path: string) => void
+}) {
+  const t = useT()
+  const [expanded, setExpanded] = useState(false)
+  const artifact = (part.artifact ?? {}) as ToolArtifact
+  const status = artifact.status ?? (part.result === undefined ? "running" : "completed")
+  const location = artifact.locations?.[0]
+  return (
+    <div className={`tool-part ${status === "failed" ? "failed" : ""}`}>
+      <button className="tool-summary" onClick={() => setExpanded((value) => !value)}>
+        <span className="tool-icon">
+          {status === "running" || status === "pending" ? (
+            <LoaderCircle size={13} className="spin" />
+          ) : status === "failed" ? (
+            <AlertTriangle size={13} />
+          ) : (
+            <Check size={13} />
+          )}
+        </span>
+        <Wrench size={14} />
+        <strong>{part.toolName}</strong>
+        {location ? (
+          <span
+            className="tool-path"
+            title={location.path}
+            onClick={(event) => {
+              event.stopPropagation()
+              onOpenLocation(location.path, location.line)
+            }}
+          >
+            {location.path}
+          </span>
+        ) : null}
+        {artifact.output && !expanded ? (
+          <span className="tool-result-short">{artifact.output.split("\n", 1)[0]}</span>
+        ) : null}
+        {(part.toolName === "edit" || part.toolName === "write") && location ? (
+          <span
+            className="tool-diff"
+            role="button"
+            title={t("chat.showDiff")}
+            onClick={(event) => {
+              event.stopPropagation()
+              onShowDiff(location.path)
+            }}
+          >
+            <GitCompareArrows size={13} />
+          </span>
+        ) : null}
+        <ChevronDown size={14} className={expanded ? "rotated" : ""} />
+      </button>
+      {expanded ? (
+        <div className="tool-detail">
+          {part.argsText ? <pre>{formatJson(part.argsText)}</pre> : null}
+          {artifact.output ? <pre>{artifact.output}</pre> : null}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function PermissionCard({
+  pending,
+  onRespond,
+  onOpenLocation,
+}: {
+  pending: PendingPermission
+  onRespond: (decision: ToolPermissionDecision) => void
+  onOpenLocation: (path: string, line?: number) => void
+}) {
+  const t = useT()
+  return (
+    <div className="interaction-card permission-card">
+      <div className="interaction-heading">
+        <ShieldCheck size={17} />
+        <span>{t("chat.toolApproval")}</span>
+      </div>
+      <strong>{pending.request.title}</strong>
+      {pending.request.command ? (
+        <pre className="permission-command">$ {pending.request.command}</pre>
+      ) : null}
+      {pending.request.locations?.map((location) => (
+        <button
+          key={`${location.path}:${location.line ?? ""}`}
+          className="file-link"
+          onClick={() => onOpenLocation(location.path, location.line)}
+        >
+          <FileCode2 size={13} /> {location.path}
+        </button>
+      ))}
+      <div className="permission-actions">
+        <button className="secondary-button" onClick={() => onRespond("reject_once")}>
+          {t("common.reject")}
+        </button>
+        <button className="secondary-button" onClick={() => onRespond("reject_always")}>
+          {t("chat.alwaysReject")}
+        </button>
+        <button className="secondary-button" onClick={() => onRespond("allow_always")}>
+          {t("chat.alwaysAllow")}
+        </button>
+        <button className="primary-button" onClick={() => onRespond("allow_once")}>
+          {t("chat.allowOnce")}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function InputCard({
+  pending,
+  value,
+  onChange,
+  onRespond,
+}: {
+  pending: PendingInput
+  value: string
+  onChange: (value: string) => void
+  onRespond: (cancelled?: boolean) => void
+}) {
+  const t = useT()
+  return (
+    <div className="interaction-card input-card">
+      <div className="interaction-heading">
+        <MessageSquareText size={17} />
+        <span>{t("chat.agentNeedsInput")}</span>
+      </div>
+      <p>{pending.request.prompt}</p>
+      <textarea
+        value={value}
+        placeholder={pending.request.placeholder}
+        onChange={(event) => onChange(event.currentTarget.value)}
+      />
+      <div className="permission-actions">
+        <button className="secondary-button" onClick={() => onRespond(true)}>
+          {t("common.cancel")}
+        </button>
+        <button className="primary-button" onClick={() => onRespond(false)}>
+          {t("common.submit")}
+        </button>
+      </div>
+    </div>
   )
 }
 
 function StatusDot(props: { state: ChatSessionSummary["state"]; unread: boolean }) {
   return (
-    <span class="status-dot" classList={{ [props.state]: true, unread: props.unread }}>
-      <Show when={props.state === "running"}><LoaderCircle size={12} class="spin" /></Show>
-      <Show when={props.state === "queued"}><Clock3 size={11} /></Show>
-      <Show when={props.state === "waiting_permission"}><ShieldCheck size={11} /></Show>
-      <Show when={props.state === "waiting_input"}><MessageSquareText size={11} /></Show>
-      <Show when={props.state === "error"}><AlertTriangle size={11} /></Show>
+    <span className={`status-dot ${props.state} ${props.unread ? "unread" : ""}`}>
+      {props.state === "running" ? <LoaderCircle size={12} className="spin" /> : null}
+      {props.state === "queued" ? <Clock3 size={11} /> : null}
+      {props.state === "waiting_permission" ? <ShieldCheck size={11} /> : null}
+      {props.state === "waiting_input" ? <MessageSquareText size={11} /> : null}
+      {props.state === "error" ? <AlertTriangle size={11} /> : null}
     </span>
   )
 }
 
-function MessageView(props: {
-  message: ChatMessage
-  openLocation: (path: string, line?: number) => void
-  showDiff: (path: string) => void
-}) {
-  const t = useT()
-  const [thinkingOpen, setThinkingOpen] = createSignal(true)
-  const isUser = () => props.message.role === "user"
-  return (
-    <article class="chat-message" classList={{ user: isUser(), assistant: props.message.role === "assistant", system: props.message.role === "system" }}>
-      <Show when={isUser()}>
-        <div class="user-message-text">{textPart(props.message)}</div>
-      </Show>
-      <Show when={!isUser()}>
-        <div class="assistant-gutter">
-          <Show when={props.message.role === "assistant"} fallback={<AlertTriangle size={15} />}><Bot size={16} /></Show>
-        </div>
-        <div class="assistant-content">
-          <For each={props.message.parts}>
-            {(part) => (
-              <Show
-                when={part.kind !== "thinking"}
-                fallback={
-                  <div class="thinking-block" classList={{ open: thinkingOpen() }}>
-                    <button class="thinking-toggle" onClick={() => setThinkingOpen((open) => !open)}>
-                      <Brain size={15} />
-                      <span>{t("chat.reasoning")}</span>
-                      <ChevronDown size={14} />
-                    </button>
-                    <Show when={thinkingOpen()}>
-                      <div class="thinking-content">{(part as Extract<ChatPart, { kind: "thinking" }>).text}</div>
-                    </Show>
-                  </div>
-                }
-              >
-                <PartView part={part} openLocation={props.openLocation} showDiff={props.showDiff} />
-              </Show>
-            )}
-          </For>
-          <Show when={props.message.status === "streaming"}>
-            <span class="streaming-caret" />
-          </Show>
-          <Show when={props.message.status === "error"}>
-            <button class="retry-button"><RotateCcw size={13} /> {t("chat.retry")}</button>
-          </Show>
-        </div>
-      </Show>
-    </article>
-  )
-}
-
-function PartView(props: { part: ChatPart; openLocation: (path: string, line?: number) => void; showDiff: (path: string) => void }) {
-  return (
-    <>
-      <Show when={props.part.kind === "text"}>
-        <div class="markdown-body" innerHTML={markdown((props.part as Extract<ChatPart, { kind: "text" }>).text)} />
-      </Show>
-      <Show when={props.part.kind === "notice"}>
-        <div class="notice-part" classList={{ error: (props.part as Extract<ChatPart, { kind: "notice" }>).level === "error" }}>
-          <AlertTriangle size={14} />
-          {(props.part as Extract<ChatPart, { kind: "notice" }>).text}
-        </div>
-      </Show>
-      <Show when={props.part.kind === "tool"}>
-        <ToolPart part={props.part as Extract<ChatPart, { kind: "tool" }>} openLocation={props.openLocation} showDiff={props.showDiff} />
-      </Show>
-    </>
-  )
-}
-
-function ToolPart(props: {
-  part: Extract<ChatPart, { kind: "tool" }>
-  openLocation: (path: string, line?: number) => void
-  showDiff: (path: string) => void
-}) {
-  const t = useT()
-  const [expanded, setExpanded] = createSignal(false)
-  return (
-    <div class="tool-part" classList={{ failed: props.part.status === "failed" }}>
-      <button class="tool-summary" onClick={() => setExpanded((value) => !value)}>
-        <span class="tool-icon">
-          <Show when={props.part.status === "running"} fallback={<Show when={props.part.status === "failed"} fallback={<Check size={13} />}><AlertTriangle size={13} /></Show>}>
-            <LoaderCircle size={13} class="spin" />
-          </Show>
-        </span>
-        <Wrench size={14} />
-        <strong>{props.part.name}</strong>
-        <Show when={props.part.locations?.[0]}>
-          {(location) => (
-            <span
-              class="tool-path"
-              title={location().path}
-              onClick={(event) => {
-                event.stopPropagation()
-                props.openLocation(location().path, location().line)
-              }}
-            >
-              {location().path}
-            </span>
-          )}
-        </Show>
-        <Show when={props.part.output && !expanded()}>
-          <span class="tool-result-short">{props.part.output!.split("\n", 1)[0]}</span>
-        </Show>
-        <Show when={(props.part.name === "edit" || props.part.name === "write") && props.part.locations?.[0]}>
-          {(location) => (
-            <span
-              class="tool-diff"
-              role="button"
-              title={t("chat.showDiff")}
-              onClick={(event) => {
-                event.stopPropagation()
-                props.showDiff(location().path)
-              }}
-            >
-              <GitCompareArrows size={13} />
-            </span>
-          )}
-        </Show>
-        <ChevronDown size={14} classList={{ rotated: expanded() }} />
-      </button>
-      <Show when={expanded()}>
-        <div class="tool-detail">
-          <Show when={props.part.input}><pre>{JSON.stringify(props.part.input, null, 2)}</pre></Show>
-          <Show when={props.part.output}><pre>{props.part.output}</pre></Show>
-        </div>
-      </Show>
-    </div>
-  )
+function formatJson(value: string): string {
+  try {
+    return JSON.stringify(JSON.parse(value), null, 2)
+  } catch {
+    return value
+  }
 }
 
 function errorText(error: unknown): string {

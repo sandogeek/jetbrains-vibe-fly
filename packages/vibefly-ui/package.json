@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "Vibe Fly WebView UI (Vite + SolidJS + SolidUI + Tailwind CSS v4), served via http://vibefly/",
+  "description": "Vibe Fly WebView UI (Vite + React + assistant-ui + Streamdown + Tailwind CSS v4), served via http://vibefly/",
   "scripts": {
     "predev": "pnpm -C ../vibefly-uiagent-shared run build",
     "prebuild": "pnpm -C ../vibefly-uiagent-shared run build",
@@ -15,29 +15,33 @@
     "test": "node --import tsx --test 'src/**/*.test.ts'"
   },
   "dependencies": {
-    "@kobalte/core": "^0.13.11",
+    "@assistant-ui/react": "^0.15.4",
+    "@assistant-ui/react-streamdown": "^0.3.8",
     "@sandogeek/simple-rpc": "workspace:*",
-    "@solid-primitives/i18n": "^2.2.1",
-    "@solidjs/router": "0.15.3",
+    "@streamdown/cjk": "^1.0.3",
+    "@streamdown/code": "^1.1.1",
     "@vibefly/uiagent-shared": "workspace:*",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "dompurify": "^3.4.12",
     "loglevel": "^1.9.2",
-    "lucide-solid": "^1.27.0",
-    "marked": "^18.0.7",
-    "solid-js": "^1.9.9",
+    "lucide-react": "^1.28.0",
+    "radix-ui": "^1.6.7",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-router-dom": "^7.18.2",
+    "remark-breaks": "^4.0.0",
     "tailwind-merge": "^3.3.1"
   },
   "devDependencies": {
     "@types/node": "^22.13.10",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
     "@tailwindcss/vite": "^4.3.3",
-    "@types/dompurify": "^3.2.0",
+    "@vitejs/plugin-react": "^4.7.0",
     "expect": "^29.7.0",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.19.3",
     "typescript": "^5.8.3",
-    "vite": "^6.3.5",
-    "vite-plugin-solid": "^2.11.6"
+    "vite": "^6.3.5"
   }
 }

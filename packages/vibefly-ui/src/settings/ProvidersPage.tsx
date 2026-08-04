@@ -1,577 +1,78 @@
-import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js"
-import type {
-  CredentialAction,
-  IdeSettingsDto,
-  ProviderPatch,
-  Ui2Host,
-} from "../generated/rpc"
+import { useEffect, useMemo, useState } from "react"
+import type { CredentialAction, IdeSettingsDto, ProviderPatch, Ui2Host } from "../generated/rpc"
 import { useT } from "../i18n"
 import type { BundledCatalog } from "./catalog"
 import { catalogProviderIds } from "./catalog"
-import {
-  ConnectDialog,
-  CustomProviderDialog,
-  LoginOverlay,
-  parseModelsText,
-  providerUiLabels,
-  type ConnectResult,
-  type CustomResult,
-  type LoginOverlayState,
-} from "./dialogs"
+import { ConnectDialog, CustomProviderDialog, LoginOverlay, parseModelsText, providerUiLabels, type ConnectResult, type CustomResult, type LoginOverlayState } from "./dialogs"
 import { ModelPicker } from "./ModelPicker"
-import {
-  badgeLabel,
-  classifyProviders,
-  filterBuiltInProviders,
-  modelSpec,
-  parseModelSpec,
-  primaryBadge,
-} from "./providerLogic"
+import { badgeLabel, classifyProviders, filterBuiltInProviders, modelSpec, parseModelSpec, primaryBadge } from "./providerLogic"
 import { description, displayName } from "./providerLabels"
-import {
-  PROVIDER_CONFIG_RPC_OPTIONS,
-  PROVIDER_LOGIN_RPC_OPTIONS,
-} from "./rpcOptions"
+import { PROVIDER_CONFIG_RPC_OPTIONS, PROVIDER_LOGIN_RPC_OPTIONS } from "./rpcOptions"
 import { withModelPreferences, withProviders } from "./settingsStore"
-import {
-  mergeProvidersSnapshot,
-  type ProviderSnapshot,
-  type ProvidersSnapshot,
-} from "./providerSnapshots"
+import { mergeProvidersSnapshot, type ProviderSnapshot, type ProvidersSnapshot } from "./providerSnapshots"
 
-export type ProvidersPageProps = {
-  ui2Host: Ui2Host | null
-  settings: IdeSettingsDto
-  snapshot: ProvidersSnapshot | null
-  catalog: BundledCatalog
-  busy: boolean
-  onSettings: (next: IdeSettingsDto) => void
-  onSnapshot: (snap: ProvidersSnapshot | null) => void
-  onBusy: (busy: boolean) => void
-  onStatus: (msg: string | null) => void
-  onSave: (settings: IdeSettingsDto) => Promise<void>
-  registerLoginHandlers?: (
-    handlers: {
-      onOpenUrl: (url: string, launchUrl: string | null) => void
-      onProgress: (message: string) => void
-      onRequestInput: (
-        prompt: string,
-        placeholder: string | null,
-      ) => Promise<{ text?: string; cancelled?: boolean }>
-    } | null,
-  ) => void
-}
-
-type DialogState =
-  | { kind: "none" }
-  | { kind: "connect"; snap: ProviderSnapshot; edit: boolean }
-  | { kind: "custom"; existing: ProviderSnapshot | null }
-  | { kind: "login"; state: LoginOverlayState }
+export type ProvidersPageProps = { ui2Host: Ui2Host | null; settings: IdeSettingsDto; snapshot: ProvidersSnapshot | null; catalog: BundledCatalog; busy: boolean; onSettings: (next: IdeSettingsDto) => void; onSnapshot: (snap: ProvidersSnapshot | null) => void; onBusy: (busy: boolean) => void; onStatus: (msg: string | null) => void; onSave: (settings: IdeSettingsDto) => Promise<void>; registerLoginHandlers?: (handlers: { onOpenUrl: (url: string, launchUrl: string | null) => void; onProgress: (message: string) => void; onRequestInput: (prompt: string, placeholder: string | null) => Promise<{ text?: string; cancelled?: boolean }> } | null) => void }
+type DialogState = { kind: "none" } | { kind: "connect"; snap: ProviderSnapshot; edit: boolean } | { kind: "custom"; existing: ProviderSnapshot | null } | { kind: "login"; state: LoginOverlayState }
 
 export function ProvidersPage(props: ProvidersPageProps) {
-  const t = useT()
-  const [search, setSearch] = createSignal("")
-  const [dialog, setDialog] = createSignal<DialogState>({ kind: "none" })
-
-  onMount(() => {
+  const t = useT(); const [search, setSearch] = useState(""); const [dialog, setDialog] = useState<DialogState>({ kind: "none" })
+  useEffect(() => {
     props.registerLoginHandlers?.({
-      onOpenUrl: (url, launchUrl) => {
-        setDialog((prev) => {
-          if (prev.kind !== "login") return prev
-          return {
-            kind: "login",
-            state: {
-              ...prev.state,
-              url,
-              launchUrl,
-              progress: t("providers.waitingAuth"),
-            },
-          }
-        })
-      },
-      onProgress: (message) => {
-        setDialog((prev) => {
-          if (prev.kind !== "login") return prev
-          return { kind: "login", state: { ...prev.state, progress: message } }
-        })
-      },
-      onRequestInput: (prompt, placeholder) => {
-        const { promise, resolve } = Promise.withResolvers<{
-          text?: string
-          cancelled?: boolean
-        }>()
-        setDialog((prev) => {
-          if (prev.kind !== "login") {
-            resolve({ text: "", cancelled: true })
-            return prev
-          }
-          return {
-            kind: "login",
-            state: {
-              ...prev.state,
-              inputPrompt: prompt,
-              inputPlaceholder: placeholder,
-              resolveInput: resolve,
-            },
-          }
-        })
-        return promise
-      },
+      onOpenUrl: (url, launchUrl) => setDialog((current) => current.kind === "login" ? { kind: "login", state: { ...current.state, url, launchUrl, progress: t("providers.waitingAuth") } } : current),
+      onProgress: (message) => setDialog((current) => current.kind === "login" ? { kind: "login", state: { ...current.state, progress: message } } : current),
+      onRequestInput: (prompt, placeholder) => new Promise((resolve) => setDialog((current) => { if (current.kind !== "login") { resolve({ text: "", cancelled: true }); return current } return { kind: "login", state: { ...current.state, inputPrompt: prompt, inputPlaceholder: placeholder, resolveInput: resolve } } })),
     })
-  })
+    return () => props.registerLoginHandlers?.(null)
+  }, [props.registerLoginHandlers, t])
 
-  onCleanup(() => {
-    props.registerLoginHandlers?.(null)
-  })
-
-  const providers = createMemo(() => props.snapshot?.providers ?? [])
-  const classified = createMemo(() => classifyProviders(providers()))
-  const builtIn = createMemo(() => filterBuiltInProviders(classified().popular, search()))
-
-  const defaultSpec = () =>
-    modelSpec(
-      props.settings.providers?.defaultProvider ?? "",
-      props.settings.providers?.defaultModel ?? "",
-    )
-
-  const scheduleSave = (next: IdeSettingsDto) => {
-    props.onSettings(next)
-    void props.onSave(next)
-  }
-
-  const onDefaultModel = (spec: string, pinned: string[], recent: string[]) => {
-    const { provider, model } = parseModelSpec(spec)
-    let next = withProviders(props.settings, {
-      defaultProvider: provider,
-      defaultModel: model,
-    })
-    next = withModelPreferences(next, {
-      pinnedModelSpecs: pinned,
-      recentModelSpecs: recent,
-    })
-    scheduleSave(next)
-  }
+  const providers = props.snapshot?.providers ?? []
+  const classified = useMemo(() => classifyProviders(providers), [providers])
+  const builtIn = useMemo(() => filterBuiltInProviders(classified.popular, search), [classified.popular, search])
+  const defaultSpec = modelSpec(props.settings.providers?.defaultProvider ?? "", props.settings.providers?.defaultModel ?? "")
+  const scheduleSave = (next: IdeSettingsDto) => { props.onSettings(next); void props.onSave(next) }
+  const onDefaultModel = (spec: string, pinned: string[], recent: string[]) => { const { provider, model } = parseModelSpec(spec); scheduleSave(withModelPreferences(withProviders(props.settings, { defaultProvider: provider, defaultModel: model }), { pinnedModelSpecs: pinned, recentModelSpecs: recent })) }
 
   const reload = async () => {
-    if (!props.ui2Host) {
-      props.onStatus(t("settings.hostUnavailable"))
-      return
-    }
-    props.onBusy(true)
-    props.onStatus(null)
-    const startedAt = performance.now()
-    try {
-      console.log("providers reload start")
-      const result = await props.ui2Host.refreshProviders(PROVIDER_CONFIG_RPC_OPTIONS)
-      console.log(
-        `providers reload done in ${Math.round(performance.now() - startedAt)}ms`,
-      )
-      if (!result.ok) {
-        props.onStatus(result.error ?? t("settings.refreshFailed"))
-        return
-      }
-      props.onSnapshot(mergeProvidersSnapshot(result.snapshot, props.catalog))
-    } catch (e) {
-      console.log(
-        `providers reload failed in ${Math.round(performance.now() - startedAt)}ms: ${e}`,
-      )
-      props.onStatus(e instanceof Error ? e.message : String(e))
-    } finally {
-      props.onBusy(false)
-    }
+    if (!props.ui2Host) return props.onStatus(t("settings.hostUnavailable"))
+    props.onBusy(true); props.onStatus(null); const startedAt = performance.now()
+    try { const result = await props.ui2Host.refreshProviders(PROVIDER_CONFIG_RPC_OPTIONS); if (!result.ok) props.onStatus(result.error ?? t("settings.refreshFailed")); else props.onSnapshot(mergeProvidersSnapshot(result.snapshot, props.catalog)); console.log(`providers reload done in ${Math.round(performance.now() - startedAt)}ms`) }
+    catch (error) { props.onStatus(error instanceof Error ? error.message : String(error)) }
+    finally { props.onBusy(false) }
   }
-
-  const applyPatch = async (
-    providersPatch: ProviderPatch[],
-    credentials: CredentialAction[] = [],
-  ) => {
-    if (!props.ui2Host) {
-      props.onStatus(t("settings.hostUnavailableShort"))
-      return
-    }
-    props.onBusy(true)
-    props.onStatus(null)
-    try {
-      const result = await props.ui2Host.applyProvidersPatch(
-        {
-          providers: providersPatch,
-          credentials,
-        },
-        PROVIDER_CONFIG_RPC_OPTIONS,
-      )
-      if (!result.ok) {
-        props.onStatus(result.error ?? t("providers.saveFailed"))
-        return
-      }
-      if (result.snapshot) {
-        props.onSnapshot(mergeProvidersSnapshot(result.snapshot, props.catalog))
-      }
-    } catch (e) {
-      props.onStatus(e instanceof Error ? e.message : String(e))
-    } finally {
-      props.onBusy(false)
-    }
+  const applyPatch = async (providersPatch: ProviderPatch[], credentials: CredentialAction[] = []) => {
+    if (!props.ui2Host) return props.onStatus(t("settings.hostUnavailableShort"))
+    props.onBusy(true); props.onStatus(null)
+    try { const result = await props.ui2Host.applyProvidersPatch({ providers: providersPatch, credentials }, PROVIDER_CONFIG_RPC_OPTIONS); if (!result.ok) props.onStatus(result.error ?? t("providers.saveFailed")); else if (result.snapshot) props.onSnapshot(mergeProvidersSnapshot(result.snapshot, props.catalog)) }
+    catch (error) { props.onStatus(error instanceof Error ? error.message : String(error)) }
+    finally { props.onBusy(false) }
   }
-
   const runLogin = async (snap: ProviderSnapshot) => {
     if (!props.ui2Host) return
-    const loginId = snap.loginProviderId?.trim() || snap.id
-    const name = displayName(snap.id)
-    setDialog({
-      kind: "login",
-      state: {
-        providerName: name,
-        progress: t("providers.startingLogin", { name }),
-        url: null,
-        launchUrl: null,
-        inputPrompt: null,
-        inputPlaceholder: null,
-      },
-    })
-    props.onBusy(true)
-    try {
-      const result = await props.ui2Host.loginProvider(
-        {
-          providerId: loginId,
-        },
-        PROVIDER_LOGIN_RPC_OPTIONS,
-      )
-      if (result.ok) {
-        if (result.snapshot) {
-          props.onSnapshot(mergeProvidersSnapshot(result.snapshot, props.catalog))
-        }
-        const who = [result.email, result.orgName ?? result.orgId].filter(Boolean).join(" / ")
-        props.onStatus(who ? t("providers.loggedInAs", { who }) : t("providers.loginSuccess"))
-      } else {
-        const err = result.error ?? t("providers.loginFailed")
-        const cancelled =
-          err.toLowerCase().includes("cancel") || err.toLowerCase().includes("abort")
-        if (!cancelled) props.onStatus(err)
-      }
-    } catch (e) {
-      props.onStatus(e instanceof Error ? e.message : String(e))
-    } finally {
-      props.onBusy(false)
-      setDialog({ kind: "none" })
-    }
+    const loginId = snap.loginProviderId?.trim() || snap.id; const name = displayName(snap.id)
+    setDialog({ kind: "login", state: { providerName: name, progress: t("providers.startingLogin", { name }), url: null, launchUrl: null, inputPrompt: null, inputPlaceholder: null } }); props.onBusy(true)
+    try { const result = await props.ui2Host.loginProvider({ providerId: loginId }, PROVIDER_LOGIN_RPC_OPTIONS); if (result.ok) { if (result.snapshot) props.onSnapshot(mergeProvidersSnapshot(result.snapshot, props.catalog)); const who = [result.email, result.orgName ?? result.orgId].filter(Boolean).join(" / "); props.onStatus(who ? t("providers.loggedInAs", { who }) : t("providers.loginSuccess")) } else { const message = result.error ?? t("providers.loginFailed"); if (!/cancel|abort/i.test(message)) props.onStatus(message) } }
+    catch (error) { props.onStatus(error instanceof Error ? error.message : String(error)) }
+    finally { props.onBusy(false); setDialog({ kind: "none" }) }
   }
+  const onConnectResult = async (snap: ProviderSnapshot, result: ConnectResult, edit: boolean) => { setDialog({ kind: "none" }); if (result.kind === "cancel") return; if (result.kind === "login") return runLogin(snap); const key = result.apiKey.trim(); if (key && (!edit || key)) await applyPatch([], [{ provider: snap.id, action: "set", apiKey: key }]) }
+  const onCustomResult = async (result: CustomResult) => { setDialog({ kind: "none" }); if (result.kind === "cancel") return; const models = parseModelsText(result.modelsText).map((model) => ({ id: model.id, name: model.name ?? null, api: model.api ?? null })); const baseUrl = result.baseUrl || null; const api = result.api || null; await applyPatch([{ id: result.id, baseUrl, api, models, clearBaseUrl: !baseUrl, clearApi: !api }], result.apiKey ? [{ provider: result.id, action: "set", apiKey: result.apiKey }] : []) }
+  const disconnect = async (snap: ProviderSnapshot) => { if (!confirm(t("providers.disconnectConfirm", { name: displayName(snap.id) })) || !props.ui2Host) return; props.onBusy(true); try { const result = await props.ui2Host.logoutProvider({ providerId: snap.id }, PROVIDER_CONFIG_RPC_OPTIONS); if (!result.ok) props.onStatus(result.error ?? t("providers.logoutFailed")); else if (result.snapshot) props.onSnapshot(mergeProvidersSnapshot(result.snapshot, props.catalog)) } catch (error) { props.onStatus(error instanceof Error ? error.message : String(error)) } finally { props.onBusy(false) } }
+  const deleteCustom = async (snap: ProviderSnapshot) => { if (confirm(t("providers.deleteConfirm", { id: snap.id }))) await applyPatch([{ id: snap.id, remove: true }], [{ provider: snap.id, action: "clear" }]) }
+  const catalogIds = () => { const ids = catalogProviderIds(props.catalog); for (const provider of providers) if (provider.isCatalog) ids.add(provider.id); return ids }
+  const customIds = dialog.kind === "custom" ? new Set(providers.filter((provider) => !provider.isCatalog && provider.id !== dialog.existing?.id).map((provider) => provider.id)) : new Set<string>()
 
-  const onConnectResult = async (snap: ProviderSnapshot, result: ConnectResult, edit: boolean) => {
-    setDialog({ kind: "none" })
-    if (result.kind === "cancel") return
-    if (result.kind === "login") {
-      await runLogin(snap)
-      return
-    }
-    const key = result.apiKey.trim()
-    if (!key && edit) return
-    if (!key) return
-    await applyPatch(
-      [],
-      [{ provider: snap.id, action: "set", apiKey: key }],
-    )
-  }
-
-  const onCustomResult = async (result: CustomResult, existing: ProviderSnapshot | null) => {
-    setDialog({ kind: "none" })
-    if (result.kind === "cancel") return
-    const models = parseModelsText(result.modelsText).map((m) => ({
-      id: m.id,
-      name: m.name ?? null,
-      api: m.api ?? null,
-    }))
-    const baseUrl = result.baseUrl || null
-    const api = result.api || null
-    const patch: ProviderPatch = {
-      id: result.id,
-      baseUrl,
-      api,
-      models,
-      clearBaseUrl: !baseUrl,
-      clearApi: !api,
-    }
-    const credentials: CredentialAction[] = result.apiKey
-      ? [{ provider: result.id, action: "set", apiKey: result.apiKey }]
-      : []
-    await applyPatch([patch], credentials)
-  }
-
-  const disconnect = async (snap: ProviderSnapshot) => {
-    if (
-      !confirm(
-        t("providers.disconnectConfirm", { name: displayName(snap.id) }),
-      )
-    ) {
-      return
-    }
-    if (!props.ui2Host) return
-    props.onBusy(true)
-    try {
-      const result = await props.ui2Host.logoutProvider(
-        {
-          providerId: snap.id,
-        },
-        PROVIDER_CONFIG_RPC_OPTIONS,
-      )
-      if (!result.ok) {
-        props.onStatus(result.error ?? t("providers.logoutFailed"))
-        return
-      }
-      if (result.snapshot) {
-        props.onSnapshot(mergeProvidersSnapshot(result.snapshot, props.catalog))
-      }
-    } catch (e) {
-      props.onStatus(e instanceof Error ? e.message : String(e))
-    } finally {
-      props.onBusy(false)
-    }
-  }
-
-  const deleteCustom = async (snap: ProviderSnapshot) => {
-    if (!confirm(t("providers.deleteConfirm", { id: snap.id }))) {
-      return
-    }
-    await applyPatch(
-      [{ id: snap.id, remove: true }],
-      [{ provider: snap.id, action: "clear" }],
-    )
-  }
-
-  const catalogIds = () => {
-    const ids = catalogProviderIds(props.catalog)
-    for (const p of providers()) {
-      if (p.isCatalog) ids.add(p.id)
-    }
-    return ids
-  }
-
-  return (
-    <div class="flex h-full min-h-0 flex-col gap-4 overflow-y-auto p-4">
-      <header class="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h2 class="m-0 text-lg font-semibold text-fg">{t("settings.providers")}</h2>
-          <p class="m-0 mt-1 text-xs text-muted">{t("providers.subtitle")}</p>
-        </div>
-        <button
-          type="button"
-          class="rounded border border-border bg-surface px-3 py-1.5 text-sm text-fg hover:border-accent disabled:opacity-50"
-          disabled={props.busy}
-          onClick={() => void reload()}
-        >
-          {props.busy ? t("common.loading") : t("providers.reload")}
-        </button>
-      </header>
-
-      <section>
-        <div>
-          <label class="mb-1 block text-xs text-muted">{t("providers.defaultModel")}</label>
-          <ModelPicker
-            value={defaultSpec()}
-            providers={providers()}
-            catalog={props.catalog}
-            pinnedSpecs={props.settings.modelPreferences?.pinnedModelSpecs ?? []}
-            recentSpecs={props.settings.modelPreferences?.recentModelSpecs ?? []}
-            allowClear
-            ariaLabel={t("providers.defaultModel")}
-            disabled={props.busy}
-            onChange={onDefaultModel}
-          />
-        </div>
-      </section>
-
-      <section>
-        <div class="mb-2 flex items-center justify-between">
-          <h3 class="m-0 text-sm font-semibold text-fg">{t("providers.connectedProviders")}</h3>
-          <button
-            type="button"
-            class="text-xs text-accent hover:underline"
-            onClick={() => setDialog({ kind: "custom", existing: null })}
-          >
-            {t("providers.addCustom")}
-          </button>
-        </div>
-        <Show
-          when={classified().connected.length > 0}
-          fallback={<p class="m-0 text-sm text-muted">{t("providers.noConnected")}</p>}
-        >
-          <ul class="m-0 list-none space-y-2 p-0">
-            <For each={classified().connected}>
-              {(snap) => (
-                <ProviderRow
-                  snap={snap}
-                  onConnect={() => setDialog({ kind: "connect", snap, edit: false })}
-                  onEdit={() => {
-                    if (snap.isCatalog) {
-                      setDialog({ kind: "connect", snap, edit: true })
-                    } else {
-                      setDialog({ kind: "custom", existing: snap })
-                    }
-                  }}
-                  onDisconnect={() => void disconnect(snap)}
-                  onDelete={() => void deleteCustom(snap)}
-                />
-              )}
-            </For>
-          </ul>
-        </Show>
-      </section>
-
-      <section>
-        <h3 class="m-0 mb-2 text-sm font-semibold text-fg">{t("providers.builtInProviders")}</h3>
-        <input
-          class="mb-2 w-full rounded border border-border bg-surface px-2 py-1.5 text-sm text-fg"
-          placeholder={t("providers.searchPlaceholder")}
-          value={search()}
-          onInput={(e) => setSearch(e.currentTarget.value)}
-        />
-        <Show
-          when={builtIn().length > 0}
-          fallback={
-            <p class="m-0 text-sm text-muted">
-              {search().trim() ? t("providers.noMatch") : t("providers.noBuiltIn")}
-            </p>
-          }
-        >
-          <ul class="m-0 list-none space-y-2 p-0">
-            <For each={builtIn()}>
-              {(snap) => (
-                <ProviderRow
-                  snap={snap}
-                  onConnect={() => setDialog({ kind: "connect", snap, edit: false })}
-                  onEdit={() => setDialog({ kind: "connect", snap, edit: true })}
-                  onDisconnect={() => void disconnect(snap)}
-                  onDelete={() => undefined}
-                />
-              )}
-            </For>
-          </ul>
-        </Show>
-      </section>
-
-      <Show when={dialog().kind === "connect"}>
-        {(() => {
-          const d = dialog()
-          if (d.kind !== "connect") return null
-          return (
-            <ConnectDialog
-              snapshot={d.snap}
-              editMode={d.edit}
-              onClose={(r) => void onConnectResult(d.snap, r, d.edit)}
-            />
-          )
-        })()}
-      </Show>
-
-      <Show when={dialog().kind === "custom"}>
-        {(() => {
-          const d = dialog()
-          if (d.kind !== "custom") return null
-          const customIds = new Set(
-            providers()
-              .filter((p) => !p.isCatalog && p.id !== d.existing?.id)
-              .map((p) => p.id),
-          )
-          return (
-            <CustomProviderDialog
-              existing={d.existing}
-              catalogIds={catalogIds()}
-              existingCustomIds={customIds}
-              onClose={(r) => void onCustomResult(r, d.existing)}
-            />
-          )
-        })()}
-      </Show>
-
-      <Show when={dialog().kind === "login"}>
-        {(() => {
-          const d = dialog()
-          if (d.kind !== "login") return null
-          return (
-            <LoginOverlay
-              state={d.state}
-              onOpenBrowser={() => {
-                const url = d.state.launchUrl || d.state.url
-                if (url && props.ui2Host) void props.ui2Host.openExternalUrl(url)
-              }}
-              onCancel={() => {
-                void props.ui2Host?.cancelProviderLogin()
-              }}
-              onSubmitInput={(text) => {
-                d.state.resolveInput?.({ text, cancelled: false })
-              }}
-              onCancelInput={() => {
-                d.state.resolveInput?.({ text: "", cancelled: true })
-              }}
-            />
-          )
-        })()}
-      </Show>
-    </div>
-  )
+  return <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto p-4">
+    <header className="flex flex-wrap items-end justify-between gap-3"><div><h2 className="m-0 text-lg font-semibold text-fg">{t("settings.providers")}</h2><p className="m-0 mt-1 text-xs text-muted">{t("providers.subtitle")}</p></div><button type="button" className="rounded border border-border bg-surface px-3 py-1.5 text-sm text-fg hover:border-accent disabled:opacity-50" disabled={props.busy} onClick={() => void reload()}>{props.busy ? t("common.loading") : t("providers.reload")}</button></header>
+    <section><label className="mb-1 block text-xs text-muted">{t("providers.defaultModel")}</label><ModelPicker value={defaultSpec} providers={providers} catalog={props.catalog} pinnedSpecs={props.settings.modelPreferences?.pinnedModelSpecs ?? []} recentSpecs={props.settings.modelPreferences?.recentModelSpecs ?? []} allowClear ariaLabel={t("providers.defaultModel")} disabled={props.busy} onChange={onDefaultModel} /></section>
+    <section><div className="mb-2 flex items-center justify-between"><h3 className="m-0 text-sm font-semibold text-fg">{t("providers.connectedProviders")}</h3><button type="button" className="text-xs text-accent hover:underline" onClick={() => setDialog({ kind: "custom", existing: null })}>{t("providers.addCustom")}</button></div>{classified.connected.length > 0 ? <ul className="m-0 list-none space-y-2 p-0">{classified.connected.map((snap) => <ProviderRow key={snap.id} snap={snap} onConnect={() => setDialog({ kind: "connect", snap, edit: false })} onEdit={() => setDialog(snap.isCatalog ? { kind: "connect", snap, edit: true } : { kind: "custom", existing: snap })} onDisconnect={() => void disconnect(snap)} onDelete={() => void deleteCustom(snap)} />)}</ul> : <p className="m-0 text-sm text-muted">{t("providers.noConnected")}</p>}</section>
+    <section><h3 className="m-0 mb-2 text-sm font-semibold text-fg">{t("providers.builtInProviders")}</h3><input className="mb-2 w-full rounded border border-border bg-surface px-2 py-1.5 text-sm text-fg" placeholder={t("providers.searchPlaceholder")} value={search} onChange={(event) => setSearch(event.currentTarget.value)} />{builtIn.length > 0 ? <ul className="m-0 list-none space-y-2 p-0">{builtIn.map((snap) => <ProviderRow key={snap.id} snap={snap} onConnect={() => setDialog({ kind: "connect", snap, edit: false })} onEdit={() => setDialog({ kind: "connect", snap, edit: true })} onDisconnect={() => void disconnect(snap)} onDelete={() => undefined} />)}</ul> : <p className="m-0 text-sm text-muted">{search.trim() ? t("providers.noMatch") : t("providers.noBuiltIn")}</p>}</section>
+    {dialog.kind === "connect" && <ConnectDialog snapshot={dialog.snap} editMode={dialog.edit} onClose={(result) => void onConnectResult(dialog.snap, result, dialog.edit)} />}
+    {dialog.kind === "custom" && <CustomProviderDialog existing={dialog.existing} catalogIds={catalogIds()} existingCustomIds={customIds} onClose={(result) => void onCustomResult(result)} />}
+    {dialog.kind === "login" && <LoginOverlay state={dialog.state} onOpenBrowser={() => { const url = dialog.state.launchUrl || dialog.state.url; if (url) void props.ui2Host?.openExternalUrl(url) }} onCancel={() => void props.ui2Host?.cancelProviderLogin()} onSubmitInput={(text) => { dialog.state.resolveInput?.({ text, cancelled: false }); setDialog({ kind: "none" }) }} onCancelInput={() => { dialog.state.resolveInput?.({ text: "", cancelled: true }); setDialog({ kind: "none" }) }} />}
+  </div>
 }
 
-function ProviderRow(props: {
-  snap: ProviderSnapshot
-  onConnect: () => void
-  onEdit: () => void
-  onDisconnect: () => void
-  onDelete: () => void
-}) {
-  const t = useT()
-  const labels = () => providerUiLabels(t)
-  const badge = () => primaryBadge(props.snap)
-  const connected = () =>
-    !props.snap.isCatalog ||
-    Boolean(props.snap.credential?.hasApiKey || props.snap.credential?.hasOAuth)
-
-  return (
-    <li class="flex flex-wrap items-start justify-between gap-2 rounded border border-border bg-surface/40 px-3 py-2">
-      <div class="min-w-0 flex-1">
-        <div class="flex flex-wrap items-center gap-2">
-          <span class="font-medium text-fg">{displayName(props.snap.id)}</span>
-          <span class="rounded bg-bg px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted">
-            {badgeLabel(badge(), labels())}
-          </span>
-          <span class="font-mono text-[11px] text-muted">{props.snap.id}</span>
-        </div>
-        <p class="m-0 mt-0.5 text-xs text-muted">{description(props.snap.id)}</p>
-      </div>
-      <div class="flex shrink-0 flex-wrap gap-1">
-        <Show when={!connected()}>
-          <button
-            type="button"
-            class="rounded border border-border px-2 py-1 text-xs text-fg hover:border-accent"
-            onClick={props.onConnect}
-          >
-            {t("common.connect")}
-          </button>
-        </Show>
-        <Show when={connected()}>
-          <button
-            type="button"
-            class="rounded border border-border px-2 py-1 text-xs text-fg hover:border-accent"
-            onClick={props.onEdit}
-          >
-            {t("common.edit")}
-          </button>
-          <button
-            type="button"
-            class="rounded border border-border px-2 py-1 text-xs text-muted hover:border-accent"
-            onClick={props.onDisconnect}
-          >
-            {t("common.disconnect")}
-          </button>
-        </Show>
-        <Show when={!props.snap.isCatalog}>
-          <button
-            type="button"
-            class="rounded border border-border px-2 py-1 text-xs text-red-400 hover:border-red-400"
-            onClick={props.onDelete}
-          >
-            {t("common.delete")}
-          </button>
-        </Show>
-      </div>
-    </li>
-  )
+function ProviderRow({ snap, onConnect, onEdit, onDisconnect, onDelete }: { snap: ProviderSnapshot; onConnect: () => void; onEdit: () => void; onDisconnect: () => void; onDelete: () => void }) {
+  const t = useT(); const labels = providerUiLabels(t); const badge = primaryBadge(snap); const connected = !snap.isCatalog || Boolean(snap.credential?.hasApiKey || snap.credential?.hasOAuth)
+  return <li className="flex flex-wrap items-start justify-between gap-2 rounded border border-border bg-surface/40 px-3 py-2"><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><span className="font-medium text-fg">{displayName(snap.id)}</span><span className="rounded bg-bg px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted">{badgeLabel(badge, labels)}</span><span className="font-mono text-[11px] text-muted">{snap.id}</span></div><p className="m-0 mt-0.5 text-xs text-muted">{description(snap.id)}</p></div><div className="flex shrink-0 flex-wrap gap-1">{!connected && <button type="button" className="rounded border border-border px-2 py-1 text-xs text-fg hover:border-accent" onClick={onConnect}>{t("common.connect")}</button>}{connected && <><button type="button" className="rounded border border-border px-2 py-1 text-xs text-fg hover:border-accent" onClick={onEdit}>{t("common.edit")}</button><button type="button" className="rounded border border-border px-2 py-1 text-xs text-muted hover:border-accent" onClick={onDisconnect}>{t("common.disconnect")}</button></>}{!snap.isCatalog && <button type="button" className="rounded border border-border px-2 py-1 text-xs text-red-400 hover:border-red-400" onClick={onDelete}>{t("common.delete")}</button>}</div></li>
 }

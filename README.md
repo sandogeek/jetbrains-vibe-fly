@@ -25,7 +25,7 @@
 │         │ JCEF MessageRouter (SimpleRpc)     │
 │         ▼                                    │
 │  WebView UI  ──WebSocket + 票据──► Node Agent │
-│  (SolidJS)                               (pi) │
+│  (React + assistant-ui)                  (pi) │
 │         ▲                              │     │
 │         └──── stdio SimpleRpc 控制面 ──┘     │
 └──────────────────────────────────────────────┘
@@ -46,7 +46,7 @@
 | `plugin/` | IntelliJ 插件（Kotlin）：Tool Window、Actions、设置、Agent 进程管理 |
 | `packages/vibefly-jcef/` | JCEF 面板、自定义 `http://vibefly/` Scheme、Host↔UI RPC |
 | `packages/vibefly-agent/` | Node Agent：pi 运行时 + stdio / WebSocket 桥 |
-| `packages/vibefly-ui/` | WebView 前端：Vite + SolidJS + SolidUI + Tailwind CSS v4 |
+| `packages/vibefly-ui/` | WebView 前端：Vite + React + assistant-ui + Streamdown + Tailwind CSS v4 |
 | `packages/vibefly-uiagent-shared/` | UI ↔ Agent 共享 RPC 契约（TypeScript） |
 | `packages/vibefly-simplerpc/` | SimpleRpc：Kotlin + TypeScript / Node.js 传输与代码生成 |
 

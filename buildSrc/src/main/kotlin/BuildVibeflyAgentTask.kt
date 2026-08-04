@@ -152,7 +152,8 @@ abstract class BuildVibeflyAgentTask @Inject constructor(
 
         logger.lifecycle("Installing production vibefly-agent runtime with {} ({})", node, pnpm)
         // Keep optional pi dependencies during install; heavy unused optionals are pruned below.
-        pnpmExec(out, pnpm, node, "install", "--prod", "--ignore-scripts")
+        // --ignore-workspace: staged tree lives under the monorepo; do not hoist into root workspace.
+        pnpmExec(out, pnpm, node, "install", "--prod", "--ignore-scripts", "--ignore-workspace")
 
         pruneHeavyOptionalRuntime(File(out, "node_modules"))
 
@@ -313,14 +314,16 @@ abstract class BuildVibeflyAgentTask @Inject constructor(
             )
         }
         // Staged agent is a standalone tree; strip monorepo lifecycle hooks that call pnpm -C.
+        // Consume an optional trailing comma so first-entry removals do not leave `{,`.
         next = next.replace(
             Regex(
-                """,?\s*"pre(build|typecheck|test|start|start:dist|publishOnly)"\s*:\s*"[^"]*"""",
+                """,?\s*"pre(build|typecheck|test|start|start:dist|publishOnly)"\s*:\s*"[^"]*"\s*,?""",
             ),
             "",
         )
-        // Drop trailing commas left by script/devDependency stripping (strict JSON).
+        // Drop trailing/leading commas left by script/devDependency stripping (strict JSON).
         next = next.replace(Regex(""",(\s*[}\]])"""), "$1")
+        next = next.replace(Regex("""([{\[])(\s*),"""), "$1$2")
         packageJson.writeText(next)
     }
 

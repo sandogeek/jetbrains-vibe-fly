@@ -1,23 +1,14 @@
-import { ChevronLeft, Menu } from "lucide-solid"
-import {
-  createContext,
-  createSignal,
-  onCleanup,
-  onMount,
-  useContext,
-  type Accessor,
-  type JSX,
-  type ParentProps,
-} from "solid-js"
+import { createContext, useContext, useEffect, useMemo, useState, type ButtonHTMLAttributes, type ReactNode } from "react"
+import { ChevronLeft, Menu } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 type SidebarContextValue = {
-  open: Accessor<boolean>
+  open: boolean
   setOpen: (value: boolean) => void
   toggle: () => void
 }
 
-const SidebarContext = createContext<SidebarContextValue>()
+const SidebarContext = createContext<SidebarContextValue | null>(null)
 
 function useSidebar() {
   const context = useContext(SidebarContext)
@@ -25,181 +16,55 @@ function useSidebar() {
   return context
 }
 
-export function SidebarProvider(props: ParentProps<{ defaultOpen?: boolean; class?: string }>) {
-  const [open, setOpenSignal] = createSignal(props.defaultOpen ?? true)
-  const setOpen = (value: boolean) => setOpenSignal(value)
-  const toggle = () => setOpenSignal((value) => !value)
-
-  onMount(() => {
+function SidebarProvider({ defaultOpen = true, className, children }: { defaultOpen?: boolean; className?: string; children?: ReactNode }) {
+  const [open, setOpen] = useState(defaultOpen)
+  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "b") {
         event.preventDefault()
-        toggle()
+        setOpen((value) => !value)
       }
     }
     window.addEventListener("keydown", onKeyDown)
-    onCleanup(() => window.removeEventListener("keydown", onKeyDown))
-  })
-
+    return () => window.removeEventListener("keydown", onKeyDown)
+  }, [])
+  const value = useMemo(() => ({ open, setOpen, toggle: () => setOpen((current) => !current) }), [open])
   return (
-    <SidebarContext.Provider value={{ open, setOpen, toggle }}>
-      <div
-        data-state={open() ? "expanded" : "collapsed"}
-        class={cn("group/sidebar-wrapper flex min-h-0 w-full flex-1", props.class)}
-      >
-        {props.children}
-      </div>
+    <SidebarContext.Provider value={value}>
+      <div data-state={open ? "expanded" : "collapsed"} className={cn("group/sidebar-wrapper flex min-h-0 w-full flex-1", className)}>{children}</div>
     </SidebarContext.Provider>
   )
 }
 
-export function Sidebar(props: ParentProps<{ class?: string }>) {
+function Sidebar({ className, children }: { className?: string; children?: ReactNode }) {
   const sidebar = useSidebar()
-  return (
-    <aside
-      data-state={sidebar.open() ? "expanded" : "collapsed"}
-      class={cn(
-        "relative flex h-full shrink-0 flex-col border-r border-border bg-surface/35 text-fg transition-[width] duration-200 ease-out",
-        sidebar.open() ? "w-[268px]" : "w-[58px]",
-        props.class,
-      )}
-    >
-      {props.children}
-    </aside>
-  )
+  return <aside data-state={sidebar.open ? "expanded" : "collapsed"} className={cn("relative flex h-full shrink-0 flex-col border-r border-border bg-surface/35 text-fg transition-[width] duration-200 ease-out", sidebar.open ? "w-[268px]" : "w-[58px]", className)}>{children}</aside>
 }
 
-export function SidebarHeader(props: ParentProps<{ class?: string }>) {
-  return <div class={cn("flex min-h-0 flex-col gap-2 p-3", props.class)}>{props.children}</div>
-}
+function SidebarHeader({ className, children }: { className?: string; children?: ReactNode }) { return <div className={cn("flex min-h-0 flex-col gap-2 p-3", className)}>{children}</div> }
+function SidebarContent({ className, children }: { className?: string; children?: ReactNode }) { return <div className={cn("min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3", className)}>{children}</div> }
+function SidebarFooter({ className, children }: { className?: string; children?: ReactNode }) { return <div className={cn("mt-auto flex min-h-0 flex-col gap-2 p-3", className)}>{children}</div> }
+function SidebarGroup({ className, children }: { className?: string; children?: ReactNode }) { return <section className={cn("relative flex w-full min-w-0 flex-col p-1", className)}>{children}</section> }
+function SidebarGroupContent({ className, children }: { className?: string; children?: ReactNode }) { return <div className={cn("w-full text-sm", className)}>{children}</div> }
+function SidebarGroupLabel({ className, children }: { className?: string; children?: ReactNode }) { const sidebar = useSidebar(); return <div className={cn("flex h-7 shrink-0 items-center rounded px-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted transition-[margin,opacity] duration-200", !sidebar.open && "-mt-7 opacity-0", className)}>{children}</div> }
+function SidebarSeparator({ className }: { className?: string }) { return <div role="separator" className={cn("mx-1 my-2 h-px bg-border/80", className)} /> }
+function SidebarMenu({ className, children }: { className?: string; children?: ReactNode }) { return <ul className={cn("flex w-full min-w-0 flex-col gap-0.5", className)}>{children}</ul> }
+function SidebarMenuItem({ className, children }: { className?: string; children?: ReactNode }) { return <li className={cn("group/menu-item relative min-w-0", className)}>{children}</li> }
 
-export function SidebarContent(props: ParentProps<{ class?: string }>) {
-  return (
-    <div class={cn("min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3", props.class)}>
-      {props.children}
-    </div>
-  )
-}
-
-export function SidebarFooter(props: ParentProps<{ class?: string }>) {
-  return <div class={cn("mt-auto flex min-h-0 flex-col gap-2 p-3", props.class)}>{props.children}</div>
-}
-
-export function SidebarGroup(props: ParentProps<{ class?: string }>) {
-  return <section class={cn("relative flex w-full min-w-0 flex-col p-1", props.class)}>{props.children}</section>
-}
-
-export function SidebarGroupLabel(props: ParentProps<{ class?: string }>) {
+type SidebarMenuButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & { active?: boolean; title?: string; href?: string; children?: ReactNode }
+function SidebarMenuButton({ active, title, href, className, children, ...props }: SidebarMenuButtonProps) {
   const sidebar = useSidebar()
-  return (
-    <div
-      class={cn(
-        "flex h-7 shrink-0 items-center rounded px-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted transition-[margin,opacity] duration-200",
-        !sidebar.open() && "-mt-7 opacity-0",
-        props.class,
-      )}
-    >
-      {props.children}
-    </div>
-  )
+  const classes = cn("flex h-9 w-full min-w-0 items-center gap-3 overflow-hidden rounded-md px-2.5 text-left text-[13px] font-medium text-muted no-underline outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring", "hover:bg-surface-raised hover:text-fg", active && "bg-surface-raised text-fg shadow-sm", !sidebar.open && "justify-center gap-0 px-0", className)
+  const content = <><span className="flex size-5 shrink-0 items-center justify-center [&_svg]:size-[17px] [&_svg]:shrink-0">{children}</span><span className={cn("min-w-0 flex-1 truncate transition-[opacity,transform] duration-150", !sidebar.open && "-translate-x-1 opacity-0")}>{title}</span></>
+  if (href) return <a href={href} className={classes} title={!sidebar.open ? title : undefined} aria-current={active ? "page" : undefined}>{content}</a>
+  return <button type="button" className={classes} title={!sidebar.open ? title : undefined} {...props}>{content}</button>
 }
 
-export function SidebarGroupContent(props: ParentProps<{ class?: string }>) {
-  return <div class={cn("w-full text-sm", props.class)}>{props.children}</div>
-}
-
-export function SidebarSeparator(props: { class?: string }) {
-  return <div role="separator" class={cn("mx-1 my-2 h-px bg-border/80", props.class)} />
-}
-
-export function SidebarMenu(props: ParentProps<{ class?: string }>) {
-  return <ul class={cn("flex w-full min-w-0 flex-col gap-0.5", props.class)}>{props.children}</ul>
-}
-
-export function SidebarMenuItem(props: ParentProps<{ class?: string }>) {
-  return <li class={cn("group/menu-item relative min-w-0", props.class)}>{props.children}</li>
-}
-
-type SidebarMenuButtonProps = ParentProps<{
-  href?: string
-  active?: boolean
-  disabled?: boolean
-  title?: string
-  class?: string
-  onClick?: JSX.EventHandlerUnion<HTMLElement, MouseEvent>
-}>
-
-export function SidebarMenuButton(props: SidebarMenuButtonProps) {
+function SidebarTrigger({ className, label }: { className?: string; label?: string }) {
   const sidebar = useSidebar()
-  const classes = () =>
-    cn(
-      "flex h-9 w-full min-w-0 items-center gap-3 overflow-hidden rounded-md px-2.5 text-left text-[13px] font-medium text-muted no-underline outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
-      "hover:bg-surface-raised hover:text-fg",
-      props.active && "bg-surface-raised text-fg shadow-sm",
-      props.disabled && "pointer-events-none opacity-45",
-      !sidebar.open() && "justify-center gap-0 px-0",
-      props.class,
-    )
-  const content = () => (
-    <>
-      <span class="flex size-5 shrink-0 items-center justify-center [&_svg]:size-[17px] [&_svg]:shrink-0">
-        {props.children}
-      </span>
-      <span
-        class="min-w-0 flex-1 truncate transition-[opacity,transform] duration-150"
-        classList={{ "-translate-x-1 opacity-0": !sidebar.open() }}
-      >
-        {props.title}
-      </span>
-    </>
-  )
-
-  return (
-    <>
-      {props.href ? (
-        <a
-          href={props.href}
-          class={classes()}
-          title={!sidebar.open() ? props.title : undefined}
-          aria-current={props.active ? "page" : undefined}
-        >
-          {content()}
-        </a>
-      ) : (
-        <button
-          type="button"
-          class={classes()}
-          title={!sidebar.open() ? props.title : undefined}
-          disabled={props.disabled}
-          onClick={props.onClick}
-        >
-          {content()}
-        </button>
-      )}
-    </>
-  )
+  return <button type="button" className={cn("inline-flex size-8 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-raised hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", className)} aria-label={label ?? "Toggle sidebar"} title={label ?? "Toggle sidebar"} onClick={sidebar.toggle}>{sidebar.open ? <ChevronLeft className="size-4" /> : <Menu className="size-4" />}</button>
 }
 
-export function SidebarTrigger(props: { class?: string; label?: string }) {
-  const sidebar = useSidebar()
-  return (
-    <button
-      type="button"
-      class={cn(
-        "inline-flex size-8 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-raised hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        props.class,
-      )}
-      aria-label={props.label ?? "Toggle sidebar"}
-      title={props.label ?? "Toggle sidebar"}
-      onClick={sidebar.toggle}
-    >
-      {sidebar.open() ? <ChevronLeft class="size-4" /> : <Menu class="size-4" />}
-    </button>
-  )
-}
+function SidebarInset({ className, children }: { className?: string; children?: ReactNode }) { return <main className={cn("min-w-0 flex-1", className)}>{children}</main> }
 
-export function SidebarInset(props: ParentProps<{ class?: string }>) {
-  return <main class={cn("min-w-0 flex-1", props.class)}>{props.children}</main>
-}
-
-export { useSidebar }
+export { SidebarProvider, Sidebar, SidebarHeader, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarSeparator, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarTrigger, SidebarInset, useSidebar }

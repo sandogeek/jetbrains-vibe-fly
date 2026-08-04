@@ -1,29 +1,43 @@
-import * as i18n from "@solid-primitives/i18n"
 import {
   createContext,
-  createMemo,
-  createSignal,
+  useCallback,
   useContext,
-  type Accessor,
-  type JSX,
-  type Setter,
-} from "solid-js"
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react"
 import { dict as enDict } from "./en"
 import type { Locale, RawDictionary } from "./types"
 import { dict as zhDict } from "./zh"
 
 export type { Locale, RawDictionary }
-export type Dictionary = i18n.Flatten<RawDictionary>
-export type Translator = i18n.Translator<Dictionary>
+export type Dictionary = Record<string, string>
+export type Translator = (
+  key: string,
+  params?: Record<string, string | number>,
+) => string
 
 const dictionaries: Record<Locale, RawDictionary> = {
   en: enDict,
   zh: zhDict,
 }
 
+function flattenDictionary(
+  source: object,
+  prefix = "",
+  target: Dictionary = {},
+): Dictionary {
+  for (const [key, value] of Object.entries(source)) {
+    const path = prefix ? `${prefix}.${key}` : key
+    if (typeof value === "string") target[path] = value
+    else if (value && typeof value === "object") flattenDictionary(value, path, target)
+  }
+  return target
+}
+
 const flatDictionaries: Record<Locale, Dictionary> = {
-  en: i18n.flatten(enDict),
-  zh: i18n.flatten(zhDict),
+  en: flattenDictionary(enDict),
+  zh: flattenDictionary(zhDict),
 }
 
 export function detectLocale(language = navigator.language): Locale {
@@ -31,33 +45,42 @@ export function detectLocale(language = navigator.language): Locale {
 }
 
 type I18nContextValue = {
-  locale: Accessor<Locale>
-  setLocale: Setter<Locale>
+  locale: Locale
+  setLocale: (locale: Locale) => void
   t: Translator
-  dict: Accessor<Dictionary>
+  dict: Dictionary
 }
 
-const I18nContext = createContext<I18nContextValue>()
+const I18nContext = createContext<I18nContextValue | null>(null)
 
-export function I18nProvider(props: {
-  children: JSX.Element
+export function I18nProvider({
+  children,
+  initialLocale,
+}: {
+  children: ReactNode
   initialLocale?: Locale
 }) {
-  const [locale, setLocale] = createSignal<Locale>(props.initialLocale ?? detectLocale())
-  const dict = createMemo(() => flatDictionaries[locale()])
-  const t = i18n.translator(dict, i18n.resolveTemplate)
-
-  return (
-    <I18nContext.Provider value={{ locale, setLocale, t, dict }}>
-      {props.children}
-    </I18nContext.Provider>
+  const [locale, setLocale] = useState<Locale>(initialLocale ?? detectLocale())
+  const dict = flatDictionaries[locale]
+  const t = useCallback<Translator>(
+    (key, params) => {
+      let value = dict[key] ?? flatDictionaries.en[key] ?? key
+      for (const [name, replacement] of Object.entries(params ?? {})) {
+        value = value.replaceAll(`{{${name}}}`, String(replacement))
+      }
+      return value
+    },
+    [dict],
   )
+  const value = useMemo(() => ({ locale, setLocale, t, dict }), [dict, locale, t])
+
+  return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>
 }
 
 export function useI18n(): I18nContextValue {
-  const ctx = useContext(I18nContext)
-  if (!ctx) throw new Error("useI18n must be used within I18nProvider")
-  return ctx
+  const context = useContext(I18nContext)
+  if (!context) throw new Error("useI18n must be used within I18nProvider")
+  return context
 }
 
 export function useT(): Translator {
