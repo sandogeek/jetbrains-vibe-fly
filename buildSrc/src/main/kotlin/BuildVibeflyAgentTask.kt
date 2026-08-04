@@ -270,7 +270,7 @@ abstract class BuildVibeflyAgentTask @Inject constructor(
     private fun rewritePackageJsonFileDeps(
         packageJson: File,
         rewrites: Map<String, String>,
-        dropDevDependencies = false,
+        dropDevDependencies: Boolean = false,
     ) {
         if (!packageJson.isFile) {
             throw GradleException("Missing package.json: $packageJson")
