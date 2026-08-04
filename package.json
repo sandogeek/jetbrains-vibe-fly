@@ -1,0 +1,16 @@
+{
+  "name": "jetbrains-vibe-fly",
+  "private": true,
+  "packageManager": "pnpm@9.15.9",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build:simplerpc": "pnpm --filter @sandogeek/simple-rpc run build && pnpm --filter @sandogeek/simple-rpc-node run build",
+    "build:shared": "pnpm --filter @vibefly/uiagent-shared run build",
+    "build:agent": "pnpm --filter @vibefly/agent run build",
+    "build:ui": "pnpm --filter @vibefly/ui run build",
+    "typecheck": "pnpm -r run typecheck",
+    "test": "pnpm -r run test"
+  }
+}

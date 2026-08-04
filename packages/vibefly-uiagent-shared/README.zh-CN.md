@@ -28,5 +28,5 @@ TypeScript 只允许装饰器挂在方法实现上（不能挂在 abstract 方�
 
 可选的线上服务名重命名：`@rpcService("WireName")`。
 
-修改契约后请运行 `npm run generate`。`npm run typecheck` 也会校验
+修改契约后请运行 `pnpm run generate`。`pnpm run typecheck` 也会校验
 `src/contracts.generated.ts` 是否为最新。

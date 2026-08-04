@@ -76,7 +76,7 @@ val exportBundledCatalog by tasks.registering(ExportBundledCatalogTask::class) {
 }
 
 // vibefly-ui (Vite) → src/main/resources/web for ClasspathResourceHandler
-// Dev (-Pvibefly.ui.dev=true / -Pvibefly.ui.dev.url=...): JCEF loads Vite; skip npm run build
+// Dev (-Pvibefly.ui.dev=true / -Pvibefly.ui.dev.url=...): JCEF loads Vite; skip pnpm run build
 val uiDevMode =
     findProperty("vibefly.ui.dev")?.toString() == "true" ||
         !findProperty("vibefly.ui.dev.url")?.toString()?.trim().isNullOrEmpty()
@@ -99,7 +99,7 @@ val buildVibeflyUi by tasks.registering(BuildVibeflyUiTask::class) {
     outputDir.set(webOut)
 }
 
-// Dev: JCEF loads Vite — skip npm run build, but still refresh generated provider data.
+// Dev: JCEF loads Vite — skip pnpm run build, but still refresh generated provider data.
 if (!uiDevMode) {
     tasks.named("processResources") {
         dependsOn(buildVibeflyUi)

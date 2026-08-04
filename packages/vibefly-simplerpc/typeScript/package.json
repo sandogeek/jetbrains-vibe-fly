@@ -18,7 +18,7 @@
     "build": "tsc -p tsconfig.json",
     "test": "node --import tsx --test 'test/**/*.test.ts'",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "pnpm run build"
   },
   "devDependencies": {
     "@types/node": "^22.13.10",

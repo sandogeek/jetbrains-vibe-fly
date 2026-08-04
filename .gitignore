@@ -8,8 +8,12 @@ build
 webview/node_modules
 webview/dist
 
-# vibefly-ui (Vite)
+# Node / pnpm
+node_modules
 packages/**/node_modules
 packages/vibefly-ui/dist
 packages/vibefly-uiagent-shared/dist
+packages/vibefly-agent/dist
+packages/vibefly-simplerpc/typeScript/dist
+packages/vibefly-simplerpc/typeScript-node/dist
 packages/vibefly-jcef/**/resources/web/

@@ -57,23 +57,22 @@
 前置：
 
 - JDK 21+
-- Node.js ≥ 22（包含 npm）
+- Node.js ≥ 22
+- pnpm ≥ 9（推荐 `corepack enable`，仓库 `packageManager` 会锁定版本）
 - 可访问的 IntelliJ Platform 依赖（Gradle 会拉取）
 
 ```bash
-# 安装前端 / Agent 依赖
-cd packages/vibefly-simplerpc/typeScript && npm install && npm run build
-cd ../typeScript-node && npm install && npm run build
-cd ../../vibefly-uiagent-shared && npm install && npm run build
-cd ../vibefly-agent && npm install
-cd ../vibefly-ui && npm install
+# 安装前端 / Agent 依赖（pnpm workspace）
+corepack enable   # 若尚未启用
+pnpm install
+pnpm run build:simplerpc
+pnpm run build:shared
 
-# 回到仓库根目录，启动 IDE 沙箱
-cd ../../..
+# 启动 IDE 沙箱
 ./gradlew :plugin:runIde
 ```
 
-Gradle 在打包资源前会构建 UI（`buildVibeflyUi`）与 Agent；未 `npm install` 时相关任务会跳过并打日志。
+Gradle 在打包资源前会构建 UI（`buildVibeflyUi`）与 Agent；未 `pnpm install` 时相关任务会跳过并打日志。
 
 ### 手动安装构建产物
 

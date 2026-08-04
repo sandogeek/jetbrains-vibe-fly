@@ -1,0 +1,6 @@
+packages:
+  - "packages/vibefly-simplerpc/typeScript"
+  - "packages/vibefly-simplerpc/typeScript-node"
+  - "packages/vibefly-uiagent-shared"
+  - "packages/vibefly-agent"
+  - "packages/vibefly-ui"

@@ -15,8 +15,8 @@ import java.io.File
 import javax.inject.Inject
 
 /**
- * Runs `npm run build` in packages/vibefly-ui (Vite → vibefly-jcef resources/web).
- * Resolves `node` via property, PATH, and common install locations.
+ * Runs `pnpm run build` in packages/vibefly-ui (Vite → vibefly-jcef resources/web).
+ * Resolves `node` / `pnpm` via property, PATH, and common install locations.
  */
 abstract class BuildVibeflyUiTask @Inject constructor(
     private val execOperations: ExecOperations,
@@ -60,7 +60,7 @@ abstract class BuildVibeflyUiTask @Inject constructor(
         val nodeModules = File(workDir, "node_modules")
         if (!nodeModules.isDirectory) {
             logger.warn(
-                "Skip vibefly-ui build: missing node_modules at {}. Run: (cd packages/vibefly-ui && npm install)",
+                "Skip vibefly-ui build: missing node_modules at {}. Run: pnpm install",
                 nodeModules,
             )
             return
@@ -71,15 +71,16 @@ abstract class BuildVibeflyUiTask @Inject constructor(
                 "Cannot find 'node'. Install Node.js or set -Pvibefly.node=/path/to/node. " +
                     "IDE-launched Gradle often misses Homebrew/nvm PATH.",
             )
-        val npm = resolveNpmExecutable(node)
+        val pnpm = resolvePnpmExecutable(node)
             ?: throw GradleException(
-                "Cannot find 'npm' next to node at $node. Install Node.js with npm or set -Pvibefly.node.",
+                "Cannot find 'pnpm'. Enable Corepack (`corepack enable`) or install pnpm, " +
+                    "or set -Pvibefly.node so pnpm can be resolved next to node.",
             )
 
-        logger.info("Building vibefly-ui with {} ({})", node, npm)
+        logger.info("Building vibefly-ui with {} ({})", node, pnpm)
         execOperations.exec {
             workingDir(workDir)
-            commandLine(npm, "run", "build")
+            commandLine(pnpm, "run", "build")
             environment("PATH", pathWithNodeFirst(node))
         }
     }
@@ -106,31 +107,31 @@ abstract class BuildVibeflyUiTask @Inject constructor(
             return findOnPath(candidate)
         }
 
-        /** Prefer npm sitting next to [nodeExecutable] (works when IDE PATH omits nvm/Homebrew). */
-        fun resolveNpmExecutable(nodeExecutable: String): String? {
+        /** Prefer pnpm next to [nodeExecutable], then PATH (Corepack / standalone install). */
+        fun resolvePnpmExecutable(nodeExecutable: String): String? {
             val nodeFile = File(nodeExecutable)
-            val binDir = nodeFile.parentFile ?: return findOnPath(npmBinaryName())
-            for (name in npmBinaryNames()) {
+            val binDir = nodeFile.parentFile ?: return findOnPath(pnpmBinaryName())
+            for (name in pnpmBinaryNames()) {
                 val file = File(binDir, name)
                 if (file.exists() && (file.canExecute() || file.isFile)) {
                     return file.absolutePath
                 }
             }
-            return findOnPath(npmBinaryName())
+            return findOnPath(pnpmBinaryName())
         }
 
-        /** Prepend node's bin dir so child npm/scripts resolve `node` when IDE PATH is minimal. */
+        /** Prepend node's bin dir so child pnpm/scripts resolve `node` when IDE PATH is minimal. */
         fun pathWithNodeFirst(nodeExecutable: String, basePath: String? = System.getenv("PATH")): String {
             val nodeDir = File(nodeExecutable).parent ?: return basePath.orEmpty()
             val existing = basePath.orEmpty()
             return if (existing.isEmpty()) nodeDir else "$nodeDir${File.pathSeparator}$existing"
         }
 
-        private fun npmBinaryName(): String =
-            if (isWindows()) "npm.cmd" else "npm"
+        private fun pnpmBinaryName(): String =
+            if (isWindows()) "pnpm.cmd" else "pnpm"
 
-        private fun npmBinaryNames(): List<String> =
-            if (isWindows()) listOf("npm.cmd", "npm.exe", "npm") else listOf("npm")
+        private fun pnpmBinaryNames(): List<String> =
+            if (isWindows()) listOf("pnpm.cmd", "pnpm.exe", "pnpm") else listOf("pnpm")
 
         private fun nodeBinaryName(): String =
             if (isWindows()) "node.exe" else "node"

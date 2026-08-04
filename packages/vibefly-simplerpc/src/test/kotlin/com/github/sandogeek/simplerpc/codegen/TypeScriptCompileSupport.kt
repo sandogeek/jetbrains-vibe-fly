@@ -22,7 +22,7 @@ internal object TypeScriptCompileSupport {
             Files.isDirectory(typeScriptRoot),
         )
         assumeTrue(
-            "tsc not found at $tsc — run npm install in packages/vibefly-simplerpc/typeScript",
+            "tsc not found at $tsc — run pnpm install at repo root",
             Files.isRegularFile(tsc),
         )
 

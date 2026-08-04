@@ -19,11 +19,11 @@
     "build": "tsc -p tsconfig.json",
     "generate": "node ./scripts/generate-rpc-contracts.mjs",
     "generate:check": "node ./scripts/generate-rpc-contracts.mjs --check",
-    "test": "npm run generate:check && node --import tsx --test 'test/**/*.test.ts'",
-    "typecheck": "npm run generate:check && tsc -p tsconfig.json --noEmit"
+    "test": "pnpm run generate:check && node --import tsx --test 'test/**/*.test.ts'",
+    "typecheck": "pnpm run generate:check && tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@sandogeek/simple-rpc": "file:../vibefly-simplerpc/typeScript"
+    "@sandogeek/simple-rpc": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.13.10",

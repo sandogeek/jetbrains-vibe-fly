@@ -38,6 +38,18 @@ jobs:
           distribution: zulu
           java-version: 21
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install JS dependencies
+        run: pnpm install --frozen-lockfile
+
       # Setup Gradle
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v6

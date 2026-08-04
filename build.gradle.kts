@@ -3,7 +3,7 @@
 // Vite HMR: ./gradlew runVibeflyUiDev  (IDE run config "Run UI Dev")
 tasks.register<RunVibeflyUiDevServerTask>("runVibeflyUiDev") {
     group = "run"
-    description = "Start packages/vibefly-ui Vite dev server (npm run dev)"
+    description = "Start packages/vibefly-ui Vite dev server (pnpm run dev)"
     nodeCommand.set(providers.gradleProperty("vibefly.node").orElse("node"))
     workingDirectory.set(layout.projectDirectory.dir("packages/vibefly-ui"))
     devUrl.set(

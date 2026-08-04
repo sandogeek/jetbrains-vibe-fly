@@ -12,7 +12,7 @@ import java.io.File
 import javax.inject.Inject
 
 /**
- * Runs `npm run dev` for packages/vibefly-ui in the foreground (IDE Run / Gradle console).
+ * Runs `pnpm run dev` for packages/vibefly-ui in the foreground (IDE Run / Gradle console).
  * If the Vite port is already listening, exits successfully without starting another process.
  */
 abstract class RunVibeflyUiDevServerTask @Inject constructor(
@@ -46,7 +46,7 @@ abstract class RunVibeflyUiDevServerTask @Inject constructor(
         if (!nodeModules.isDirectory) {
             throw GradleException(
                 "Cannot start vibefly-ui dev server: missing node_modules at $nodeModules. " +
-                    "Run: (cd packages/vibefly-ui && npm install)",
+                    "Run: pnpm install",
             )
         }
 
@@ -55,15 +55,16 @@ abstract class RunVibeflyUiDevServerTask @Inject constructor(
                 "Cannot find 'node'. Install Node.js or set -Pvibefly.node=/path/to/node. " +
                     "IDE-launched Gradle often misses Homebrew/nvm PATH.",
             )
-        val npm = BuildVibeflyUiTask.resolveNpmExecutable(node)
+        val pnpm = BuildVibeflyUiTask.resolvePnpmExecutable(node)
             ?: throw GradleException(
-                "Cannot find 'npm' next to node at $node. Install Node.js with npm or set -Pvibefly.node.",
+                "Cannot find 'pnpm'. Enable Corepack (`corepack enable`) or install pnpm, " +
+                    "or set -Pvibefly.node so pnpm can be resolved next to node.",
             )
 
-        logger.lifecycle("Starting vibefly-ui: npm run dev (node={}, npm={}, cwd={})", node, npm, workDir)
+        logger.lifecycle("Starting vibefly-ui: pnpm run dev (node={}, pnpm={}, cwd={})", node, pnpm, workDir)
         execOperations.exec {
             workingDir(workDir)
-            commandLine(npm, "run", "dev")
+            commandLine(pnpm, "run", "dev")
             environment("PATH", BuildVibeflyUiTask.pathWithNodeFirst(node))
         }
     }

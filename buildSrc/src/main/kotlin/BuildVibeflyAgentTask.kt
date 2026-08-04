@@ -21,7 +21,7 @@ import javax.inject.Inject
 
 /**
  * Builds packages/vibefly-agent and stages a production runtime tree for the plugin zip:
- * `dist/`, rewritten local file deps, `npm install --omit=dev`, then prune of optional/heavy
+ * `dist/`, rewritten local file deps, `pnpm install --prod`, then prune of optional/heavy
  * packages that are not required for agent boot (onnx/sherpa/react TUI/puppeteer, etc.).
  *
  * Output layout (plugin root):
@@ -87,16 +87,17 @@ abstract class BuildVibeflyAgentTask @Inject constructor(
                 "Cannot find 'node'. Install Node.js or set -Pvibefly.node=/path/to/node. " +
                     "IDE-launched Gradle often misses Homebrew/nvm PATH.",
             )
-        val npm = BuildVibeflyUiTask.resolveNpmExecutable(node)
+        val pnpm = BuildVibeflyUiTask.resolvePnpmExecutable(node)
             ?: throw GradleException(
-                "Cannot find 'npm' next to node at $node. Install Node.js with npm or set -Pvibefly.node.",
+                "Cannot find 'pnpm'. Enable Corepack (`corepack enable`) or install pnpm, " +
+                    "or set -Pvibefly.node so pnpm can be resolved next to node.",
             )
 
         val agentRoot = agentRootDir.get().asFile
-        ensureLocalPackageBuilt(node, npm, simpleRpcTsDir.get().asFile)
-        ensureLocalPackageBuilt(node, npm, simpleRpcNodeDir.get().asFile)
-        ensureLocalPackageBuilt(node, npm, uiagentSharedDir.get().asFile)
-        ensureAgentDist(node, npm, agentRoot)
+        ensureLocalPackageBuilt(node, pnpm, simpleRpcTsDir.get().asFile)
+        ensureLocalPackageBuilt(node, pnpm, simpleRpcNodeDir.get().asFile)
+        ensureLocalPackageBuilt(node, pnpm, uiagentSharedDir.get().asFile)
+        ensureAgentDist(node, pnpm, agentRoot)
 
         val out = outputDir.get().asFile
         if (out.exists()) {
@@ -145,9 +146,13 @@ abstract class BuildVibeflyAgentTask @Inject constructor(
             dropDevDependencies = true,
         )
 
-        logger.lifecycle("Installing production vibefly-agent runtime with {} ({})", node, npm)
+        // Hoisted layout so pruneHeavyOptionalRuntime can drop top-level optional heavies
+        // the same way the previous npm staging did.
+        File(out, ".npmrc").writeText("node-linker=hoisted\n")
+
+        logger.lifecycle("Installing production vibefly-agent runtime with {} ({})", node, pnpm)
         // Keep optional pi dependencies during install; heavy unused optionals are pruned below.
-        npmExec(out, npm, node, "install", "--omit=dev", "--ignore-scripts")
+        pnpmExec(out, pnpm, node, "install", "--prod", "--ignore-scripts")
 
         pruneHeavyOptionalRuntime(File(out, "node_modules"))
 
@@ -158,7 +163,7 @@ abstract class BuildVibeflyAgentTask @Inject constructor(
         logger.lifecycle("Bundled vibefly-agent → {}", out)
     }
 
-    private fun ensureLocalPackageBuilt(node: String, npm: String, packageDir: File) {
+    private fun ensureLocalPackageBuilt(node: String, pnpm: String, packageDir: File) {
         val packageJson = File(packageDir, "package.json")
         if (!packageJson.isFile) {
             throw GradleException("Missing package.json: $packageJson")
@@ -166,32 +171,49 @@ abstract class BuildVibeflyAgentTask @Inject constructor(
         val distIndex = File(packageDir, "dist/index.js")
         val nodeModules = File(packageDir, "node_modules")
         if (!nodeModules.isDirectory) {
-            logger.lifecycle("npm install in {}", packageDir)
-            npmExec(packageDir, npm, node, "install")
+            logger.lifecycle("pnpm install (workspace) for {}", packageDir)
+            pnpmInstallWorkspace(packageDir, pnpm, node)
         }
         if (!distIndex.isFile) {
             logger.lifecycle("Building local package {}", packageDir.name)
-            npmExec(packageDir, npm, node, "run", "build")
+            pnpmExec(packageDir, pnpm, node, "run", "build")
         }
         if (!distIndex.isFile) {
             throw GradleException("Local package build missing $distIndex")
         }
     }
 
-    private fun ensureAgentDist(node: String, npm: String, agentRoot: File) {
+    private fun ensureAgentDist(node: String, pnpm: String, agentRoot: File) {
         val nodeModules = File(agentRoot, "node_modules")
         if (!nodeModules.isDirectory) {
-            logger.lifecycle("npm install in {}", agentRoot)
-            npmExec(agentRoot, npm, node, "install")
+            logger.lifecycle("pnpm install (workspace) for {}", agentRoot)
+            pnpmInstallWorkspace(agentRoot, pnpm, node)
         }
         logger.lifecycle("Building vibefly-agent TypeScript")
-        npmExec(agentRoot, npm, node, "run", "build")
+        pnpmExec(agentRoot, pnpm, node, "run", "build")
     }
 
-    private fun npmExec(workDir: File, npm: String, node: String, vararg args: String) {
+    /** Install from monorepo root when possible so workspace:* links resolve. */
+    private fun pnpmInstallWorkspace(packageDir: File, pnpm: String, node: String) {
+        val workspaceRoot = findWorkspaceRoot(packageDir) ?: packageDir
+        pnpmExec(workspaceRoot, pnpm, node, "install")
+    }
+
+    private fun findWorkspaceRoot(start: File): File? {
+        var dir: File? = start
+        while (dir != null) {
+            if (File(dir, "pnpm-workspace.yaml").isFile) {
+                return dir
+            }
+            dir = dir.parentFile
+        }
+        return null
+    }
+
+    private fun pnpmExec(workDir: File, pnpm: String, node: String, vararg args: String) {
         execOperations.exec {
             workingDir(workDir)
-            commandLine(listOf(npm) + args)
+            commandLine(listOf(pnpm) + args)
             environment("PATH", BuildVibeflyUiTask.pathWithNodeFirst(node))
         }
     }
@@ -248,19 +270,20 @@ abstract class BuildVibeflyAgentTask @Inject constructor(
     private fun rewritePackageJsonFileDeps(
         packageJson: File,
         rewrites: Map<String, String>,
-        dropDevDependencies: Boolean = false,
+        dropDevDependencies = false,
     ) {
         if (!packageJson.isFile) {
             throw GradleException("Missing package.json: $packageJson")
         }
         val text = packageJson.readText()
         // Lightweight rewrite without pulling a JSON library into buildSrc.
-        // Preserve formatting-ish by only replacing known file: dependency strings and
+        // Preserve formatting-ish by only replacing known file:/workspace: dependency strings and
         // optionally stripping the "devDependencies" object.
         var next = text
         for ((name, target) in rewrites) {
             val patterns = listOf(
                 """"$name"\s*:\s*"file:[^"]*"""" to """"$name": "$target"""",
+                """"$name"\s*:\s*"workspace:[^"]*"""" to """"$name": "$target"""",
                 """"$name"\s*:\s*"[^"]*"""" to """"$name": "$target"""",
             )
             var replaced = false
@@ -289,6 +312,15 @@ abstract class BuildVibeflyAgentTask @Inject constructor(
                 "",
             )
         }
+        // Staged agent is a standalone tree; strip monorepo lifecycle hooks that call pnpm -C.
+        next = next.replace(
+            Regex(
+                """,?\s*"pre(build|typecheck|test|start|start:dist|publishOnly)"\s*:\s*"[^"]*"""",
+            ),
+            "",
+        )
+        // Drop trailing commas left by script/devDependency stripping (strict JSON).
+        next = next.replace(Regex(""",(\s*[}\]])"""), "$1")
         packageJson.writeText(next)
     }
 

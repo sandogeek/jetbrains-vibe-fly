@@ -18,10 +18,10 @@
     "build": "tsc -p tsconfig.json",
     "test": "node --import tsx --test 'test/**/*.test.ts'",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "pnpm run build"
   },
   "dependencies": {
-    "@sandogeek/simple-rpc": "file:../typeScript",
+    "@sandogeek/simple-rpc": "workspace:*",
     "ws": "^8.18.0"
   },
   "devDependencies": {

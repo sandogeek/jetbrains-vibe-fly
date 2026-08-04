@@ -68,7 +68,8 @@ val buildVibeflyAgent by tasks.registering(BuildVibeflyAgentTask::class) {
     uiagentSharedDir.set(rootProject.layout.projectDirectory.dir("packages/vibefly-uiagent-shared"))
     dependencyMarkers.from(
         rootProject.layout.projectDirectory.file("packages/vibefly-agent/package.json"),
-        rootProject.layout.projectDirectory.file("packages/vibefly-agent/package-lock.json"),
+        rootProject.layout.projectDirectory.file("pnpm-lock.yaml"),
+        rootProject.layout.projectDirectory.file("pnpm-workspace.yaml"),
         rootProject.layout.projectDirectory.file("packages/vibefly-simplerpc/typeScript/package.json"),
         rootProject.layout.projectDirectory.file("packages/vibefly-simplerpc/typeScript-node/package.json"),
         rootProject.layout.projectDirectory.file("packages/vibefly-uiagent-shared/package.json"),
@@ -95,8 +96,8 @@ tasks.named<org.jetbrains.intellij.platform.gradle.tasks.PrepareSandboxTask>("pr
 
 // Vite HMR: ./gradlew :plugin:runIde -Pvibefly.ui.dev=true
 // Optional: -Pvibefly.ui.dev.url=http://127.0.0.1:5173/
-// runIde waits for the Vite port (no auto-start). Use IDE "Run UI Dev" / Compound, or npm run dev.
-// Dev also skips :vibefly-jcef:buildVibeflyUi (no npm run build).
+// runIde waits for the Vite port (no auto-start). Use IDE "Run UI Dev" / Compound, or pnpm run dev.
+// Dev also skips :vibefly-jcef:buildVibeflyUi (no pnpm run build).
 val isUiDevMode =
     findProperty("vibefly.ui.dev")?.toString() == "true" ||
         !findProperty("vibefly.ui.dev.url")?.toString()?.trim().isNullOrEmpty()

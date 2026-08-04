@@ -32,7 +32,7 @@ Vibe Fly Node agent：对接 [pi](https://github.com/earendil-works/pi)（`@eare
 | commit dump | 模型/预算摘要为 `info`；systemPrompt / messages **全文** 仅在 `debug`（及更低）输出 |
 
 ```bash
-VIBEFLY_LOG_LEVEL=debug npm run start
+VIBEFLY_LOG_LEVEL=debug pnpm run start
 ```
 
 ## 目录
@@ -48,19 +48,17 @@ packages/vibefly-agent/
 
 ## 开发
 
-需要 Node.js ≥ 22（包含 npm）。
+需要 Node.js ≥ 22 与 pnpm ≥ 9。
 
 ```bash
-# 先构建 SimpleRpc Node 传输（若尚未 build）
-cd packages/vibefly-simplerpc/typeScript && npm install && npm run build
-cd ../typeScript-node && npm install && npm run build
-cd ../../vibefly-uiagent-shared && npm install && npm run build
+# 仓库根目录
+pnpm install
+pnpm run build:simplerpc
+pnpm run build:shared
 
-cd packages/vibefly-agent
-npm install
-npm run typecheck
-npm run build
-npm run start          # 前台 stdio 模式，供插件子进程或手工联调
+pnpm --filter @vibefly/agent run typecheck
+pnpm --filter @vibefly/agent run build
+pnpm --filter @vibefly/agent run start   # 前台 stdio 模式，供插件子进程或手工联调
 ```
 
 ### 手工联调

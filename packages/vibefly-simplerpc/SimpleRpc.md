@@ -303,10 +303,10 @@ SimpleRpc.requireSuspendMethods<HostApi>()
 ./gradlew :vibefly-simplerpc:test
 
 # TypeScript（浏览器 / JCEF 核心）
-cd packages/vibefly-simplerpc/typeScript && npm ci && npm test && npm run build
+cd packages/vibefly-simplerpc/typeScript && pnpm install && pnpm test && pnpm run build
 
 # TypeScript（Node stdio + WebSocket）
-cd packages/vibefly-simplerpc/typeScript-node && npm ci && npm test && npm run build
+cd packages/vibefly-simplerpc/typeScript-node && pnpm install && pnpm test && pnpm run build
 ```
 
 ## 超时与取消

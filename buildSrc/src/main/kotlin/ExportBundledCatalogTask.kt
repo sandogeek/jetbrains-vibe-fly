@@ -17,13 +17,13 @@ import java.io.File
 import javax.inject.Inject
 
 /**
- * Runs packages/vibefly-agent `npm run export:catalog` to generate provider TS modules.
+ * Runs packages/vibefly-agent `pnpm run export:catalog` to generate provider TS modules.
  *
  * When agent node_modules is missing, keeps the committed outputs so the plugin can still build.
  * Override node: -Pvibefly.node=/path/to/node
  *
  * Up-to-date inputs are intentional and narrow: only node path, package.json, export script,
- * and upstream package markers — not the whole agent tree (src/, package-lock.json, temps, etc.).
+ * and upstream package markers — not the whole agent tree (src/, lockfile, temps, etc.).
  */
 abstract class ExportBundledCatalogTask @Inject constructor(
     private val execOperations: ExecOperations,
@@ -64,7 +64,7 @@ abstract class ExportBundledCatalogTask @Inject constructor(
             if (outputs.all { it.isFile && it.length() > 0L }) {
                 logger.warn(
                     "Skip provider catalog export: missing node_modules at {}. " +
-                        "Using committed outputs. Run: (cd packages/vibefly-agent && npm install && npm run export:catalog)",
+                        "Using committed outputs. Run: pnpm install && pnpm --filter @vibefly/agent run export:catalog",
                     nodeModules,
                 )
                 return
@@ -72,7 +72,7 @@ abstract class ExportBundledCatalogTask @Inject constructor(
             throw GradleException(
                 "Cannot export provider catalog: missing node_modules at $nodeModules " +
                     "and generated outputs are missing. Run: " +
-                "(cd packages/vibefly-agent && npm install && npm run export:catalog)",
+                    "pnpm install && pnpm --filter @vibefly/agent run export:catalog",
             )
         }
 
@@ -81,15 +81,16 @@ abstract class ExportBundledCatalogTask @Inject constructor(
                 "Cannot find 'node'. Install Node.js or set -Pvibefly.node=/path/to/node. " +
                     "IDE-launched Gradle often misses Homebrew/nvm PATH.",
             )
-        val npm = BuildVibeflyUiTask.resolveNpmExecutable(node)
+        val pnpm = BuildVibeflyUiTask.resolvePnpmExecutable(node)
             ?: throw GradleException(
-                "Cannot find 'npm' next to node at $node. Install Node.js with npm or set -Pvibefly.node.",
+                "Cannot find 'pnpm'. Enable Corepack (`corepack enable`) or install pnpm, " +
+                    "or set -Pvibefly.node so pnpm can be resolved next to node.",
             )
 
-        logger.lifecycle("Exporting bundled model catalog with {} ({})", node, npm)
+        logger.lifecycle("Exporting bundled model catalog with {} ({})", node, pnpm)
         execOperations.exec {
             workingDir(workDir)
-            commandLine(npm, "run", "export:catalog")
+            commandLine(pnpm, "run", "export:catalog")
             environment("PATH", BuildVibeflyUiTask.pathWithNodeFirst(node))
         }
         val missing = outputs.filterNot { it.isFile && it.length() > 0L }
