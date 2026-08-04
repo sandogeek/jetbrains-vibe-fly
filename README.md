@@ -93,7 +93,8 @@ Gradle 在打包资源前会构建 UI（`buildVibeflyUi`）与 Agent；未 `pnpm
 | **Run Plugin** | 启动插件沙箱 |
 | **Run Plugin + UI Dev** | 沙箱 + Vite HMR（推荐改 UI 时用） |
 | **Run UI Dev** | 仅启动 Vite（`http://127.0.0.1:5173`） |
-| **Debug Node Agent** | 断点调试 Agent 入口（Node.js 调试器） |
+| **Attach Node Agent** | 附加到插件拉起的 Agent（`127.0.0.1:6499`） |
+| **Attach JCEF** | 附加到沙箱 JCEF（`127.0.0.1:9222`） |
 | **Run Tests** / **Run Verifications** | 测试与校验 |
 
 ### UI 热更新
@@ -118,7 +119,8 @@ classpath scheme（`http://vibefly/`）无法代理 WebSocket，开发时让 JCE
 # 或 -Pvibefly.agent.inspect=6499
 ```
 
-- VS Code：`.vscode/launch.json` → **Attach vibefly-agent**（粘贴 stderr 中的 `ws://…`）
+- VS Code：`.vscode/launch.json` → **Attach vibefly-agent**，按固定端口 `6499` 附加
+- IntelliJ IDEA：运行 **Attach Node Agent**，直接按固定端口 `6499` 附加，无需填写动态 Inspector URL
 - 浏览器：使用 Node.js Inspector 或 VS Code Node.js 调试器附加到日志中的 `ws://…` 地址
 
 ### 日志

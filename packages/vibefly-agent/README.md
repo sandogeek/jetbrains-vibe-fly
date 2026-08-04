@@ -86,7 +86,8 @@ stdin/stdout 走 Content-Length SimpleRpc 控制面（`Host2Agent`）；业务 R
 # 或 -Pvibefly.agent.inspect=6499
 ```
 
-- VS Code：`.vscode/launch.json` → **Attach vibefly-agent**（粘贴 stderr 的 `ws://...`）
+- IntelliJ IDEA：`.run/Attach Node Agent.run.xml` → **Attach Node Agent**（固定端口 `6499`）
+- VS Code：`.vscode/launch.json` → **Attach vibefly-agent**（固定端口 `6499`）
 - 浏览器：使用 Node.js Inspector 打开日志中的 `ws://...` 地址
 
 ## 依赖
