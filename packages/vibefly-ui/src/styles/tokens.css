@@ -49,8 +49,10 @@ html[data-jb-theme="dark"] {
 @theme {
     --color-fg: var(--vf-fg);
     --color-muted: var(--vf-muted);
+    --color-muted-foreground: var(--vf-muted);
     --color-bg: var(--vf-bg);
     --color-accent: var(--vf-accent);
+    --color-accent-foreground: var(--vf-fg);
     --color-surface: var(--vf-surface);
     --color-surface-raised: var(--vf-surface-raised);
     --color-border: var(--vf-border);
@@ -70,6 +72,8 @@ html[data-jb-theme="dark"] {
     --color-card-foreground: var(--vf-fg);
     --color-popover: var(--vf-bg);
     --color-popover-foreground: var(--vf-fg);
+    --color-sidebar: var(--vf-surface);
+    --color-sidebar-foreground: var(--vf-fg);
 
     --radius-lg: var(--vf-radius);
     --radius-md: calc(var(--vf-radius) - 2px);

@@ -107,9 +107,38 @@
 .markdown-body ul,
 .markdown-body ol,
 .markdown-body blockquote,
-.markdown-body pre,
-.markdown-body table {
+.markdown-body pre {
     margin: 0.6em 0;
+}
+
+.markdown-body [data-streamdown="table-wrapper"] {
+    margin: 0.8em 0;
+    max-width: 100%;
+    overflow-x: auto;
+}
+
+.markdown-body table {
+    width: 100%;
+    margin: 0;
+    border-collapse: collapse;
+    font-size: 12.5px;
+}
+
+.markdown-body th,
+.markdown-body td {
+    padding: 6px 10px;
+    border: 1px solid var(--vf-border);
+    text-align: left;
+    vertical-align: top;
+}
+
+.markdown-body thead th {
+    background: var(--vf-surface-raised);
+    font-weight: 600;
+}
+
+.markdown-body tbody tr:nth-child(even) {
+    background: color-mix(in srgb, var(--vf-surface) 55%, transparent);
 }
 
 .markdown-body h1,

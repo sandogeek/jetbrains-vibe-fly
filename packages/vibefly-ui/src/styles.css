@@ -1,8 +1,9 @@
 @import "tailwindcss";
 
+/* Streamdown emits Tailwind utilities from its dist; must be a direct dep for pnpm path. */
 @source "../node_modules/streamdown/dist/*.js";
-@source "../node_modules/@streamdown/code/dist/*.js";
-@source "../node_modules/@streamdown/cjk/dist/*.js";
+
+@custom-variant dark (&:where(html[data-jb-theme="dark"], html[data-jb-theme="dark"] *));
 
 @import "./styles/tokens.css";
 @import "./styles/base.css";

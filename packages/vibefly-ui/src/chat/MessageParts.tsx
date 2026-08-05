@@ -18,11 +18,34 @@ import {
     RotateCcw,
     Wrench,
 } from "lucide-react"
-import {useCallback, useState} from "react"
+import {createContext, useCallback, useContext, useState} from "react"
 
 import remarkBreaks from "remark-breaks"
+import {defaultRemarkPlugins, type StreamdownProps} from "streamdown"
+
 import {useAppTranslation} from "../i18n"
 import type {ToolArtifact} from "../chatMessageAdapter"
+
+/** Preserve Streamdown GFM (tables, strikethrough, task lists) while adding soft breaks. */
+const remarkPlugins: NonNullable<StreamdownProps["remarkPlugins"]> = [
+    ...Object.values(defaultRemarkPlugins),
+    remarkBreaks,
+]
+
+export type ChatMessageActions = {
+    onOpenLocation: (path: string, line?: number) => void
+    onShowDiff: (path: string) => void
+}
+
+const noopActions: ChatMessageActions = {
+    onOpenLocation: () => undefined,
+    onShowDiff: () => undefined,
+}
+
+export const ChatMessageActionsContext = createContext<ChatMessageActions>(noopActions)
+
+/** Survives part remounts while a tool call is still streaming updates. */
+const toolExpandedById = new Map<string, boolean>()
 
 /** Stop stick-to-bottom so expand/collapse + streaming do not yank the viewport. */
 function useReleaseStickToBottom() {
@@ -38,27 +61,15 @@ function useReleaseStickToBottom() {
     }, [store])
 }
 
-export function ChatMessageView({
-                                    onOpenLocation,
-                                    onShowDiff,
-                                }: {
-    onOpenLocation: (path: string, line?: number) => void
-    onShowDiff: (path: string) => void
-}) {
+export function ChatMessageView() {
     const {t} = useAppTranslation("chat")
     const role = useAuiState((state) => state.message.role)
     const status = useAuiState((state) => state.message.status)
-    const ToolRenderer = useCallback(
-        (part: ToolCallMessagePartProps) => (
-            <ToolPart part={part} onOpenLocation={onOpenLocation} onShowDiff={onShowDiff}/>
-        ),
-        [onOpenLocation, onShowDiff],
-    )
 
     if (role === "user") {
         return (
             <MessagePrimitive.Root className="chat-message user">
-                <MessagePrimitive.Parts components={{Text: UserText}}/>
+                <MessagePrimitive.Parts components={userMessagePartsComponents}/>
             </MessagePrimitive.Root>
         )
     }
@@ -66,14 +77,7 @@ export function ChatMessageView({
     return (
         <MessagePrimitive.Root className={`chat-message ${role}`}>
             <div className="assistant-content">
-                <MessagePrimitive.Parts
-                    components={{
-                        Text: MarkdownText,
-                        Reasoning: ReasoningPart,
-                        tools: {Fallback: ToolRenderer},
-                        data: {by_name: {"vibefly-notice": NoticePart}},
-                    }}
-                />
+                <MessagePrimitive.Parts components={assistantMessagePartsComponents}/>
                 {status?.type === "running" ? <span className="streaming-caret"/> : null}
                 {status?.type === "incomplete" && status.reason === "error" ? (
                     <button className="retry-button">
@@ -94,7 +98,7 @@ function MarkdownText() {
         <StreamdownTextPrimitive
             containerClassName="markdown-body"
             plugins={{code, cjk}}
-            remarkPlugins={[remarkBreaks]}
+            remarkPlugins={remarkPlugins}
             controls={{code: true, table: false}}
             linkSafety={{enabled: false}}
             security={{
@@ -140,18 +144,13 @@ function NoticePart({data}: DataMessagePartProps<NoticeData>) {
     )
 }
 
-function ToolPart({
-                      part,
-                      onOpenLocation,
-                      onShowDiff,
-                  }: {
-    part: ToolCallMessagePartProps
-    onOpenLocation: (path: string, line?: number) => void
-    onShowDiff: (path: string) => void
-}) {
+function ToolPart(part: ToolCallMessagePartProps) {
     const {t} = useAppTranslation("chat")
-    const [expanded, setExpanded] = useState(false)
+    const {onOpenLocation, onShowDiff} = useContext(ChatMessageActionsContext)
     const releaseStickToBottom = useReleaseStickToBottom()
+    const [expanded, setExpanded] = useState(
+        () => toolExpandedById.get(part.toolCallId) ?? false,
+    )
     const artifact = (part.artifact ?? {}) as ToolArtifact
     const status = artifact.status ?? (part.result === undefined ? "running" : "completed")
     const location = artifact.locations?.[0]
@@ -161,7 +160,11 @@ function ToolPart({
                 className="tool-summary"
                 onClick={() => {
                     releaseStickToBottom()
-                    setExpanded((value) => !value)
+                    setExpanded((value) => {
+                        const next = !value
+                        toolExpandedById.set(part.toolCallId, next)
+                        return next
+                    })
                 }}
             >
                 <span className="tool-icon">
@@ -221,4 +224,15 @@ function formatJson(value: string): string {
     } catch {
         return value
     }
+}
+
+const userMessagePartsComponents = {
+    Text: UserText,
+}
+
+const assistantMessagePartsComponents = {
+    Text: MarkdownText,
+    Reasoning: ReasoningPart,
+    tools: {Fallback: ToolPart},
+    data: {by_name: {"vibefly-notice": NoticePart}},
 }

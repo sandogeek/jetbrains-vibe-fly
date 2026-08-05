@@ -19,14 +19,19 @@ import {
     Sparkles,
     X,
 } from "lucide-react"
-import {type MouseEvent as ReactMouseEvent, useEffect, useRef, useState} from "react"
+import {type MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState} from "react"
 
 import {convertChatMessage} from "../chatMessageAdapter"
 import type {ModelPreferencesDto} from "../generated/rpc"
 import {useAppTranslation} from "../i18n"
 import {ModelPicker, type ModelPickerOption} from "../settings/ModelPicker"
-import {ChatMessageView} from "./MessageParts"
+import {ChatMessageActionsContext, ChatMessageView} from "./MessageParts"
 import type {ChatTab, PendingInput, PendingPermission, ThinkingOption} from "./types"
+
+/** Stable identity — inline Message components remount on every stream tick. */
+const threadMessageComponents = {
+    Message: ChatMessageView,
+}
 
 export type AssistantChatProps = {
     tab: ChatTab
@@ -97,8 +102,17 @@ export function AssistantChat(props: AssistantChatProps) {
         if (/^https?:\/\//i.test(href)) props.onOpenExternalUrl(href)
     }
 
+    const messageActions = useMemo(
+        () => ({
+            onOpenLocation: props.onOpenLocation,
+            onShowDiff: props.onShowDiff,
+        }),
+        [props.onOpenLocation, props.onShowDiff],
+    )
+
     return (
         <AssistantRuntimeProvider runtime={runtime}>
+            <ChatMessageActionsContext.Provider value={messageActions}>
             <ThreadPrimitive.Root className="assistant-thread">
                 <ThreadPrimitive.Viewport
                     className="conversation assistant-viewport"
@@ -115,16 +129,7 @@ export function AssistantChat(props: AssistantChatProps) {
                                 <p>{modelLabel(props.tab.summary.modelId, t("chat:defaultModel"))}</p>
                             </div>
                         </ThreadPrimitive.Empty>
-                        <ThreadPrimitive.Messages
-                            components={{
-                                Message: () => (
-                                    <ChatMessageView
-                                        onOpenLocation={props.onOpenLocation}
-                                        onShowDiff={props.onShowDiff}
-                                    />
-                                ),
-                            }}
-                        />
+                        <ThreadPrimitive.Messages components={threadMessageComponents}/>
 
                         {props.pendingPermission ? (
                             <PermissionCard
@@ -232,6 +237,7 @@ export function AssistantChat(props: AssistantChatProps) {
                     </div>
                 </div>
             </ComposerPrimitive.Root>
+            </ChatMessageActionsContext.Provider>
         </AssistantRuntimeProvider>
     )
 }
