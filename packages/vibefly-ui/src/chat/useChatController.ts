@@ -56,6 +56,7 @@ export type ChatController = {
         newSession: () => Promise<void>
         closeSession: (sessionId: string) => Promise<void>
         refreshRecent: () => Promise<void>
+        closeRecent: () => void
         openRecent: (session: RecentChatSession) => Promise<void>
         reorderTabs: (draggedId: string, targetId: string) => void
         setDraft: (sessionId: string, value: string) => void
@@ -558,6 +559,10 @@ export function useChatController(): ChatController {
         }
     }
 
+    const closeRecent = useCallback(() => {
+        setRecentOpen(false)
+    }, [])
+
     const openRecent = async (session: RecentChatSession) => {
         setRecentOpen(false)
         const existing = tabsRef.current.find(
@@ -786,6 +791,7 @@ export function useChatController(): ChatController {
             newSession,
             closeSession,
             refreshRecent,
+            closeRecent,
             openRecent,
             reorderTabs,
             setDraft,

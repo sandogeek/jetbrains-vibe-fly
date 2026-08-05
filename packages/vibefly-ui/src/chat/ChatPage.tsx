@@ -10,7 +10,7 @@ import {
     ShieldCheck,
     X,
 } from "lucide-react"
-import {useRef} from "react"
+import {type RefObject, useEffect, useRef} from "react"
 
 import {useAppTranslation} from "../i18n"
 import {AssistantChat} from "./AssistantChat"
@@ -24,6 +24,8 @@ export function ChatPage() {
 function ChatPageView({controller}: { controller: ChatController }) {
     const {t} = useAppTranslation("chat")
     const dragSessionIdRef = useRef<string | null>(null)
+    const recentTriggerRef = useRef<HTMLButtonElement>(null)
+    const recentMenuRef = useRef<HTMLDivElement>(null)
     const {actions} = controller
     const activeTab = controller.activeTab
     const backgroundPermission =
@@ -34,6 +36,25 @@ function ChatPageView({controller}: { controller: ChatController }) {
         controller.pendingInput?.request.sessionId !== controller.activeId
             ? controller.pendingInput
             : null
+
+    useEffect(() => {
+        if (!controller.recentOpen) return
+        const onPointerDown = (event: PointerEvent) => {
+            if (!(event.target instanceof Node)) return
+            if (recentTriggerRef.current?.contains(event.target)) return
+            if (recentMenuRef.current?.contains(event.target)) return
+            actions.closeRecent()
+        }
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (event.key === "Escape") actions.closeRecent()
+        }
+        document.addEventListener("pointerdown", onPointerDown)
+        document.addEventListener("keydown", onKeyDown)
+        return () => {
+            document.removeEventListener("pointerdown", onPointerDown)
+            document.removeEventListener("keydown", onKeyDown)
+        }
+    }, [controller.recentOpen, actions.closeRecent])
 
     return (
         <main className="chat-app">
@@ -87,6 +108,7 @@ function ChatPageView({controller}: { controller: ChatController }) {
                         <Plus size={17}/>
                     </button>
                     <button
+                        ref={recentTriggerRef}
                         className="icon-button"
                         title={t("chat:recentSessions")}
                         onClick={() => void actions.refreshRecent()}
@@ -106,7 +128,11 @@ function ChatPageView({controller}: { controller: ChatController }) {
                     />
                 </div>
                 {controller.recentOpen ? (
-                    <RecentMenu recent={controller.recent} onOpen={actions.openRecent}/>
+                    <RecentMenu
+                        menuRef={recentMenuRef}
+                        recent={controller.recent}
+                        onOpen={actions.openRecent}
+                    />
                 ) : null}
             </header>
 
@@ -186,15 +212,17 @@ function ChatPageView({controller}: { controller: ChatController }) {
 }
 
 function RecentMenu({
+                        menuRef,
                         recent,
                         onOpen,
                     }: {
+    menuRef: RefObject<HTMLDivElement | null>
     recent: RecentChatSession[]
     onOpen: (session: RecentChatSession) => Promise<void>
 }) {
     const {t} = useAppTranslation("chat")
     return (
-        <div className="recent-menu">
+        <div ref={menuRef} className="recent-menu">
             <div className="recent-menu-title">{t("chat:recentSessions")}</div>
             {recent.length > 0 ? (
                 recent.map((session) => (
