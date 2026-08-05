@@ -1,6 +1,7 @@
 # GitHub Actions workflow for building, testing, verifying, and preparing plugin release drafts:
 # - Build the plugin ZIP with the 'buildPlugin' task and upload it as a workflow artifact.
 # - Run the 'check' task and upload test reports on failure.
+# - Run TypeScript typecheck (incl. RPC generate:check) and package unit tests via pnpm.
 # - Run the 'verifyPlugin' task and upload Plugin Verifier reports.
 # - Create a draft GitHub release on non-pull-request runs.
 #
@@ -130,6 +131,37 @@ jobs:
           name: tests-result
           path: ${{ github.workspace }}/plugin/build/reports/tests
 
+  # TypeScript packages: typecheck (incl. RPC generate:check) + unit tests
+  typescript:
+    name: TypeScript
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch Sources
+        uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install JS dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Workspace packages resolve types from dist/; build SimpleRpc first.
+      - name: Build SimpleRpc
+        run: pnpm run build:simplerpc
+
+      # Covers UI, Agent, SimpleRpc, uiagent-shared; shared typecheck runs generate:check.
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Test
+        run: pnpm run test
+
   # Run plugin structure verification along with IntelliJ Plugin Verifier
   verify:
     name: Verify plugin
@@ -190,7 +222,7 @@ jobs:
   releaseDraft:
     name: Release draft
     if: github.event_name != 'pull_request'
-    needs: [ build, test, verify ]
+    needs: [ build, test, typescript, verify ]
     runs-on: ubuntu-latest
     permissions:
       contents: write
