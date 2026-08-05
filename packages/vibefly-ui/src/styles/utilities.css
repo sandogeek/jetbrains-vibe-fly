@@ -1,0 +1,85 @@
+.spin {
+    animation: spin 1.1s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes blink {
+    0%, 46% {
+        opacity: 1;
+    }
+    47%, 100% {
+        opacity: 0;
+    }
+}
+
+@media (max-width: 600px) {
+    .session-tab {
+        min-width: 124px;
+        max-width: 185px;
+        flex-basis: 160px;
+    }
+
+    .message-stream {
+        padding: 21px 13px 20px;
+    }
+
+    .user-message-text {
+        max-width: 90%;
+    }
+
+    .interaction-card {
+        margin-left: 0;
+    }
+
+    .composer-shell {
+        width: calc(100% - 16px);
+        margin-bottom: 8px;
+    }
+
+    .composer-selectors .model-picker-compact {
+        width: 126px;
+    }
+
+    .composer-thinking-select {
+        width: 88px;
+        max-width: 88px;
+    }
+}
+
+@media (max-width: 390px) {
+    .session-actions {
+        padding: 0 3px;
+    }
+
+    .session-actions .icon-button {
+        width: 27px;
+    }
+
+    .message-stream {
+        padding-inline: 10px;
+    }
+
+    .composer-selectors .toolbar-button {
+        display: none;
+    }
+
+    .composer-selectors .model-picker-compact {
+        width: 116px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        scroll-behavior: auto !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}

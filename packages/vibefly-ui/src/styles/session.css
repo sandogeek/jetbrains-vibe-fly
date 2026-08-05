@@ -1,0 +1,316 @@
+.chat-app {
+    height: 100%;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: radial-gradient(circle at 50% -20%, color-mix(in srgb, var(--vf-surface-raised) 55%, transparent), transparent 42%),
+    var(--vf-bg);
+    color: var(--vf-fg);
+}
+
+.session-bar {
+    position: relative;
+    z-index: 20;
+    min-height: 46px;
+    display: flex;
+    align-items: stretch;
+    border-bottom: 1px solid var(--vf-border);
+    background: color-mix(in srgb, var(--vf-surface) 91%, transparent);
+    backdrop-filter: blur(14px);
+}
+
+.session-tabs {
+    min-width: 0;
+    flex: 1;
+    display: flex;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+}
+
+.session-tabs::-webkit-scrollbar {
+    display: none;
+}
+
+.session-tab {
+    position: relative;
+    min-width: 146px;
+    max-width: 260px;
+    height: 46px;
+    padding: 0 9px 0 12px;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    flex: 0 1 210px;
+    border: 0;
+    border-right: 1px solid var(--vf-border-soft);
+    border-radius: 0;
+    background: transparent;
+    color: var(--vf-muted);
+    cursor: pointer;
+    outline: none;
+}
+
+.session-tab::after {
+    content: "";
+    position: absolute;
+    left: 10px;
+    right: 10px;
+    bottom: 0;
+    height: 2px;
+    border-radius: 2px 2px 0 0;
+    background: transparent;
+}
+
+.session-tab:hover {
+    background: color-mix(in srgb, var(--vf-surface-raised) 65%, transparent);
+    color: var(--vf-fg);
+}
+
+.session-tab.active {
+    background: var(--vf-bg);
+    color: var(--vf-fg);
+}
+
+.session-tab.active::after {
+    background: var(--vf-accent);
+}
+
+.session-title {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: left;
+    font-size: 12.5px;
+    font-weight: 550;
+}
+
+.tab-close {
+    width: 20px;
+    height: 20px;
+    display: grid;
+    place-items: center;
+    flex: none;
+    border-radius: 4px;
+    opacity: 0;
+}
+
+.session-tab:hover .tab-close,
+.session-tab.active .tab-close {
+    opacity: 0.75;
+}
+
+.tab-close:hover {
+    background: var(--vf-surface-raised);
+    opacity: 1 !important;
+}
+
+.status-dot {
+    width: 9px;
+    height: 9px;
+    display: grid;
+    place-items: center;
+    flex: none;
+    border-radius: 50%;
+    background: #62666d;
+    color: var(--vf-muted);
+}
+
+.status-dot.running,
+.status-dot.waiting_permission,
+.status-dot.waiting_input,
+.status-dot.queued,
+.status-dot.error {
+    width: 13px;
+    height: 13px;
+    background: transparent;
+}
+
+.status-dot.running {
+    color: var(--vf-accent);
+}
+
+.status-dot.queued {
+    color: var(--vf-warning);
+}
+
+.status-dot.waiting_permission,
+.status-dot.waiting_input {
+    color: var(--vf-blue);
+}
+
+.status-dot.error {
+    color: var(--vf-danger);
+}
+
+.status-dot.completed {
+    background: #596068;
+}
+
+.status-dot.unread {
+    background: var(--vf-accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--vf-accent) 16%, transparent);
+}
+
+.queue-badge {
+    min-width: 17px;
+    height: 17px;
+    display: grid;
+    place-items: center;
+    border-radius: 9px;
+    background: color-mix(in srgb, var(--vf-warning) 19%, transparent);
+    color: var(--vf-warning);
+    font-size: 10px;
+}
+
+.session-actions {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 0 8px;
+    flex: none;
+    border-left: 1px solid var(--vf-border-soft);
+    background: var(--vf-surface);
+}
+
+.icon-button,
+.toolbar-button,
+.send-button,
+.stop-button {
+    display: inline-grid;
+    place-items: center;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--vf-muted);
+    cursor: pointer;
+}
+
+.icon-button {
+    width: 30px;
+    height: 30px;
+}
+
+.icon-button:hover,
+.toolbar-button:hover {
+    background: var(--vf-surface-raised);
+    color: var(--vf-fg);
+}
+
+.icon-button:disabled,
+.toolbar-button:disabled,
+.send-button:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+
+.connection-dot {
+    width: 7px;
+    height: 7px;
+    margin-left: 4px;
+    border-radius: 50%;
+    background: var(--vf-warning);
+}
+
+.connection-dot.ready {
+    background: var(--vf-accent);
+}
+
+.connection-dot.offline {
+    background: #6d7076;
+}
+
+.recent-menu {
+    position: absolute;
+    top: 42px;
+    right: 8px;
+    width: min(360px, calc(100vw - 16px));
+    max-height: min(520px, calc(100vh - 100px));
+    padding: 7px;
+    overflow-y: auto;
+    border: 1px solid var(--vf-border);
+    border-radius: 9px;
+    background: var(--vf-surface);
+    box-shadow: 0 18px 45px rgb(0 0 0 / 0.34);
+}
+
+.recent-menu-title {
+    padding: 7px 9px 8px;
+    color: var(--vf-muted);
+    font-size: 11px;
+    font-weight: 650;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.recent-item {
+    width: 100%;
+    padding: 9px;
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+}
+
+.recent-item:hover {
+    background: var(--vf-surface-raised);
+}
+
+.recent-item > span {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.recent-item strong {
+    overflow: hidden;
+    color: var(--vf-fg);
+    font-size: 12px;
+    font-weight: 550;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.recent-item small,
+.empty-menu {
+    color: var(--vf-muted);
+    font-size: 10.5px;
+}
+
+.empty-menu {
+    padding: 18px 9px;
+    text-align: center;
+}
+
+.attention-bar {
+    min-height: 34px;
+    padding: 7px 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border: 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--vf-blue) 35%, var(--vf-border));
+    background: color-mix(in srgb, var(--vf-blue) 11%, var(--vf-bg));
+    color: var(--vf-fg);
+    font-size: 11.5px;
+    cursor: pointer;
+}
+
+.attention-bar span:nth-child(2) {
+    flex: 1;
+    text-align: left;
+}
+
+.attention-bar span:last-child {
+    color: var(--vf-blue);
+}

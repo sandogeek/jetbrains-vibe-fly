@@ -1,0 +1,22 @@
+@layer base {
+    html,
+    body,
+    #root {
+        @apply m-0 h-full bg-bg text-fg font-sans;
+    }
+
+    button,
+    textarea,
+    select,
+    input {
+        font: inherit;
+    }
+
+    button {
+        color: inherit;
+    }
+}
+
+* {
+    box-sizing: border-box;
+}
