@@ -130,8 +130,9 @@ classpath scheme（`http://vibefly/`）无法代理 WebSocket，开发时让 JCE
 | Agent | winston → **stderr only** | `VIBEFLY_LOG_LEVEL` |
 | UI | loglevel → Host `logFromWeb` | `localStorage.vibefly.log.level` / `VIBEFLY_LOG_LEVEL` |
 
-### 子包文档
+### 文档
 
+- [docs/](./docs/README.md) — 架构、开发、RPC、Agent、设置
 - [packages/vibefly-agent](./packages/vibefly-agent/README.md)
 - [packages/vibefly-ui](./packages/vibefly-ui/README.md)
 - [packages/vibefly-uiagent-shared](./packages/vibefly-uiagent-shared/README.md) · [中文](./packages/vibefly-uiagent-shared/README.zh-CN.md)
