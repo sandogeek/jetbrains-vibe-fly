@@ -2,12 +2,9 @@
  * Agent WebSocket session: ticket store, origin check, single active UI session.
  * Transport + hello handshake live in @sandogeek/simple-rpc-node.
  */
-import type { SimpleRpcPeer } from "@sandogeek/simple-rpc"
-import {
-  createNodeServerWebSocketRpc,
-  type NodeServerWebSocketRpcSession,
-} from "@sandogeek/simple-rpc-node"
-import { log } from "./log.js"
+import type {SimpleRpcPeer} from "@sandogeek/simple-rpc"
+import {createNodeServerWebSocketRpc, type NodeServerWebSocketRpcSession,} from "@sandogeek/simple-rpc-node"
+import {log} from "./log.js"
 
 export type TicketRecord = {
   expectedOrigin: string
@@ -28,16 +25,45 @@ export type AgentWsServer = {
 }
 
 const DEFAULT_TICKET_TTL_MS = 30_000
+/** Cap unused tickets so a stuck issuer cannot grow the map without bound. */
+const MAX_TICKETS = 64
+const CLEANUP_INTERVAL_MS = 15_000
 
-export function createTicketStore(): SessionTicketStore {
+export function createTicketStore(options?: {
+  maxTickets?: number
+  cleanupIntervalMs?: number
+  now?: () => number
+}): SessionTicketStore {
   const tickets = new Map<string, TicketRecord>()
+  const maxTickets = options?.maxTickets ?? MAX_TICKETS
+  const cleanupIntervalMs = options?.cleanupIntervalMs ?? CLEANUP_INTERVAL_MS
+  const now = options?.now ?? Date.now
+
+  function purgeExpired(): void {
+    const t = now()
+    for (const [key, rec] of tickets) {
+      if (t > rec.expiresAtEpochMs) tickets.delete(key)
+    }
+  }
+
+  const cleanupTimer = setInterval(purgeExpired, cleanupIntervalMs)
+  // Do not keep the process alive solely for ticket GC.
+  cleanupTimer.unref?.()
 
   return {
     create(expectedOrigin: string, ttlMs = DEFAULT_TICKET_TTL_MS) {
+      if (tickets.size >= maxTickets) {
+        purgeExpired()
+      }
+      if (tickets.size >= maxTickets) {
+        // Drop oldest insertion (Map preserves insert order).
+        const oldest = tickets.keys().next().value
+        if (oldest !== undefined) tickets.delete(oldest)
+      }
       const ticket =
         crypto.randomUUID().replace(/-/g, "") +
         crypto.randomUUID().replace(/-/g, "")
-      const expiresAtEpochMs = Date.now() + ttlMs
+      const expiresAtEpochMs = now() + ttlMs
       tickets.set(ticket, {
         expectedOrigin,
         expiresAtEpochMs,
@@ -49,10 +75,12 @@ export function createTicketStore(): SessionTicketStore {
       const rec = tickets.get(ticket)
       if (!rec) return null
       tickets.delete(ticket)
+      if (rec.used || now() > rec.expiresAtEpochMs) return null
       return rec
     },
     clear() {
       tickets.clear()
+      clearInterval(cleanupTimer)
     },
   }
 }
