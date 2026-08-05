@@ -1,5 +1,7 @@
 import { Search, Settings2, SlidersHorizontal } from "lucide-react"
+import { i18n, useAppTranslation } from "../i18n"
 import { useEffect, useRef, useState, type ReactNode } from "react"
+
 import { useLocation, useNavigate } from "react-router-dom"
 import type {
   Host2UiService,
@@ -7,7 +9,6 @@ import type {
   LoginInputResponse,
   Ui2Host,
 } from "../generated/rpc"
-import { useT } from "../i18n"
 import { createUiRpc } from "../rpc/client"
 import { bindConsoleToHost } from "../rpc/console"
 import { applyJbTheme } from "../theme"
@@ -39,7 +40,7 @@ type LoginHandlers = {
 }
 
 export function SettingsShell() {
-  const t = useT()
+  const { t } = useAppTranslation(["settings", "sidebar"])
   const navigate = useNavigate()
   const location = useLocation()
   const [search, setSearch] = useState("")
@@ -94,12 +95,12 @@ export function SettingsShell() {
         try {
           const refresh = await host.refreshProviders(PROVIDER_CONFIG_RPC_OPTIONS)
           if (refresh.ok) snapshot = mergeProvidersSnapshot(refresh.snapshot, state.catalog)
-          else loadError = loadError ?? refresh.error ?? t("settings.refreshFailed")
+          else loadError = loadError ?? refresh.error ?? i18n.t("settings:refreshFailed")
         } catch (error) {
           loadError = loadError ?? (error instanceof Error ? error.message : String(error))
         }
       } else {
-        loadError = t("settings.hostUnavailable")
+        loadError = i18n.t("settings:hostUnavailable")
       }
 
       if (!cancelled) setState((current) => ({ ...current, settings, snapshot, loadError, busy: false }))
@@ -111,7 +112,7 @@ export function SettingsShell() {
       unbindConsole?.()
       setUi2Host(null)
     }
-  }, [t])
+  }, [])
 
   const saveSettings = async (settings: IdeSettingsDto) => {
     const host = ui2Host
@@ -133,18 +134,18 @@ export function SettingsShell() {
     <SidebarProvider className="h-full min-h-0 overflow-hidden">
       <Sidebar>
         <SidebarHeader>
-          <div className="flex justify-end px-1"><SidebarTrigger label={t("settings.title")} /></div>
-          <SidebarSearch value={search} placeholder={t("sidebar.search")} shortcut={t("sidebar.searchShortcut")} onInput={setSearch} />
+          <div className="flex justify-end px-1"><SidebarTrigger label={t("settings:title")} /></div>
+          <SidebarSearch value={search} placeholder={t("sidebar:search")} shortcut={t("sidebar:searchShortcut")} onInput={setSearch} />
         </SidebarHeader>
         <SidebarContent>
           <SidebarGroup>
             <SidebarGroupContent>
               <SidebarMenu>
-                {hasSearch(t("settings.providers")) && (
-                  <SettingsNavItem label={t("settings.providers")} icon={<Settings2 />} active={activePath.includes("/settings/providers")} onSelect={() => navigate("/settings/providers")} />
+                {hasSearch(t("settings:providers")) && (
+                  <SettingsNavItem label={t("settings:providers")} icon={<Settings2 />} active={activePath.includes("/settings/providers")} onSelect={() => navigate("/settings/providers")} />
                 )}
-                {hasSearch(t("settings.commitMessage")) && (
-                  <SettingsNavItem label={t("settings.commitMessage")} icon={<SlidersHorizontal />} active={activePath.includes("/settings/commit-message")} onSelect={() => navigate("/settings/commit-message")} />
+                {hasSearch(t("settings:commitMessage")) && (
+                  <SettingsNavItem label={t("settings:commitMessage")} icon={<SlidersHorizontal />} active={activePath.includes("/settings/commit-message")} onSelect={() => navigate("/settings/commit-message")} />
                 )}
               </SidebarMenu>
             </SidebarGroupContent>

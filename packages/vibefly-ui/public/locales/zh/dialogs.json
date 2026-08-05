@@ -1,0 +1,18 @@
+{
+  "editProvider": "编辑 {{name}}",
+  "connectProvider": "连接 {{name}}",
+  "loginHint": "推荐使用登录完成浏览器 OAuth 或提供商粘贴密钥流程。你也可以在下方手动保存 API 密钥。",
+  "apiKey": "API 密钥",
+  "keepExistingKey": "留空则保留现有密钥",
+  "apiKeyRequired": "连接需要 API 密钥",
+  "apiKeyOrLogin": "请输入 API 密钥，或使用登录",
+  "addCustomProvider": "添加自定义提供商",
+  "providerId": "提供商 id",
+  "baseUrl": "Base URL",
+  "api": "API",
+  "modelsLine": "模型（每行一个：id | name | api）",
+  "loginTo": "登录 {{name}}",
+  "openBrowser": "打开浏览器",
+  "completeSignIn": "在浏览器中完成登录后返回此处。",
+  "cancelLogin": "取消登录"
+}

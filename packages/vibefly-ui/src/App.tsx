@@ -62,10 +62,11 @@ import {
   useState,
   type MouseEvent as ReactMouseEvent,
 } from "react"
+
 import remarkBreaks from "remark-breaks"
+import { i18n, useAppTranslation } from "./i18n"
 import { convertChatMessage, type ToolArtifact } from "./chatMessageAdapter"
 import type { ModelPreferencesDto, Ui2Host } from "./generated/rpc"
-import { useT } from "./i18n"
 import { log } from "./log"
 import { connectAgentRpc, type AgentStatus } from "./rpc/agent"
 import { createUiRpc } from "./rpc/client"
@@ -175,7 +176,7 @@ function demoTab(): ChatTab {
 }
 
 export function App() {
-  const t = useT()
+  const { t } = useAppTranslation("chat")
   const [hostStatus, setHostStatus] = useState("connecting")
   const [agentStatus, setAgentStatus] = useState<AgentStatus>("idle")
   const [tabs, setTabs] = useState<ChatTab[]>([])
@@ -282,7 +283,7 @@ export function App() {
   )
   const thinkingOptions = useMemo<ThinkingOption[]>(
     () => [
-      { value: "off", label: t("chat.thinkingOff") },
+      { value: "off", label: t("chat:thinkingOff") },
       { value: "low", label: "Low" },
       { value: "medium", label: "Medium" },
       { value: "high", label: "High" },
@@ -564,7 +565,7 @@ export function App() {
         while (!agentRef.current && Date.now() < deadline && !isDisposed()) {
           await new Promise((resolve) => setTimeout(resolve, 50))
         }
-        if (!agentRef.current) throw new Error(t("chat.agentTimeout"))
+        if (!agentRef.current) throw new Error(i18n.t("chat:agentTimeout"))
 
         const restored: ChatTab[] = []
         for (const sessionId of (workspace.sessionIds ?? []).slice(0, MAX_OPEN_TABS)) {
@@ -634,7 +635,6 @@ export function App() {
       loadModelPreferences,
       loadModels,
       persistWorkspace,
-      t,
       updateActiveId,
       updatePendingInput,
       updatePendingPermission,
@@ -734,7 +734,7 @@ export function App() {
   const newSession = async () => {
     setRecentOpen(false)
     if (tabsRef.current.length >= MAX_OPEN_TABS) {
-      setError(t("chat.maxSessions"))
+      setError(t("chat:maxSessions"))
       return
     }
     if (offlineRef.current) {
@@ -742,7 +742,7 @@ export function App() {
       const tab: ChatTab = {
         summary: {
           sessionId: id,
-          title: t("chat.newSession"),
+          title: t("chat:newSession"),
           state: "idle",
           unread: false,
           updatedAt: Date.now(),
@@ -773,7 +773,7 @@ export function App() {
     const running = ["running", "waiting_permission", "waiting_input"].includes(
       tab.summary.state,
     )
-    if (running && !window.confirm(t("chat.closeRunning"))) return
+    if (running && !window.confirm(t("chat:closeRunning"))) return
     try {
       if (running && agentRef.current) await agentRef.current.abortChatTurn(sessionId)
       if (agentRef.current && !offlineRef.current) {
@@ -821,7 +821,7 @@ export function App() {
       return
     }
     if (tabsRef.current.length >= MAX_OPEN_TABS || !agentRef.current) {
-      setError(t("chat.closeSessionFirst"))
+      setError(t("chat:closeSessionFirst"))
       return
     }
     try {
@@ -1026,7 +1026,7 @@ export function App() {
               <span
                 className="tab-close"
                 role="button"
-                title={t("chat.closeSession")}
+                title={t("chat:closeSession")}
                 onClick={(event) => void closeSession(tab.summary.sessionId, event)}
               >
                 <X size={13} strokeWidth={1.8} />
@@ -1037,21 +1037,21 @@ export function App() {
         <div className="session-actions">
           <button
             className="icon-button"
-            title={t("chat.newSession")}
+            title={t("chat:newSession")}
             onClick={() => void newSession()}
           >
             <Plus size={17} />
           </button>
           <button
             className="icon-button"
-            title={t("chat.recentSessions")}
+            title={t("chat:recentSessions")}
             onClick={() => void refreshRecent()}
           >
             <History size={16} />
           </button>
           <button
             className="icon-button"
-            title={t("chat.openSettings")}
+            title={t("chat:openSettings")}
             onClick={() => void hostRef.current?.openIdeSettings()}
           >
             <Settings2 size={16} />
@@ -1063,7 +1063,7 @@ export function App() {
         </div>
         {recentOpen ? (
           <div className="recent-menu">
-            <div className="recent-menu-title">{t("chat.recentSessions")}</div>
+            <div className="recent-menu-title">{t("chat:recentSessions")}</div>
             {recent.length > 0 ? (
               recent.map((session) => (
                 <button
@@ -1079,7 +1079,7 @@ export function App() {
                 </button>
               ))
             ) : (
-              <div className="empty-menu">{t("chat.noRecent")}</div>
+              <div className="empty-menu">{t("chat:noRecent")}</div>
             )}
           </div>
         ) : null}
@@ -1091,8 +1091,8 @@ export function App() {
           onClick={() => void activate(pendingPermission.request.sessionId)}
         >
           <ShieldCheck size={15} />
-          <span>{t("chat.backgroundPermission")}</span>
-          <span>{t("common.open")}</span>
+          <span>{t("chat:backgroundPermission")}</span>
+          <span>{t("common:open")}</span>
         </button>
       ) : null}
       {pendingInput && pendingInput.request.sessionId !== activeId ? (
@@ -1101,8 +1101,8 @@ export function App() {
           onClick={() => void activate(pendingInput.request.sessionId)}
         >
           <MessageSquareText size={15} />
-          <span>{t("chat.backgroundInput")}</span>
-          <span>{t("common.open")}</span>
+          <span>{t("chat:backgroundInput")}</span>
+          <span>{t("common:open")}</span>
         </button>
       ) : null}
 
@@ -1162,7 +1162,7 @@ export function App() {
         <section className="conversation">
           <div className="empty-state">
             <LoaderCircle className="spin" size={22} />
-            <span>{t("chat.loadingSession")}</span>
+            <span>{t("chat:loadingSession")}</span>
           </div>
         </section>
       )}
@@ -1202,7 +1202,7 @@ type AssistantChatProps = {
 }
 
 function AssistantChat(props: AssistantChatProps) {
-  const t = useT()
+  const { t } = useAppTranslation("chat")
   const running = props.busy || props.queued
   const runtime = useExternalStoreRuntime<ChatMessage>({
     messages: props.tab.messages,
@@ -1239,8 +1239,8 @@ function AssistantChat(props: AssistantChatProps) {
                 <div className="new-session-mark">
                   <Sparkles size={22} />
                 </div>
-                <h1>{t("chat.startSession")}</h1>
-                <p>{modelLabel(props.tab.summary.modelId, t("chat.defaultModel"))}</p>
+                <h1>{t("chat:startSession")}</h1>
+                <p>{modelLabel(props.tab.summary.modelId, t("chat:defaultModel"))}</p>
               </div>
             </ThreadPrimitive.Empty>
             <ThreadPrimitive.Messages
@@ -1279,7 +1279,7 @@ function AssistantChat(props: AssistantChatProps) {
           <span>{props.error}</span>
           <button
             className="icon-button"
-            title={t("common.dismiss")}
+            title={t("common:dismiss")}
             onClick={props.onDismissError}
           >
             <X size={14} />
@@ -1296,7 +1296,7 @@ function AssistantChat(props: AssistantChatProps) {
                 <span>{context.path}</span>
                 <button
                   type="button"
-                  title={t("chat.removeContext")}
+                  title={t("chat:removeContext")}
                   onClick={() => props.onRemoveContext(context.id)}
                 >
                   <X size={12} />
@@ -1307,7 +1307,7 @@ function AssistantChat(props: AssistantChatProps) {
         ) : null}
         <ComposerPrimitive.Input
           className="composer-input"
-          placeholder={t("chat.typeMessage")}
+          placeholder={t("chat:typeMessage")}
           submitMode="enter"
           onChange={(event) => props.onDraftChange(event.currentTarget.value)}
         />
@@ -1316,7 +1316,7 @@ function AssistantChat(props: AssistantChatProps) {
             <button
               type="button"
               className="toolbar-button"
-              title={t("chat.addFileContext")}
+              title={t("chat:addFileContext")}
               disabled={props.offline}
               onClick={() => void props.onChooseContextFiles()}
             >
@@ -1328,14 +1328,14 @@ function AssistantChat(props: AssistantChatProps) {
               pinnedSpecs={props.modelPreferences.pinnedModelSpecs ?? []}
               recentSpecs={props.modelPreferences.recentModelSpecs ?? []}
               variant="compact"
-              placeholder={t("chat.defaultModel")}
-              ariaLabel={t("chat.model")}
+              placeholder={t("chat:defaultModel")}
+              ariaLabel={t("chat:model")}
               disabled={running || props.offline}
               onChange={props.onModelChange}
             />
             <select
               className="composer-select-trigger composer-thinking-select"
-              aria-label={t("chat.thinkingLevel")}
+              aria-label={t("chat:thinkingLevel")}
               value={props.tab.summary.thinkingLevel ?? "off"}
               disabled={running || props.offline}
               onChange={(event) => void props.onThinkingChange(event.currentTarget.value)}
@@ -1348,18 +1348,18 @@ function AssistantChat(props: AssistantChatProps) {
             </select>
           </div>
           <div className="composer-actions">
-            <button type="button" className="toolbar-button" title={t("common.more")}>
+            <button type="button" className="toolbar-button" title={t("common:more")}>
               <MoreHorizontal size={16} />
             </button>
             {running ? (
               <ComposerPrimitive.Cancel
                 className="stop-button"
-                title={props.queued ? t("chat.cancelQueued") : t("chat.stop")}
+                title={props.queued ? t("chat:cancelQueued") : t("chat:stop")}
               >
                 <CircleStop size={18} />
               </ComposerPrimitive.Cancel>
             ) : (
-              <ComposerPrimitive.Send className="send-button" title={t("chat.send")}>
+              <ComposerPrimitive.Send className="send-button" title={t("chat:send")}>
                 <Send size={17} fill="currentColor" />
               </ComposerPrimitive.Send>
             )}
@@ -1377,7 +1377,7 @@ function ChatMessageView({
   onOpenLocation: (path: string, line?: number) => void
   onShowDiff: (path: string) => void
 }) {
-  const t = useT()
+  const { t } = useAppTranslation("chat")
   const role = useAuiState((state) => state.message.role)
   const status = useAuiState((state) => state.message.status)
   const ToolRenderer = useCallback(
@@ -1412,7 +1412,7 @@ function ChatMessageView({
         {status?.type === "running" ? <span className="streaming-caret" /> : null}
         {status?.type === "incomplete" && status.reason === "error" ? (
           <button className="retry-button">
-            <RotateCcw size={13} /> {t("chat.retry")}
+            <RotateCcw size={13} /> {t("chat:retry")}
           </button>
         ) : null}
       </div>
@@ -1443,13 +1443,13 @@ function MarkdownText() {
 }
 
 function ReasoningPart({ text }: { text: string }) {
-  const t = useT()
+  const { t } = useAppTranslation("chat")
   const [open, setOpen] = useState(true)
   return (
     <div className={`thinking-block ${open ? "open" : ""}`}>
       <button className="thinking-toggle" onClick={() => setOpen((value) => !value)}>
         <Brain size={15} />
-        <span>{t("chat.reasoning")}</span>
+        <span>{t("chat:reasoning")}</span>
         <ChevronDown size={14} />
       </button>
       {open ? <div className="thinking-content">{text}</div> : null}
@@ -1477,7 +1477,7 @@ function ToolPart({
   onOpenLocation: (path: string, line?: number) => void
   onShowDiff: (path: string) => void
 }) {
-  const t = useT()
+  const { t } = useAppTranslation("chat")
   const [expanded, setExpanded] = useState(false)
   const artifact = (part.artifact ?? {}) as ToolArtifact
   const status = artifact.status ?? (part.result === undefined ? "running" : "completed")
@@ -1515,7 +1515,7 @@ function ToolPart({
           <span
             className="tool-diff"
             role="button"
-            title={t("chat.showDiff")}
+            title={t("chat:showDiff")}
             onClick={(event) => {
               event.stopPropagation()
               onShowDiff(location.path)
@@ -1545,12 +1545,12 @@ function PermissionCard({
   onRespond: (decision: ToolPermissionDecision) => void
   onOpenLocation: (path: string, line?: number) => void
 }) {
-  const t = useT()
+  const { t } = useAppTranslation("chat")
   return (
     <div className="interaction-card permission-card">
       <div className="interaction-heading">
         <ShieldCheck size={17} />
-        <span>{t("chat.toolApproval")}</span>
+        <span>{t("chat:toolApproval")}</span>
       </div>
       <strong>{pending.request.title}</strong>
       {pending.request.command ? (
@@ -1567,16 +1567,16 @@ function PermissionCard({
       ))}
       <div className="permission-actions">
         <button className="secondary-button" onClick={() => onRespond("reject_once")}>
-          {t("common.reject")}
+          {t("common:reject")}
         </button>
         <button className="secondary-button" onClick={() => onRespond("reject_always")}>
-          {t("chat.alwaysReject")}
+          {t("chat:alwaysReject")}
         </button>
         <button className="secondary-button" onClick={() => onRespond("allow_always")}>
-          {t("chat.alwaysAllow")}
+          {t("chat:alwaysAllow")}
         </button>
         <button className="primary-button" onClick={() => onRespond("allow_once")}>
-          {t("chat.allowOnce")}
+          {t("chat:allowOnce")}
         </button>
       </div>
     </div>
@@ -1594,12 +1594,12 @@ function InputCard({
   onChange: (value: string) => void
   onRespond: (cancelled?: boolean) => void
 }) {
-  const t = useT()
+  const { t } = useAppTranslation("chat")
   return (
     <div className="interaction-card input-card">
       <div className="interaction-heading">
         <MessageSquareText size={17} />
-        <span>{t("chat.agentNeedsInput")}</span>
+        <span>{t("chat:agentNeedsInput")}</span>
       </div>
       <p>{pending.request.prompt}</p>
       <textarea
@@ -1609,10 +1609,10 @@ function InputCard({
       />
       <div className="permission-actions">
         <button className="secondary-button" onClick={() => onRespond(true)}>
-          {t("common.cancel")}
+          {t("common:cancel")}
         </button>
         <button className="primary-button" onClick={() => onRespond(false)}>
-          {t("common.submit")}
+          {t("common:submit")}
         </button>
       </div>
     </div>

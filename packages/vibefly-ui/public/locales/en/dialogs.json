@@ -1,0 +1,18 @@
+{
+  "editProvider": "Edit {{name}}",
+  "connectProvider": "Connect {{name}}",
+  "loginHint": "Prefer Login for browser OAuth or provider paste-key flows. You can still save an API key manually below.",
+  "apiKey": "API key",
+  "keepExistingKey": "Leave empty to keep the existing key",
+  "apiKeyRequired": "API key is required to connect",
+  "apiKeyOrLogin": "Enter an API key, or use Login",
+  "addCustomProvider": "Add Custom Provider",
+  "providerId": "Provider id",
+  "baseUrl": "Base URL",
+  "api": "API",
+  "modelsLine": "Models (one per line: id | name | api)",
+  "loginTo": "Login to {{name}}",
+  "openBrowser": "Open browser",
+  "completeSignIn": "Complete sign-in in the browser, then return here.",
+  "cancelLogin": "Cancel login"
+}

@@ -1,0 +1,11 @@
+{
+  "subtitle": "用于 VCS 提交信息生成的语言、模型和可选自定义提示词。",
+  "language": "提交信息语言",
+  "followIde": "跟随 IDE",
+  "english": "English",
+  "simplifiedChinese": "简体中文",
+  "model": "提交模型",
+  "followDefaultHint": "选择“跟随默认模型”可随提供商默认设置自动更新。",
+  "useCustomPrompt": "使用自定义系统提示词",
+  "customPromptPlaceholder": "将替换内置 Conventional Commits 提示词。语言约束仍会生效。"
+}

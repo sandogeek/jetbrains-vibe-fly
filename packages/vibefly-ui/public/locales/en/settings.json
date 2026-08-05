@@ -1,0 +1,8 @@
+{
+  "title": "Settings",
+  "providers": "Providers",
+  "commitMessage": "Commit Message",
+  "hostUnavailable": "Host RPC unavailable (open inside IDE JCEF)",
+  "hostUnavailableShort": "Host RPC unavailable",
+  "refreshFailed": "Refresh failed"
+}

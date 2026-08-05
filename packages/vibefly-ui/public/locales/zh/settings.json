@@ -1,0 +1,8 @@
+{
+  "title": "设置",
+  "providers": "模型提供商",
+  "commitMessage": "提交信息",
+  "hostUnavailable": "Host RPC 不可用（请在 IDE JCEF 中打开）",
+  "hostUnavailableShort": "Host RPC 不可用",
+  "refreshFailed": "刷新失败"
+}

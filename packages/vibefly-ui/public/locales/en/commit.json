@@ -1,0 +1,11 @@
+{
+  "subtitle": "Language, model, and optional custom prompt for VCS commit generation.",
+  "language": "Commit message language",
+  "followIde": "Follow IDE",
+  "english": "English",
+  "simplifiedChinese": "简体中文",
+  "model": "Commit model",
+  "followDefaultHint": "Choose Follow default model to track the Providers default automatically.",
+  "useCustomPrompt": "Use custom system prompt",
+  "customPromptPlaceholder": "Replaces the built-in Conventional Commits prompt. Language constraints still apply."
+}
