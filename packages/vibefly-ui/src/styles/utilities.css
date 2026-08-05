@@ -19,13 +19,13 @@
 
 @media (max-width: 600px) {
     .session-tab {
-        min-width: 124px;
-        max-width: 185px;
-        flex-basis: 160px;
+        min-width: 120px;
+        max-width: 180px;
+        flex-basis: 156px;
     }
 
     .message-stream {
-        padding: 21px 13px 20px;
+        padding: 20px 14px 22px;
     }
 
     .user-message-text {
@@ -34,11 +34,13 @@
 
     .interaction-card {
         margin-left: 0;
+        padding: 14px;
     }
 
     .composer-shell {
         width: calc(100% - 16px);
-        margin-bottom: 8px;
+        margin-bottom: 10px;
+        border-radius: var(--vf-radius-lg);
     }
 
     .composer-selectors .model-picker-compact {
@@ -53,11 +55,11 @@
 
 @media (max-width: 390px) {
     .session-actions {
-        padding: 0 3px;
+        padding: 0 4px;
     }
 
     .session-actions .icon-button {
-        width: 27px;
+        width: 28px;
     }
 
     .message-stream {
@@ -70,6 +72,11 @@
 
     .composer-selectors .model-picker-compact {
         width: 116px;
+    }
+
+    .composer-input {
+        padding-inline: 12px;
+        font-size: 13px;
     }
 }
 

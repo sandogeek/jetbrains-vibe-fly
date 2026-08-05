@@ -4,7 +4,8 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    background: radial-gradient(circle at 50% -20%, color-mix(in srgb, var(--vf-surface-raised) 55%, transparent), transparent 42%),
+    background: radial-gradient(ellipse 80% 50% at 50% -15%, color-mix(in srgb, var(--vf-accent) 6%, transparent), transparent 55%),
+    radial-gradient(circle at 50% -20%, color-mix(in srgb, var(--vf-surface-raised) 50%, transparent), transparent 42%),
     var(--vf-bg);
     color: var(--vf-fg);
 }
@@ -12,12 +13,12 @@
 .session-bar {
     position: relative;
     z-index: 20;
-    min-height: 46px;
+    min-height: 44px;
     display: flex;
     align-items: stretch;
-    border-bottom: 1px solid var(--vf-border);
-    background: color-mix(in srgb, var(--vf-surface) 91%, transparent);
-    backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--vf-border-soft);
+    background: color-mix(in srgb, var(--vf-surface) 88%, transparent);
+    backdrop-filter: blur(16px);
 }
 
 .session-tabs {
@@ -35,46 +36,49 @@
 
 .session-tab {
     position: relative;
-    min-width: 146px;
-    max-width: 260px;
-    height: 46px;
-    padding: 0 9px 0 12px;
+    min-width: 140px;
+    max-width: 250px;
+    height: 44px;
+    padding: 0 8px 0 12px;
     display: flex;
     align-items: center;
-    gap: 7px;
-    flex: 0 1 210px;
+    gap: 8px;
+    flex: 0 1 200px;
     border: 0;
-    border-right: 1px solid var(--vf-border-soft);
+    border-right: 1px solid transparent;
     border-radius: 0;
     background: transparent;
     color: var(--vf-muted);
     cursor: pointer;
     outline: none;
+    transition: background 140ms ease, color 140ms ease;
 }
 
 .session-tab::after {
     content: "";
     position: absolute;
-    left: 10px;
-    right: 10px;
+    left: 12px;
+    right: 12px;
     bottom: 0;
     height: 2px;
     border-radius: 2px 2px 0 0;
     background: transparent;
+    transition: background 140ms ease;
 }
 
 .session-tab:hover {
-    background: color-mix(in srgb, var(--vf-surface-raised) 65%, transparent);
+    background: color-mix(in srgb, var(--vf-surface-raised) 70%, transparent);
     color: var(--vf-fg);
 }
 
 .session-tab.active {
-    background: var(--vf-bg);
+    background: color-mix(in srgb, var(--vf-bg) 70%, var(--vf-surface));
     color: var(--vf-fg);
 }
 
 .session-tab.active::after {
     background: var(--vf-accent);
+    box-shadow: 0 0 8px color-mix(in srgb, var(--vf-accent) 40%, transparent);
 }
 
 .session-title {
@@ -85,32 +89,35 @@
     white-space: nowrap;
     text-align: left;
     font-size: 12.5px;
-    font-weight: 550;
+    font-weight: 500;
+    letter-spacing: 0.01em;
 }
 
 .tab-close {
-    width: 20px;
-    height: 20px;
+    width: 22px;
+    height: 22px;
     display: grid;
     place-items: center;
     flex: none;
-    border-radius: 4px;
+    border-radius: 6px;
     opacity: 0;
+    transition: opacity 120ms ease, background 120ms ease;
 }
 
 .session-tab:hover .tab-close,
 .session-tab.active .tab-close {
-    opacity: 0.75;
+    opacity: 0.7;
 }
 
 .tab-close:hover {
     background: var(--vf-surface-raised);
     opacity: 1 !important;
+    color: var(--vf-fg);
 }
 
 .status-dot {
-    width: 9px;
-    height: 9px;
+    width: 8px;
+    height: 8px;
     display: grid;
     place-items: center;
     flex: none;
@@ -124,8 +131,8 @@
 .status-dot.waiting_input,
 .status-dot.queued,
 .status-dot.error {
-    width: 13px;
-    height: 13px;
+    width: 14px;
+    height: 14px;
     background: transparent;
 }
 
@@ -152,18 +159,19 @@
 
 .status-dot.unread {
     background: var(--vf-accent);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--vf-accent) 16%, transparent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--vf-accent) 18%, transparent);
 }
 
 .queue-badge {
-    min-width: 17px;
-    height: 17px;
+    min-width: 18px;
+    height: 18px;
     display: grid;
     place-items: center;
     border-radius: 9px;
-    background: color-mix(in srgb, var(--vf-warning) 19%, transparent);
+    background: color-mix(in srgb, var(--vf-warning) 18%, transparent);
     color: var(--vf-warning);
     font-size: 10px;
+    font-weight: 600;
 }
 
 .session-actions {
@@ -172,10 +180,10 @@
     display: flex;
     align-items: center;
     gap: 2px;
-    padding: 0 8px;
+    padding: 0 10px;
     flex: none;
     border-left: 1px solid var(--vf-border-soft);
-    background: var(--vf-surface);
+    background: color-mix(in srgb, var(--vf-surface) 92%, transparent);
 }
 
 .icon-button,
@@ -185,10 +193,11 @@
     display: inline-grid;
     place-items: center;
     border: 0;
-    border-radius: 6px;
+    border-radius: 8px;
     background: transparent;
     color: var(--vf-muted);
     cursor: pointer;
+    transition: background 120ms ease, color 120ms ease, opacity 120ms ease;
 }
 
 .icon-button {
@@ -215,32 +224,70 @@
     margin-left: 4px;
     border-radius: 50%;
     background: var(--vf-warning);
+    transition: background 150ms ease, box-shadow 150ms ease;
 }
 
 .connection-dot.ready {
     background: var(--vf-accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--vf-accent) 20%, transparent);
 }
 
 .connection-dot.offline {
     background: #6d7076;
+    box-shadow: none;
 }
 
 .recent-menu {
     position: absolute;
-    top: 42px;
+    top: 44px;
     right: 8px;
     width: min(360px, calc(100vw - 16px));
     max-height: min(520px, calc(100vh - 100px));
-    padding: 7px;
+    padding: 8px;
     overflow-y: auto;
     border: 1px solid var(--vf-border);
-    border-radius: 9px;
+    border-radius: var(--vf-radius-lg);
     background: var(--vf-surface);
-    box-shadow: 0 18px 45px rgb(0 0 0 / 0.34);
+    box-shadow: var(--vf-shadow-lg);
+}
+
+.tab-context-menu {
+    position: fixed;
+    z-index: 50;
+    min-width: 160px;
+    padding: 4px;
+    border: 1px solid var(--vf-border);
+    border-radius: 8px;
+    background: var(--vf-surface);
+    box-shadow: var(--vf-shadow-lg);
+}
+
+.tab-context-item {
+    width: 100%;
+    padding: 7px 10px;
+    display: block;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--vf-fg);
+    font-size: 12.5px;
+    text-align: left;
+    cursor: pointer;
+    transition: background 120ms ease;
+}
+
+.tab-context-item:hover:not(:disabled) {
+    background: var(--vf-surface-raised);
+}
+
+.tab-context-item:disabled {
+    color: var(--vf-muted);
+    cursor: default;
+    opacity: 0.55;
 }
 
 .recent-menu-title {
-    padding: 7px 9px 8px;
+    padding: 8px 10px 10px;
     color: var(--vf-muted);
     font-size: 11px;
     font-weight: 650;
@@ -250,15 +297,16 @@
 
 .recent-item {
     width: 100%;
-    padding: 9px;
+    padding: 10px;
     display: flex;
     align-items: flex-start;
-    gap: 9px;
+    gap: 10px;
     border: 0;
-    border-radius: 6px;
+    border-radius: 8px;
     background: transparent;
     text-align: left;
     cursor: pointer;
+    transition: background 120ms ease;
 }
 
 .recent-item:hover {
@@ -275,7 +323,7 @@
 .recent-item strong {
     overflow: hidden;
     color: var(--vf-fg);
-    font-size: 12px;
+    font-size: 12.5px;
     font-weight: 550;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -288,22 +336,27 @@
 }
 
 .empty-menu {
-    padding: 18px 9px;
+    padding: 20px 10px;
     text-align: center;
 }
 
 .attention-bar {
-    min-height: 34px;
-    padding: 7px 16px;
+    min-height: 36px;
+    padding: 8px 16px;
     display: flex;
     align-items: center;
     gap: 8px;
     border: 0;
-    border-bottom: 1px solid color-mix(in srgb, var(--vf-blue) 35%, var(--vf-border));
-    background: color-mix(in srgb, var(--vf-blue) 11%, var(--vf-bg));
+    border-bottom: 1px solid color-mix(in srgb, var(--vf-blue) 30%, var(--vf-border));
+    background: color-mix(in srgb, var(--vf-blue) 10%, var(--vf-bg));
     color: var(--vf-fg);
-    font-size: 11.5px;
+    font-size: 12px;
     cursor: pointer;
+    transition: background 120ms ease;
+}
+
+.attention-bar:hover {
+    background: color-mix(in srgb, var(--vf-blue) 14%, var(--vf-bg));
 }
 
 .attention-bar span:nth-child(2) {
@@ -313,4 +366,5 @@
 
 .attention-bar span:last-child {
     color: var(--vf-blue);
+    font-weight: 550;
 }

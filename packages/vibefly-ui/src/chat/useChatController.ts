@@ -55,6 +55,7 @@ export type ChatController = {
         activate: (sessionId: string) => Promise<void>
         newSession: () => Promise<void>
         closeSession: (sessionId: string) => Promise<void>
+        closeOtherSessions: (sessionId: string) => Promise<void>
         refreshRecent: () => Promise<void>
         closeRecent: () => void
         openRecent: (session: RecentChatSession) => Promise<void>
@@ -545,6 +546,37 @@ export function useChatController(): ChatController {
         }
     }
 
+    const closeOtherSessions = async (sessionId: string) => {
+        const others = tabsRef.current.filter((item) => item.summary.sessionId !== sessionId)
+        if (others.length === 0) return
+        const hasRunning = others.some((tab) =>
+            ["running", "waiting_permission", "waiting_input"].includes(tab.summary.state),
+        )
+        if (hasRunning && !window.confirm(t("chat:closeOtherRunning"))) return
+        try {
+            for (const tab of others) {
+                const running = ["running", "waiting_permission", "waiting_input"].includes(
+                    tab.summary.state,
+                )
+                if (running && agentRef.current) {
+                    await agentRef.current.abortChatTurn(tab.summary.sessionId)
+                }
+                if (agentRef.current && !offlineRef.current) {
+                    await agentRef.current.releaseChatSession(tab.summary.sessionId)
+                }
+            }
+            updateTabs(
+                tabsRef.current.filter((item) => item.summary.sessionId === sessionId),
+            )
+            if (activeIdRef.current !== sessionId) {
+                await activate(sessionId)
+            }
+            void persistWorkspace()
+        } catch (closeError) {
+            setError(errorText(closeError))
+        }
+    }
+
     const refreshRecent = async () => {
         const open = !recentOpen
         setRecentOpen(open)
@@ -791,6 +823,7 @@ export function useChatController(): ChatController {
             activate,
             newSession,
             closeSession,
+            closeOtherSessions,
             refreshRecent,
             closeRecent,
             openRecent,

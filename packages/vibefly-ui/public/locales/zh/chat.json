@@ -6,6 +6,8 @@
   "closeRunning": "该会话仍在运行。终止并关闭？",
   "closeSessionFirst": "请先关闭一个会话。",
   "closeSession": "关闭会话",
+  "closeOtherSessions": "关闭其它页签",
+  "closeOtherRunning": "其它会话仍在运行。终止并关闭？",
   "recentSessions": "最近会话",
   "noRecent": "暂无历史",
   "backgroundPermission": "后台会话正在等待工具审批",

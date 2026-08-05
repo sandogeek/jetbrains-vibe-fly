@@ -6,6 +6,8 @@
   "closeRunning": "This session is running. Stop and close it?",
   "closeSessionFirst": "Close a session first.",
   "closeSession": "Close session",
+  "closeOtherSessions": "Close other tabs",
+  "closeOtherRunning": "Some other sessions are still running. Stop and close them?",
   "recentSessions": "Recent sessions",
   "noRecent": "No recent sessions",
   "backgroundPermission": "A background session needs tool approval",

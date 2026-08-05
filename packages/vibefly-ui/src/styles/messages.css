@@ -2,7 +2,7 @@
     min-height: 0;
     flex: 1;
     overflow-y: auto;
-    scrollbar-color: #4b4e54 transparent;
+    scrollbar-color: color-mix(in srgb, var(--vf-muted) 45%, transparent) transparent;
     scrollbar-width: thin;
 }
 
@@ -21,12 +21,12 @@
     width: min(100%, 980px);
     min-height: 100%;
     margin: 0 auto;
-    padding: 30px clamp(18px, 4vw, 54px) 28px;
+    padding: 28px clamp(16px, 4vw, 48px) 32px;
 }
 
 .chat-message {
     position: relative;
-    margin-bottom: 25px;
+    margin-bottom: 28px;
 }
 
 .chat-message.user {
@@ -36,13 +36,14 @@
 
 .user-message-text {
     max-width: min(78%, 700px);
-    padding: 10px 13px;
-    border: 1px solid var(--vf-border-soft);
-    border-radius: 12px 12px 3px 12px;
-    background: color-mix(in srgb, var(--vf-surface-raised) 72%, transparent);
+    padding: 11px 15px;
+    border: 1px solid color-mix(in srgb, var(--vf-border) 70%, transparent);
+    border-radius: 16px 16px 4px 16px;
+    background: color-mix(in srgb, var(--vf-surface-raised) 78%, transparent);
+    box-shadow: var(--vf-shadow-sm);
     color: var(--vf-fg);
-    font-size: 13px;
-    line-height: 1.6;
+    font-size: 13.5px;
+    line-height: 1.65;
     white-space: pre-wrap;
 }
 
@@ -51,20 +52,28 @@
 }
 
 .thinking-block {
-    margin: 0 0 12px;
-    border-left: 1px solid var(--vf-border);
+    margin: 0 0 14px;
+    border-left: 2px solid color-mix(in srgb, var(--vf-border) 80%, transparent);
+    border-radius: 0 8px 8px 0;
 }
 
 .thinking-toggle {
-    padding: 2px 8px;
+    padding: 4px 10px;
     display: flex;
     align-items: center;
     gap: 7px;
     border: 0;
+    border-radius: 6px;
     background: transparent;
     color: var(--vf-muted);
     font-size: 12px;
     cursor: pointer;
+    transition: background 120ms ease, color 120ms ease;
+}
+
+.thinking-toggle:hover {
+    background: color-mix(in srgb, var(--vf-surface-raised) 60%, transparent);
+    color: var(--vf-fg);
 }
 
 .thinking-toggle svg:last-child {
@@ -76,10 +85,10 @@
 }
 
 .thinking-content {
-    margin: 7px 0 0 8px;
-    padding: 11px 14px;
+    margin: 6px 0 0 8px;
+    padding: 12px 14px;
     border: 1px solid var(--vf-border-soft);
-    border-radius: 5px;
+    border-radius: var(--vf-radius);
     background: var(--vf-surface-deep);
     color: var(--vf-muted);
     font-size: 12px;
@@ -90,9 +99,10 @@
 
 .markdown-body {
     color: var(--vf-fg);
-    font-size: 13px;
-    line-height: 1.68;
+    font-size: 13.5px;
+    line-height: 1.72;
     overflow-wrap: anywhere;
+    letter-spacing: 0.01em;
 }
 
 .markdown-body > :first-child {
@@ -108,13 +118,44 @@
 .markdown-body ol,
 .markdown-body blockquote,
 .markdown-body pre {
-    margin: 0.6em 0;
+    margin: 0.7em 0;
 }
 
+.markdown-body ul,
+.markdown-body ol {
+    padding-left: 1.35em;
+}
+
+.markdown-body li {
+    margin: 0.28em 0;
+}
+
+.markdown-body li + li {
+    margin-top: 0.32em;
+}
+
+.markdown-body hr {
+    margin: 1.4em 0;
+    border: 0;
+    border-top: 1px solid var(--vf-border-soft);
+}
+
+/* Streamdown already frames the wrapper; refine tokens and drop the inner second border. */
 .markdown-body [data-streamdown="table-wrapper"] {
-    margin: 0.8em 0;
+    margin: 1em 0;
     max-width: 100%;
-    overflow-x: auto;
+    padding: 0;
+    gap: 0;
+    border: 1px solid var(--vf-border-soft);
+    border-radius: var(--vf-radius-lg);
+    background: color-mix(in srgb, var(--vf-surface) 55%, transparent);
+    overflow: hidden;
+}
+
+.markdown-body [data-streamdown="table-wrapper"] > div {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
 }
 
 .markdown-body table {
@@ -126,104 +167,177 @@
 
 .markdown-body th,
 .markdown-body td {
-    padding: 6px 10px;
-    border: 1px solid var(--vf-border);
+    padding: 9px 12px;
+    border: 0;
+    border-bottom: 1px solid var(--vf-border-soft);
     text-align: left;
     vertical-align: top;
 }
 
+.markdown-body th + th,
+.markdown-body td + td {
+    border-left: 1px solid var(--vf-border-soft);
+}
+
 .markdown-body thead th {
-    background: var(--vf-surface-raised);
+    background: color-mix(in srgb, var(--vf-surface-raised) 90%, transparent);
     font-weight: 600;
+    color: var(--vf-fg);
+}
+
+.markdown-body tbody tr:last-child td {
+    border-bottom: 0;
 }
 
 .markdown-body tbody tr:nth-child(even) {
-    background: color-mix(in srgb, var(--vf-surface) 55%, transparent);
+    background: color-mix(in srgb, var(--vf-surface) 40%, transparent);
+}
+
+.markdown-body tbody tr:hover {
+    background: color-mix(in srgb, var(--vf-surface-raised) 45%, transparent);
 }
 
 .markdown-body h1,
 .markdown-body h2,
-.markdown-body h3 {
-    margin: 1em 0 0.45em;
+.markdown-body h3,
+.markdown-body h4 {
+    margin: 1.25em 0 0.5em;
     color: var(--vf-fg);
-    line-height: 1.3;
+    line-height: 1.35;
+    font-weight: 600;
+    letter-spacing: -0.01em;
 }
 
 .markdown-body h1 {
-    font-size: 18px;
+    font-size: 1.35em;
 }
 
 .markdown-body h2 {
-    font-size: 16px;
+    padding-bottom: 0.35em;
+    border-bottom: 1px solid var(--vf-border-soft);
+    font-size: 1.18em;
 }
 
 .markdown-body h3 {
-    font-size: 14px;
+    font-size: 1.05em;
+}
+
+.markdown-body h4 {
+    font-size: 0.98em;
+    color: color-mix(in srgb, var(--vf-fg) 88%, var(--vf-muted));
 }
 
 .markdown-body a,
 .file-link {
     color: var(--vf-blue);
     text-decoration: none;
+    transition: color 120ms ease;
 }
 
 .markdown-body a:hover,
 .file-link:hover {
     text-decoration: underline;
+    text-underline-offset: 2px;
 }
 
 .markdown-body code {
-    padding: 0.12em 0.32em;
-    border-radius: 4px;
-    background: var(--vf-surface-deep);
+    padding: 0.15em 0.4em;
+    border-radius: 5px;
+    background: color-mix(in srgb, var(--vf-accent) 10%, var(--vf-surface-deep));
+    color: color-mix(in srgb, var(--vf-fg) 92%, var(--vf-accent));
     font-family: var(--font-mono);
-    font-size: 0.91em;
+    font-size: 0.9em;
 }
 
-.markdown-body pre {
+/* Plain fenced/fallback pre (when not wrapped by Streamdown code-block shell). */
+.markdown-body > pre,
+.markdown-body p > pre,
+.markdown-body li > pre {
     max-width: 100%;
-    padding: 12px 14px;
+    margin: 0.9em 0;
+    padding: 14px 16px;
     overflow: auto;
     border: 1px solid var(--vf-border-soft);
-    border-radius: 7px;
+    border-radius: var(--vf-radius-lg);
     background: var(--vf-surface-deep);
+    box-shadow: var(--vf-shadow-sm);
 }
 
 .markdown-body pre code {
     padding: 0;
     background: transparent;
+    color: inherit;
+    font-size: 0.88em;
+    line-height: 1.6;
+}
+
+/*
+ * Streamdown code shell: keep its padding/sticky action chrome.
+ * Only retokenize colors/radius — do not force padding:0 or overflow:hidden.
+ */
+.markdown-body [data-streamdown="code-block"] {
+    max-width: 100%;
+    margin: 0.9em 0;
+    border: 1px solid var(--vf-border-soft);
+    border-radius: var(--vf-radius-lg);
+    background: var(--vf-surface-deep);
+    box-shadow: var(--vf-shadow-sm);
+}
+
+.markdown-body [data-streamdown="code-block-body"] {
+    border-color: var(--vf-border-soft);
+    border-radius: var(--vf-radius);
+    background: color-mix(in srgb, var(--vf-surface-deep) 88%, transparent);
+}
+
+.markdown-body [data-streamdown="code-block"] pre,
+.markdown-body [data-streamdown="code-block"] code {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    background: transparent;
 }
 
 .markdown-body blockquote {
-    padding-left: 12px;
-    border-left: 2px solid var(--vf-border);
+    margin: 0.85em 0;
+    padding: 0.35em 0 0.35em 14px;
+    border-left: 3px solid color-mix(in srgb, var(--vf-accent) 45%, var(--vf-border));
     color: var(--vf-muted);
 }
 
+.markdown-body strong {
+    font-weight: 600;
+    color: inherit;
+}
+
 .tool-part {
-    margin: 9px 0;
+    margin: 10px 0;
     overflow: hidden;
     border: 1px solid transparent;
-    border-radius: 6px;
+    border-radius: var(--vf-radius);
+    transition: border-color 120ms ease, background 120ms ease;
 }
 
 .tool-part:hover,
 .tool-part:has(.tool-detail) {
     border-color: var(--vf-border-soft);
-    background: color-mix(in srgb, var(--vf-surface) 48%, transparent);
+    background: color-mix(in srgb, var(--vf-surface) 55%, transparent);
 }
 
 .tool-part.failed {
-    border-color: color-mix(in srgb, var(--vf-danger) 30%, transparent);
+    border-color: color-mix(in srgb, var(--vf-danger) 28%, transparent);
+    background: color-mix(in srgb, var(--vf-danger) 5%, transparent);
 }
 
 .tool-summary {
     width: 100%;
-    min-height: 31px;
-    padding: 4px 8px;
+    min-height: 32px;
+    padding: 5px 10px;
     display: flex;
     align-items: center;
-    gap: 7px;
+    gap: 8px;
     border: 0;
     background: transparent;
     color: var(--vf-muted);
@@ -232,7 +346,7 @@
 }
 
 .tool-summary strong {
-    color: color-mix(in srgb, var(--vf-fg) 80%, var(--vf-muted));
+    color: color-mix(in srgb, var(--vf-fg) 82%, var(--vf-muted));
     font-size: 11.5px;
     font-weight: 550;
 }
@@ -260,19 +374,23 @@
 .tool-result-short {
     margin-left: auto;
     flex: none;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--vf-accent) 12%, transparent);
     color: var(--vf-accent);
     font-family: var(--font-mono);
     font-size: 10.5px;
 }
 
 .tool-diff {
-    width: 21px;
-    height: 21px;
+    width: 22px;
+    height: 22px;
     display: grid;
     place-items: center;
     flex: none;
-    border-radius: 4px;
+    border-radius: 6px;
     color: var(--vf-muted);
+    transition: background 120ms ease, color 120ms ease;
 }
 
 .tool-diff:hover {
@@ -291,15 +409,16 @@
 }
 
 .tool-detail {
-    padding: 0 9px 9px 39px;
+    padding: 0 10px 10px 40px;
 }
 
 .tool-detail pre,
 .permission-command {
-    margin: 5px 0;
-    padding: 9px 11px;
+    margin: 6px 0;
+    padding: 10px 12px;
     overflow: auto;
-    border-radius: 5px;
+    border: 1px solid var(--vf-border-soft);
+    border-radius: var(--vf-radius);
     background: var(--vf-surface-deep);
     color: var(--vf-muted);
     font-family: var(--font-mono);
@@ -312,54 +431,65 @@
     display: inline-block;
     width: 6px;
     height: 15px;
-    margin-left: 2px;
+    margin-left: 3px;
     vertical-align: -2px;
+    border-radius: 1px;
     background: var(--vf-accent);
     animation: blink 1s steps(1) infinite;
 }
 
 .retry-button {
-    margin-top: 8px;
-    padding: 4px 7px;
+    margin-top: 10px;
+    padding: 5px 10px;
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    gap: 6px;
     border: 1px solid var(--vf-border);
-    border-radius: 5px;
+    border-radius: 8px;
     background: transparent;
     color: var(--vf-muted);
-    font-size: 11px;
+    font-size: 11.5px;
     cursor: pointer;
+    transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.retry-button:hover {
+    background: var(--vf-surface-raised);
+    border-color: var(--vf-border);
+    color: var(--vf-fg);
 }
 
 .notice-part {
-    padding: 8px 10px;
+    padding: 10px 12px;
     display: flex;
     align-items: flex-start;
-    gap: 7px;
-    border: 1px solid var(--vf-border);
-    border-radius: 6px;
+    gap: 8px;
+    border: 1px solid var(--vf-border-soft);
+    border-radius: var(--vf-radius);
     background: var(--vf-surface);
     color: var(--vf-muted);
-    font-size: 11.5px;
+    font-size: 12px;
+    line-height: 1.5;
 }
 
 .notice-part.error {
+    border-color: color-mix(in srgb, var(--vf-danger) 30%, var(--vf-border));
+    background: color-mix(in srgb, var(--vf-danger) 8%, var(--vf-surface));
     color: var(--vf-danger);
 }
 
 .interaction-card {
-    margin: 14px 0 22px;
-    padding: 14px;
-    border: 1px solid color-mix(in srgb, var(--vf-blue) 35%, var(--vf-border));
-    border-radius: 8px;
-    background: color-mix(in srgb, var(--vf-blue) 7%, var(--vf-surface));
-    box-shadow: 0 10px 25px rgb(0 0 0 / 0.12);
-    font-size: 12px;
+    margin: 16px 0 24px;
+    padding: 16px;
+    border: 1px solid color-mix(in srgb, var(--vf-blue) 28%, var(--vf-border));
+    border-radius: var(--vf-radius-xl);
+    background: color-mix(in srgb, var(--vf-blue) 6%, var(--vf-surface));
+    box-shadow: var(--vf-shadow-md);
+    font-size: 12.5px;
 }
 
 .interaction-heading {
-    margin-bottom: 9px;
+    margin-bottom: 10px;
     display: flex;
     align-items: center;
     gap: 7px;
@@ -378,20 +508,21 @@
 }
 
 .permission-actions {
-    margin-top: 12px;
+    margin-top: 14px;
     display: flex;
     justify-content: flex-end;
-    gap: 7px;
+    gap: 8px;
     flex-wrap: wrap;
 }
 
 .primary-button,
 .secondary-button {
-    min-height: 29px;
-    padding: 5px 10px;
-    border-radius: 5px;
-    font-size: 11px;
+    min-height: 30px;
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 11.5px;
     cursor: pointer;
+    transition: background 120ms ease, border-color 120ms ease, opacity 120ms ease;
 }
 
 .primary-button {
@@ -401,34 +532,49 @@
     font-weight: 650;
 }
 
+.primary-button:hover {
+    filter: brightness(1.06);
+}
+
 .secondary-button {
     border: 1px solid var(--vf-border);
     background: var(--vf-surface);
     color: var(--vf-fg);
 }
 
+.secondary-button:hover {
+    background: var(--vf-surface-raised);
+}
+
 .file-link {
-    padding: 2px 0;
+    padding: 3px 0;
     display: flex;
     align-items: center;
     gap: 5px;
     border: 0;
     background: transparent;
-    font-size: 11px;
+    font-size: 11.5px;
     cursor: pointer;
 }
 
 .input-card textarea {
     width: 100%;
     min-height: 72px;
-    padding: 8px 10px;
+    padding: 10px 12px;
     resize: vertical;
     border: 1px solid var(--vf-border);
-    border-radius: 5px;
+    border-radius: var(--vf-radius);
     outline: none;
     background: var(--vf-surface-deep);
     color: var(--vf-fg);
-    font-size: 12px;
+    font-size: 12.5px;
+    line-height: 1.5;
+    transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.input-card textarea:focus {
+    border-color: color-mix(in srgb, var(--vf-ring) 55%, var(--vf-border));
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--vf-ring) 16%, transparent);
 }
 
 .new-session-state,
@@ -443,45 +589,49 @@
 }
 
 .new-session-mark {
-    width: 44px;
-    height: 44px;
+    width: 48px;
+    height: 48px;
     display: grid;
     place-items: center;
-    border: 1px solid var(--vf-border);
-    border-radius: 13px;
-    background: var(--vf-surface);
+    border: 1px solid color-mix(in srgb, var(--vf-accent) 25%, var(--vf-border));
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--vf-accent) 10%, var(--vf-surface));
     color: var(--vf-accent);
+    box-shadow: var(--vf-shadow-sm);
 }
 
 .new-session-state h1 {
-    margin: 13px 0 4px;
+    margin: 14px 0 6px;
     color: var(--vf-fg);
-    font-size: 15px;
+    font-size: 15.5px;
     font-weight: 600;
+    letter-spacing: -0.01em;
 }
 
 .new-session-state p {
     margin: 0;
-    font-size: 11px;
+    font-size: 12px;
+    color: var(--vf-muted);
 }
 
 .empty-state {
-    gap: 9px;
-    font-size: 12px;
+    gap: 10px;
+    font-size: 12.5px;
 }
 
 .error-banner {
-    margin: 0 clamp(12px, 3vw, 42px) 7px;
-    padding: 8px 10px;
+    margin: 0 clamp(12px, 3vw, 42px) 8px;
+    padding: 10px 12px;
     display: flex;
     align-items: center;
     gap: 8px;
     flex: none;
-    border: 1px solid color-mix(in srgb, var(--vf-danger) 37%, var(--vf-border));
-    border-radius: 6px;
-    background: color-mix(in srgb, var(--vf-danger) 10%, var(--vf-surface));
-    color: color-mix(in srgb, var(--vf-danger) 80%, var(--vf-fg));
-    font-size: 11.5px;
+    border: 1px solid color-mix(in srgb, var(--vf-danger) 32%, var(--vf-border));
+    border-radius: var(--vf-radius);
+    background: color-mix(in srgb, var(--vf-danger) 9%, var(--vf-surface));
+    color: color-mix(in srgb, var(--vf-danger) 78%, var(--vf-fg));
+    font-size: 12px;
+    box-shadow: var(--vf-shadow-sm);
 }
 
 .error-banner span {

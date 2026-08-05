@@ -10,11 +10,17 @@ import {
     ShieldCheck,
     X,
 } from "lucide-react"
-import {type RefObject, useEffect, useRef} from "react"
+import {type RefObject, useEffect, useRef, useState} from "react"
 
 import {useAppTranslation} from "../i18n"
 import {AssistantChat} from "./AssistantChat"
 import {type ChatController, useChatController} from "./useChatController"
+
+type TabContextMenuState = {
+    sessionId: string
+    x: number
+    y: number
+}
 
 export function ChatPage() {
     const controller = useChatController()
@@ -26,6 +32,8 @@ function ChatPageView({controller}: { controller: ChatController }) {
     const dragSessionIdRef = useRef<string | null>(null)
     const recentTriggerRef = useRef<HTMLButtonElement>(null)
     const recentMenuRef = useRef<HTMLDivElement>(null)
+    const tabContextMenuRef = useRef<HTMLDivElement>(null)
+    const [tabContextMenu, setTabContextMenu] = useState<TabContextMenuState | null>(null)
     const {actions} = controller
     const activeTab = controller.activeTab
     const backgroundPermission =
@@ -36,6 +44,9 @@ function ChatPageView({controller}: { controller: ChatController }) {
         controller.pendingInput?.request.sessionId !== controller.activeId
             ? controller.pendingInput
             : null
+    const canCloseOthers =
+        !!tabContextMenu &&
+        controller.tabs.some((tab) => tab.summary.sessionId !== tabContextMenu.sessionId)
 
     useEffect(() => {
         if (!controller.recentOpen) return
@@ -55,6 +66,27 @@ function ChatPageView({controller}: { controller: ChatController }) {
             document.removeEventListener("keydown", onKeyDown)
         }
     }, [controller.recentOpen, actions.closeRecent])
+
+    useEffect(() => {
+        if (!tabContextMenu) return
+        const onPointerDown = (event: PointerEvent) => {
+            if (!(event.target instanceof Node)) return
+            if (tabContextMenuRef.current?.contains(event.target)) return
+            setTabContextMenu(null)
+        }
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (event.key === "Escape") setTabContextMenu(null)
+        }
+        const onScroll = () => setTabContextMenu(null)
+        document.addEventListener("pointerdown", onPointerDown)
+        document.addEventListener("keydown", onKeyDown)
+        window.addEventListener("scroll", onScroll, true)
+        return () => {
+            document.removeEventListener("pointerdown", onPointerDown)
+            document.removeEventListener("keydown", onKeyDown)
+            window.removeEventListener("scroll", onScroll, true)
+        }
+    }, [tabContextMenu])
 
     return (
         <main className="chat-app">
@@ -79,6 +111,14 @@ function ChatPageView({controller}: { controller: ChatController }) {
                                 dragSessionIdRef.current = null
                             }}
                             onClick={() => void actions.activate(tab.summary.sessionId)}
+                            onContextMenu={(event) => {
+                                event.preventDefault()
+                                setTabContextMenu({
+                                    sessionId: tab.summary.sessionId,
+                                    x: event.clientX,
+                                    y: event.clientY,
+                                })
+                            }}
                         >
                             <StatusDot state={tab.summary.state} unread={tab.summary.unread}/>
                             <span className="session-title">{tab.summary.title}</span>
@@ -133,6 +173,39 @@ function ChatPageView({controller}: { controller: ChatController }) {
                         recent={controller.recent}
                         onOpen={actions.openRecent}
                     />
+                ) : null}
+                {tabContextMenu ? (
+                    <div
+                        ref={tabContextMenuRef}
+                        className="tab-context-menu"
+                        style={{left: tabContextMenu.x, top: tabContextMenu.y}}
+                        role="menu"
+                    >
+                        <button
+                            className="tab-context-item"
+                            role="menuitem"
+                            onClick={() => {
+                                const sessionId = tabContextMenu.sessionId
+                                setTabContextMenu(null)
+                                void actions.closeSession(sessionId)
+                            }}
+                        >
+                            {t("chat:closeSession")}
+                        </button>
+                        <button
+                            className="tab-context-item"
+                            role="menuitem"
+                            disabled={!canCloseOthers}
+                            onClick={() => {
+                                if (!canCloseOthers) return
+                                const sessionId = tabContextMenu.sessionId
+                                setTabContextMenu(null)
+                                void actions.closeOtherSessions(sessionId)
+                            }}
+                        >
+                            {t("chat:closeOtherSessions")}
+                        </button>
+                    </div>
                 ) : null}
             </header>
 
