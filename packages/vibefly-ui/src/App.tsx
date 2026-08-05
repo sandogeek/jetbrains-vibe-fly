@@ -1332,19 +1332,13 @@ function AssistantChat(props: AssistantChatProps) {
                             disabled={running || props.offline}
                             onChange={props.onModelChange}
                         />
-                        <select
-                            className="composer-select-trigger composer-thinking-select"
-                            aria-label={t("chat:thinkingLevel")}
+                        <ThinkingSelect
                             value={props.tab.summary.thinkingLevel ?? "off"}
+                            options={props.thinkingOptions}
+                            ariaLabel={t("chat:thinkingLevel")}
                             disabled={running || props.offline}
-                            onChange={(event) => void props.onThinkingChange(event.currentTarget.value)}
-                        >
-                            {props.thinkingOptions.map((option) => (
-                                <option key={option.value} value={option.value}>
-                                    {option.label}
-                                </option>
-                            ))}
-                        </select>
+                            onChange={(level) => void props.onThinkingChange(level)}
+                        />
                     </div>
                     <div className="composer-actions">
                         <button type="button" className="toolbar-button" title={t("common:more")}>
@@ -1614,6 +1608,74 @@ function InputCard({
                     {t("common:submit")}
                 </button>
             </div>
+        </div>
+    )
+}
+
+function ThinkingSelect({
+                            value,
+                            options,
+                            ariaLabel,
+                            disabled,
+                            onChange,
+                        }: {
+    value: string
+    options: ThinkingOption[]
+    ariaLabel: string
+    disabled?: boolean
+    onChange: (level: string) => void
+}) {
+    const [open, setOpen] = useState(false)
+    const rootRef = useRef<HTMLDivElement>(null)
+    const selected = options.find((option) => option.value === value) ?? options[0]
+
+    useEffect(() => {
+        if (!open) return
+        const onPointerDown = (event: PointerEvent) => {
+            if (!(event.target instanceof Node) || !rootRef.current?.contains(event.target)) {
+                setOpen(false)
+            }
+        }
+        document.addEventListener("pointerdown", onPointerDown)
+        return () => document.removeEventListener("pointerdown", onPointerDown)
+    }, [open])
+
+    useEffect(() => {
+        if (disabled) setOpen(false)
+    }, [disabled])
+
+    return (
+        <div ref={rootRef} className="composer-thinking-picker">
+            <button
+                type="button"
+                className="composer-select-trigger composer-thinking-select"
+                aria-label={ariaLabel}
+                aria-expanded={open}
+                disabled={disabled}
+                onClick={() => setOpen((current) => !current)}
+            >
+                <span>{selected?.label ?? value}</span>
+                <ChevronDown size={14} className={open ? "rotated" : ""}/>
+            </button>
+            {open ? (
+                <div className="composer-thinking-menu" role="listbox" aria-label={ariaLabel}>
+                    {options.map((option) => (
+                        <button
+                            key={option.value}
+                            type="button"
+                            role="option"
+                            aria-selected={option.value === value}
+                            className={`composer-thinking-option ${option.value === value ? "selected" : ""}`}
+                            onClick={() => {
+                                onChange(option.value)
+                                setOpen(false)
+                            }}
+                        >
+                            {option.label}
+                        </button>
+                    ))}
+                </div>
+            ) : null}
         </div>
     )
 }

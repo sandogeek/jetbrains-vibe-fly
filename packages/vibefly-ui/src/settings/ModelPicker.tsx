@@ -113,31 +113,36 @@ export function ModelPicker(props: ModelPickerProps) {
 
     return <div className={`relative ${compact ? "model-picker-compact" : "w-full"}`}>
         <button ref={triggerRef} type="button"
-                className={`flex w-full items-center justify-between rounded border border-border text-left text-fg outline-none focus-visible:ring-2 focus-visible:ring-ring ${compact ? "h-[29px] min-h-[29px] bg-surface-raised px-2 py-0 text-[11px]" : "min-h-10 bg-surface px-3 py-1.5 text-sm"}`}
+                className={`flex w-full items-center justify-between gap-1 rounded border border-border text-left text-fg outline-none focus-visible:ring-2 focus-visible:ring-ring ${compact ? "h-[29px] min-h-[29px] bg-surface-raised px-2 py-0 text-[11px]" : "min-h-10 bg-surface px-3 py-1.5 text-sm"}`}
                 aria-label={props.ariaLabel} aria-expanded={open} aria-controls={open ? listId : undefined}
                 disabled={props.disabled} onClick={() => setOpen((current) => !current)} onKeyDown={onKeyDown}>
-            <span className={compact ? "flex items-center gap-1 truncate" : "min-w-0 truncate"}><span
+            <span className="min-w-0 flex-1 truncate"><span
                 className={compact ? "text-[11px]" : "text-sm"}>{primary}</span>{!compact && secondary && <span
                 className={`ml-2 text-xs ${selectedUnavailable ? "text-warning" : "text-muted"}`}>{selectedUnavailable &&
                 <AlertTriangle className="mr-1 inline size-3"/>}{secondary}</span>}</span>
             <ChevronDown className={`size-4 shrink-0 text-muted transition-transform ${open ? "rotate-180" : ""}`}/>
         </button>
         {open && <div
-            className="absolute left-0 right-0 top-[calc(100%+4px)] z-50 flex max-h-[min(420px,calc(100vh-16px))] min-w-[min(100%,380px)] flex-col overflow-hidden rounded border border-border bg-bg shadow-lg"
+            className={`absolute z-50 flex max-h-[min(420px,calc(100vh-16px))] flex-col overflow-hidden rounded border border-border bg-bg shadow-lg ${
+                compact
+                    ? "bottom-[calc(100%+4px)] left-0 w-[min(380px,calc(100vw-24px))]"
+                    : "left-0 right-0 top-[calc(100%+4px)] min-w-[min(100%,380px)]"
+            }`}
             onKeyDown={onKeyDown}>
             {entries.length > 0 && <div
-                className="grid shrink-0 grid-cols-[minmax(0,1fr)_minmax(6rem,8rem)] gap-2 border-b border-border p-2">
+                className="grid shrink-0 grid-cols-[minmax(0,1fr)_minmax(6.5rem,8.5rem)] gap-2 border-b border-border p-2">
                 <label className="relative block min-w-0"><Search
                     className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted"/><input
                     ref={searchRef} role="combobox"
-                    className="h-8 w-full rounded border border-border bg-surface pl-7 pr-7 text-sm text-fg outline-none placeholder:text-muted focus:border-accent focus:ring-1 focus:ring-ring"
+                    className="h-8 w-full min-w-0 rounded border border-border bg-surface pl-7 pr-7 text-sm text-fg outline-none placeholder:text-muted focus:border-accent focus:ring-1 focus:ring-ring"
                     placeholder={t("modelPicker:searchModels")} value={query} aria-label={t("modelPicker:searchModels")}
                     aria-expanded aria-controls={listId}
                     onChange={(event) => setQuery(event.currentTarget.value)}/>{query && <button type="button"
                                                                                                  className="absolute right-1 top-1/2 -translate-y-1/2 p-1 text-muted hover:text-fg"
                                                                                                  onClick={() => setQuery("")}>
                     <X className="size-3"/></button>}</label><select
-                className="h-8 rounded border border-border bg-surface px-2 text-xs text-fg" value={providerFilter}
+                className="h-8 min-w-0 rounded border border-border bg-surface px-2 text-xs text-fg"
+                value={providerFilter}
                 aria-label={t("modelPicker:limitProvider")}
                 onChange={(event) => setProviderFilter(event.currentTarget.value)}>
                 <option value="">{t("modelPicker:allProviders")}</option>
