@@ -2,13 +2,14 @@
 
 本目录存放设计与实现说明。 **运行时真相以代码为准**；文档若与代码冲突，以代码为优先，并应回写文档。
 
-| 文档                                 | 内容                                        |
-|--------------------------------------|---------------------------------------------|
-| [architecture.md](./architecture.md) | 三层架构、通道职责、仓库地图                |
-| [development.md](./development.md)   | 环境、构建、Run Config、热更、调试、日志    |
-| [rpc.md](./rpc.md)                   | SimpleRpc 三通道、服务命名、契约与代码生成  |
-| [agent.md](./agent.md)               | Node Agent 生命周期、会话、调度、stdio 约定 |
-| [setting.md](./setting.md)           | 设置：当前实现、设计目标、痛点与 TODO       |
+| 文档                                   | 内容                                        |
+|----------------------------------------|---------------------------------------------|
+| [architecture.md](./architecture.md)   | 三层架构、通道职责、仓库地图                |
+| [development.md](./development.md)     | 环境、构建、Run Config、热更、调试、日志    |
+| [rpc.md](./rpc.md)                     | SimpleRpc 三通道、服务命名、契约与代码生成  |
+| [agent.md](./agent.md)                 | Node Agent 生命周期、会话、调度、stdio 约定 |
+| [chat-messages.md](./chat-messages.md) | pi 事件 → ChatEvent → assistant-ui 消息适配 |
+| [setting.md](./setting.md)             | 设置：当前实现、设计目标、痛点与 TODO       |
 
 ## 相关入口
 

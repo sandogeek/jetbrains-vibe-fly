@@ -71,7 +71,7 @@
 
 ## 3. 业务面：UI ↔ Agent
 
-**用途**：聊天、工具、流式事件。
+**用途**：聊天、工具、流式事件。流式消息形态与 assistant-ui 适配见 [chat-messages.md](./chat-messages.md)。
 
 **连接流程（概念）**：
 

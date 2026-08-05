@@ -68,6 +68,7 @@ Kotlin 包根：`com.github.sandogeek.jetbrainsvibefly`。
 | 设置（现状）   | `plugin/.../settings/*`；UI `packages/vibefly-ui/src/settings/*`                                                        |
 | 聊天工作区     | `plugin/.../chat/ChatWorkspaceState.kt`、`ChatContextDeliveryService.kt`                                                |
 | 会话 / 调度    | Agent `chatSessionRegistry.ts`、`chatScheduler.ts`；UI `src/chat/*`                                                     |
+| 消息适配       | Agent 事件 → wire → assistant-ui：见 [chat-messages.md](./chat-messages.md)                                             |
 | Commit Message | `plugin/.../commit/*`；Agent `commitMessage.ts`                                                                         |
 
 ## 数据与目录
@@ -87,7 +88,7 @@ Kotlin 包根：`com.github.sandogeek.jetbrainsvibefly`。
 - Agent 内 `SerialTurnScheduler`：同 project **串行** turn（FIFO），避免并发改代码。
 - 编辑器 / 拖拽上下文经 Host 缓冲，页面绑定后再投递到活跃会话。
 
-详见 [agent.md](./agent.md)。
+详见 [agent.md](./agent.md)。pi 流式事件如何变成 assistant-ui 消息见 [chat-messages.md](./chat-messages.md)。
 
 ## 心智模型（四条）
 

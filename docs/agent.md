@@ -52,6 +52,8 @@ node --import tsx packages/vibefly-agent/src/main.ts
 
 设计意图：同项目多标签可开多个会话，但 **串行执行 turn**，降低并发改文件冲突。
 
+pi `AgentSessionEvent` → `ChatEvent` → UI → assistant-ui 的完整映射见 [chat-messages.md](./chat-messages.md)。
+
 ## 与 Host 的控制流（概念）
 
 ```text
