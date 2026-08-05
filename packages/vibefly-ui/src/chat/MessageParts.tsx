@@ -9,7 +9,6 @@ import {cjk} from "@streamdown/cjk"
 import {code} from "@streamdown/code"
 import {
     AlertTriangle,
-    Bot,
     Brain,
     Check,
     ChevronDown,
@@ -51,9 +50,6 @@ export function ChatMessageView({
 
     return (
         <MessagePrimitive.Root className={`chat-message ${role}`}>
-            <div className="assistant-gutter">
-                {role === "assistant" ? <Bot size={16}/> : <AlertTriangle size={15}/>}
-            </div>
             <div className="assistant-content">
                 <MessagePrimitive.Parts
                     components={{
