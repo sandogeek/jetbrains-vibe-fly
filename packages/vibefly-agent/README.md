@@ -23,13 +23,13 @@ Vibe Fly Node agent：对接 [pi](https://github.com/earendil-works/pi)（`@eare
 
 使用 [winston](https://github.com/winstonjs/winston)，入口 `src/log.ts`。
 
-| 项 | 说明 |
-| --- | --- |
-| 默认级别 | `info` |
-| 覆盖 | 环境变量 `VIBEFLY_LOG_LEVEL`（`error` / `warn` / `info` / `http` / `verbose` / `debug` / `silly`；非法值回退 `info`） |
-| 输出 | **仅 stderr**，人类可读：`[vibefly-agent] <timestamp> INFO message …` |
-| stdout | 禁止写日志；`main.ts` 仍将 `console.log` 重定向到 stderr，防止第三方污染 SimpleRpc |
-| commit dump | 模型/预算摘要为 `info`；systemPrompt / messages **全文** 仅在 `debug`（及更低）输出 |
+| 项          | 说明                                                                                                                             |
+|-------------|----------------------------------------------------------------------------------------------------------------------------------|
+| 默认级别    | `info`                                                                                                                           |
+| 覆盖        | 环境变量 `VIBEFLY_LOG_LEVEL`（`error` / `warn` / `info` / `http` / `verbose` / `debug` / `silly`；非法值回退 `info`）            |
+| 输出        | **仅 stderr**，人类可读：`[vibefly-agent] <timestamp> INFO message …`                                                            |
+| stdout      | 禁止写日志；`stdoutIsolation.ts` 将 `console.log` / `info` / `debug` 等 stdout 方法统一重定向到 stderr，防止第三方污染 SimpleRpc |
+| commit dump | 模型/预算摘要为 `info`；systemPrompt / messages **全文** 仅在 `debug`（及更低）输出                                              |
 
 ```bash
 VIBEFLY_LOG_LEVEL=debug pnpm run start
