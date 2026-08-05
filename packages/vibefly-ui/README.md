@@ -23,7 +23,8 @@ packages/vibefly-ui/
   src/
     index.tsx
     App.tsx
-    styles.css
+    styles.css             # entry: tailwind + styles/*
+    styles/                # tokens, base, session, messages, composer, utilities
     lib/utils.ts           # cn() helper (clsx + tailwind-merge)
     components/ui/         # React 基础组件（Button / Dialog / TextField / …）
     rpc/client.ts          # createCefSimpleRpc + Ui2Host proxy
