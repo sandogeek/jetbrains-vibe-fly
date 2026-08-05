@@ -3,6 +3,7 @@ import {
     MessagePrimitive,
     type ToolCallMessagePartProps,
     useAuiState,
+    useThreadViewportStore,
 } from "@assistant-ui/react"
 import {StreamdownTextPrimitive} from "@assistant-ui/react-streamdown"
 import {cjk} from "@streamdown/cjk"
@@ -22,6 +23,20 @@ import {useCallback, useState} from "react"
 import remarkBreaks from "remark-breaks"
 import {useAppTranslation} from "../i18n"
 import type {ToolArtifact} from "../chatMessageAdapter"
+
+/** Stop stick-to-bottom so expand/collapse + streaming do not yank the viewport. */
+function useReleaseStickToBottom() {
+    const store = useThreadViewportStore()
+    return useCallback(() => {
+        const writable = store as unknown as {
+            getState: () => { isAtBottom: boolean }
+            setState: (partial: { isAtBottom: boolean }) => void
+        }
+        if (writable.getState().isAtBottom) {
+            writable.setState({isAtBottom: false})
+        }
+    }, [store])
+}
 
 export function ChatMessageView({
                                     onOpenLocation,
@@ -95,9 +110,16 @@ function MarkdownText() {
 function ReasoningPart({text}: { text: string }) {
     const {t} = useAppTranslation("chat")
     const [open, setOpen] = useState(true)
+    const releaseStickToBottom = useReleaseStickToBottom()
     return (
         <div className={`thinking-block ${open ? "open" : ""}`}>
-            <button className="thinking-toggle" onClick={() => setOpen((value) => !value)}>
+            <button
+                className="thinking-toggle"
+                onClick={() => {
+                    releaseStickToBottom()
+                    setOpen((value) => !value)
+                }}
+            >
                 <Brain size={15}/>
                 <span>{t("chat:reasoning")}</span>
                 <ChevronDown size={14}/>
@@ -129,12 +151,19 @@ function ToolPart({
 }) {
     const {t} = useAppTranslation("chat")
     const [expanded, setExpanded] = useState(false)
+    const releaseStickToBottom = useReleaseStickToBottom()
     const artifact = (part.artifact ?? {}) as ToolArtifact
     const status = artifact.status ?? (part.result === undefined ? "running" : "completed")
     const location = artifact.locations?.[0]
     return (
         <div className={`tool-part ${status === "failed" ? "failed" : ""}`}>
-            <button className="tool-summary" onClick={() => setExpanded((value) => !value)}>
+            <button
+                className="tool-summary"
+                onClick={() => {
+                    releaseStickToBottom()
+                    setExpanded((value) => !value)
+                }}
+            >
                 <span className="tool-icon">
                     {status === "running" || status === "pending" ? (
                         <LoaderCircle size={13} className="spin"/>
