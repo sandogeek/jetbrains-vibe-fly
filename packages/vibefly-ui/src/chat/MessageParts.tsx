@@ -65,6 +65,14 @@ export function ChatMessageView() {
     const {t} = useAppTranslation("chat")
     const role = useAuiState((state) => state.message.role)
     const status = useAuiState((state) => state.message.status)
+    const content = useAuiState((state) => state.message.content)
+    const isRunning = status?.type === "running"
+    const hasVisibleContent = content.some((part) => {
+        if (part.type === "text" || part.type === "reasoning") {
+            return part.text.trim().length > 0
+        }
+        return part.type === "tool-call" || part.type === "data"
+    })
 
     if (role === "user") {
         return (
@@ -78,7 +86,12 @@ export function ChatMessageView() {
         <MessagePrimitive.Root className={`chat-message ${role}`}>
             <div className="assistant-content">
                 <MessagePrimitive.Parts components={assistantMessagePartsComponents}/>
-                {status?.type === "running" ? <span className="streaming-caret"/> : null}
+                {isRunning && !hasVisibleContent ? (
+                    <span className="shimmer text-muted/55 shimmer-color-accent shimmer-repeat-delay-800">
+                        {t("chat:generating")}
+                    </span>
+                ) : null}
+                {isRunning && hasVisibleContent ? <span className="streaming-caret"/> : null}
                 {status?.type === "incomplete" && status.reason === "error" ? (
                     <button className="retry-button">
                         <RotateCcw size={13}/> {t("chat:retry")}
@@ -115,6 +128,7 @@ function ReasoningPart({text}: { text: string }) {
     const {t} = useAppTranslation("chat")
     const [open, setOpen] = useState(true)
     const releaseStickToBottom = useReleaseStickToBottom()
+    const isRunning = useAuiState((state) => state.message.status?.type === "running")
     return (
         <div className={`thinking-block ${open ? "open" : ""}`}>
             <button
@@ -125,7 +139,15 @@ function ReasoningPart({text}: { text: string }) {
                 }}
             >
                 <Brain size={15}/>
-                <span>{t("chat:reasoning")}</span>
+                <span
+                    className={
+                        isRunning
+                            ? "shimmer text-muted/55 shimmer-color-accent shimmer-repeat-delay-800"
+                            : undefined
+                    }
+                >
+                    {t("chat:reasoning")}
+                </span>
                 <ChevronDown size={14}/>
             </button>
             {open ? <div className="thinking-content">{text}</div> : null}
@@ -177,7 +199,15 @@ function ToolPart(part: ToolCallMessagePartProps) {
                     )}
                 </span>
                 <Wrench size={14}/>
-                <strong>{part.toolName}</strong>
+                <strong
+                    className={
+                        status === "running" || status === "pending"
+                            ? "shimmer text-muted/55 shimmer-color-accent shimmer-repeat-delay-800"
+                            : undefined
+                    }
+                >
+                    {part.toolName}
+                </strong>
                 {location ? (
                     <span
                         className="tool-path"

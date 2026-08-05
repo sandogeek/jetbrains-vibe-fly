@@ -274,9 +274,18 @@ function ChatPageView({controller}: { controller: ChatController }) {
                 />
             ) : (
                 <section className="conversation">
-                    <div className="empty-state">
-                        <LoaderCircle className="spin" size={22}/>
-                        <span>{t("chat:loadingSession")}</span>
+                    <div className="empty-state loading-session-state">
+                        <div className="shimmer-container loading-session-skeleton">
+                            <div className="shimmer shimmer-bg bg-muted/40 size-12 rounded-[14px]"/>
+                            <div className="loading-session-lines">
+                                <div className="shimmer shimmer-bg bg-muted/40 h-3.5 w-36 rounded"/>
+                                <div className="shimmer shimmer-bg bg-muted/30 h-3 w-52 rounded"/>
+                                <div className="shimmer shimmer-bg bg-muted/25 h-3 w-44 rounded"/>
+                            </div>
+                        </div>
+                        <span className="shimmer text-muted/55 shimmer-color-accent shimmer-repeat-delay-800">
+                            {t("chat:loadingSession")}
+                        </span>
                     </div>
                 </section>
             )}

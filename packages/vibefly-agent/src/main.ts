@@ -4,48 +4,35 @@
  * stderr: logs
  * WebSocket: UI business SimpleRpc after ticket handshake
  */
-import { createStdioSimpleRpc } from "@sandogeek/simple-rpc-node"
-import { rpcOptions } from "@sandogeek/simple-rpc"
+// Must be first: redirects console.* → stderr before other deps evaluate.
+import "./stdoutIsolation.js"
+import {createStdioSimpleRpc} from "@sandogeek/simple-rpc-node"
+import {rpcOptions} from "@sandogeek/simple-rpc"
 import {
+  type Agent2Ui,
   createAgent2UiProxy,
   registerUi2AgentService,
-  type Agent2Ui,
   type Ui2AgentService,
 } from "@vibefly/uiagent-shared"
-import { generateCommitMessage } from "./commitMessage.js"
+import {generateCommitMessage} from "./commitMessage.js"
 import {
-  createAgent2HostProxy,
-  registerHost2AgentService,
   type AgentConnection,
+  createAgent2HostProxy,
   type Host2AgentService,
+  registerHost2AgentService,
 } from "./generated/controlRpc.js"
-import { log } from "./log.js"
-import { ChatSessionRegistry } from "./chatSessionRegistry.js"
-import { applyAgentDirFromEnv, clearPiRuntimeCache, getPiRuntime } from "./piRuntime.js"
-import {
-  applyProvidersPatch,
-  getProvidersSnapshot,
-} from "./providerConfig.js"
-import {
-  cancelActiveLogin,
-  getLoginProviders,
-  loginProvider,
-  logoutProvider,
-} from "./providerLogin.js"
-import {
-  createAgentWsServer,
-  createTicketStore,
-  isValidOrigin,
-} from "./ws.js"
+import {log} from "./log.js"
+import {ChatSessionRegistry} from "./chatSessionRegistry.js"
+import {applyAgentDirFromEnv, clearPiRuntimeCache, getPiRuntime} from "./piRuntime.js"
+import {applyProvidersPatch, getProvidersSnapshot,} from "./providerConfig.js"
+import {cancelActiveLogin, getLoginProviders, loginProvider, logoutProvider,} from "./providerLogin.js"
+import {createAgentWsServer, createTicketStore, isValidOrigin,} from "./ws.js"
 
 /** Fire-and-forget reverse RPC; host resets idle timeout on each call. */
 const progressOpts = rpcOptions({ timeoutMs: 5_000 })
 
 async function main(): Promise<void> {
   const bootStarted = performance.now()
-  console.log = (...args: unknown[]) => {
-    console.error("[vibefly-agent:stdout-redirect]", ...args)
-  }
 
   const agentDirStarted = performance.now()
   const agentDir = applyAgentDirFromEnv()

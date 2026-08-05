@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "tw-shimmer";
 
 /* Streamdown emits Tailwind utilities from its dist; must be a direct dep for pnpm path. */
 @source "../node_modules/streamdown/dist/*.js";

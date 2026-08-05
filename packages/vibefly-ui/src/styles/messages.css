@@ -71,6 +71,10 @@
     transition: background 120ms ease, color 120ms ease;
 }
 
+.thinking-toggle .shimmer {
+    color: color-mix(in srgb, var(--vf-muted) 55%, transparent);
+}
+
 .thinking-toggle:hover {
     background: color-mix(in srgb, var(--vf-surface-raised) 60%, transparent);
     color: var(--vf-fg);
@@ -351,6 +355,10 @@
     font-weight: 550;
 }
 
+.tool-summary strong.shimmer {
+    color: color-mix(in srgb, var(--vf-muted) 55%, transparent);
+}
+
 .tool-icon {
     width: 16px;
     display: grid;
@@ -436,6 +444,12 @@
     border-radius: 1px;
     background: var(--vf-accent);
     animation: blink 1s steps(1) infinite;
+}
+
+.assistant-content > .shimmer {
+    display: inline-block;
+    font-size: 13px;
+    letter-spacing: 0.01em;
 }
 
 .retry-button {
@@ -617,6 +631,26 @@
 .empty-state {
     gap: 10px;
     font-size: 12.5px;
+}
+
+.loading-session-state {
+    gap: 18px;
+}
+
+.loading-session-skeleton {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    width: min(100%, 280px);
+}
+
+.loading-session-lines {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
 }
 
 .error-banner {

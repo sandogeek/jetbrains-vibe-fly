@@ -13,6 +13,7 @@
   "backgroundPermission": "A background session needs tool approval",
   "backgroundInput": "A background session is waiting for input",
   "loadingSession": "Loading session",
+  "generating": "Generating",
   "startSession": "Start a Vibe Coding session",
   "toolApproval": "Tool approval required",
   "alwaysReject": "Always reject",

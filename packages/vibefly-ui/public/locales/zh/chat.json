@@ -13,6 +13,7 @@
   "backgroundPermission": "后台会话正在等待工具审批",
   "backgroundInput": "后台会话正在等待回复",
   "loadingSession": "正在载入会话",
+  "generating": "生成中",
   "startSession": "开始一个 Vibe Coding 会话",
   "toolApproval": "需要工具审批",
   "alwaysReject": "本会话始终拒绝",
