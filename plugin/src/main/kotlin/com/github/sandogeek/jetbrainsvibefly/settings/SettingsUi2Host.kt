@@ -2,46 +2,24 @@ package com.github.sandogeek.jetbrainsvibefly.settings
 
 import com.github.sandogeek.jetbrainsvibefly.agent.VibeflyAgentDirectory
 import com.github.sandogeek.jetbrainsvibefly.agent.VibeflyAgentService
-import com.github.sandogeek.jetbrainsvibefly.util.Edt
-import com.github.sandogeek.vibefly.jcef.rpc.Host2Ui
-import com.github.sandogeek.vibefly.jcef.rpc.IdeSettingsDto
-import com.github.sandogeek.vibefly.jcef.rpc.LoginInputRequest
-import com.github.sandogeek.vibefly.jcef.rpc.LoginInputResponse
-import com.github.sandogeek.vibefly.jcef.rpc.LoginOpenUrlRequest
-import com.github.sandogeek.vibefly.jcef.rpc.ModelPreferencesDto
-import com.github.sandogeek.vibefly.jcef.rpc.ProviderLoginRequest
-import com.github.sandogeek.vibefly.jcef.rpc.ProviderLoginResult
-import com.github.sandogeek.vibefly.jcef.rpc.ProviderLogoutRequest
-import com.github.sandogeek.vibefly.jcef.rpc.ProviderLogoutResult
-import com.github.sandogeek.vibefly.jcef.rpc.ProvidersFormDto
-import com.github.sandogeek.vibefly.jcef.rpc.ProvidersPatchRequest
-import com.github.sandogeek.vibefly.jcef.rpc.ProvidersPatchResult
-import com.github.sandogeek.vibefly.jcef.rpc.ProvidersRefreshResult
-import com.github.sandogeek.vibefly.jcef.rpc.CommitFormDto
-import com.github.sandogeek.vibefly.jcef.rpc.Host2Agent
-import com.github.sandogeek.vibefly.jcef.rpc.UiFormDto
-import com.github.sandogeek.vibefly.jcef.rpc.Ui2HostImpl
+import com.github.sandogeek.vibefly.jcef.rpc.*
 import com.intellij.ide.BrowserUtil
-import com.intellij.openapi.project.Project
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.logger
+import com.intellij.openapi.project.Project
 import kotlinx.coroutines.runBlocking
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * Settings-panel [com.github.sandogeek.vibefly.jcef.rpc.Ui2Host].
+ * Settings-panel hosts: shared [Ui2Host] + [Ui2HostSettings].
  *
- * Methods 1–3 (version / log / agent connection) stay on [Ui2HostImpl] defaults:
- * settings hosts do not open an agent WebSocket ([getAgentConnection] → null).
- *
- * Methods 4–11 implement IDE persistence + providers control proxy + external URL.
- * Login reverse-RPC is bridged via [Agent2HostBridge] + optional [Host2Ui] login callbacks.
+ * Login reverse-RPC is bridged via [Agent2HostBridge] + optional [Host2UiSettings].
  */
 class SettingsUi2Host(
     private val project: Project? = null,
-    private val host2UiProvider: () -> Host2Ui? = { null },
-) : Ui2HostImpl(agentConnectionProvider = null) {
+    private val host2UiSettingsProvider: () -> Host2UiSettings? = { null },
+) : Ui2Host by Ui2HostImpl(), Ui2HostSettings {
 
     private val log = logger<SettingsUi2Host>()
     private val activeControl = AtomicReference<Host2Agent?>(null)
@@ -158,7 +136,7 @@ class SettingsUi2Host(
     }
 
     override suspend fun loginProvider(request: ProviderLoginRequest): ProviderLoginResult {
-        val webUi = WebProviderLoginUi(host2UiProvider)
+        val webUi = WebProviderLoginUi(host2UiSettingsProvider)
         return try {
             Agent2HostBridge.withUi(webUi) {
                 VibeflyAgentService.withControlForSettings(
@@ -207,18 +185,6 @@ class SettingsUi2Host(
         }
     }
 
-    override suspend fun openExternalUrl(url: String) {
-        val target = url.trim()
-        if (target.isEmpty()) return
-        runOnEdt {
-            try {
-                BrowserUtil.browse(target)
-            } catch (e: Exception) {
-                log.warn("BrowserUtil.browse failed for $target", e)
-            }
-        }
-    }
-
     companion object {
         private val providerRequestSequence = AtomicLong()
 
@@ -228,16 +194,16 @@ class SettingsUi2Host(
 }
 
 /**
- * Forwards agent login reverse-RPC into the active settings WebView [Host2Ui].
+ * Forwards agent login reverse-RPC into the active settings WebView [Host2UiSettings].
  */
 private class WebProviderLoginUi(
-    private val host2UiProvider: () -> Host2Ui?,
+    private val host2UiSettingsProvider: () -> Host2UiSettings?,
 ) : ProviderLoginUi {
 
     private val log = logger<WebProviderLoginUi>()
 
     override fun onOpenUrl(request: LoginOpenUrlRequest) {
-        val host2Ui = host2UiProvider()
+        val host2Ui = host2UiSettingsProvider()
         if (host2Ui == null) {
             val target = request.launchUrl?.takeIf { it.isNotBlank() } ?: request.url
             if (target.isNotBlank()) {
@@ -261,7 +227,7 @@ private class WebProviderLoginUi(
     }
 
     override fun onProgress(message: String) {
-        val host2Ui = host2UiProvider() ?: return
+        val host2Ui = host2UiSettingsProvider() ?: return
         ApplicationManager.getApplication().executeOnPooledThread {
             try {
                 runBlocking {
@@ -274,7 +240,7 @@ private class WebProviderLoginUi(
     }
 
     override suspend fun requestInput(request: LoginInputRequest): LoginInputResponse {
-        val host2Ui = host2UiProvider()
+        val host2Ui = host2UiSettingsProvider()
             ?: return LoginInputResponse(text = "", cancelled = true)
         return try {
             host2Ui.requestLoginInput(request.message, request.placeholder)
@@ -284,5 +250,3 @@ private class WebProviderLoginUi(
         }
     }
 }
-
-private suspend fun <T> runOnEdt(block: () -> T): T = Edt.run(block)

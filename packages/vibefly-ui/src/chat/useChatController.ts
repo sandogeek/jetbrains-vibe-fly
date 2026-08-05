@@ -10,10 +10,10 @@ import type {
 import {useCallback, useEffect, useMemo, useRef, useState} from "react"
 
 import {applyUiLocale, i18n, useAppTranslation} from "../i18n"
-import type {ModelPreferencesDto, Ui2Host} from "../generated/rpc"
+import type {ModelPreferencesDto, Ui2Host, Ui2HostChat} from "../generated/rpc"
 import {log} from "../log"
 import {type AgentStatus, connectAgentRpc} from "../rpc/agent"
-import {createUiRpc} from "../rpc/client"
+import {createChatUiRpc} from "../rpc/client"
 import {bindConsoleToHost} from "../rpc/console"
 import type {ModelPickerOption} from "../settings/ModelPicker"
 import {applyJbTheme} from "../theme"
@@ -103,6 +103,7 @@ export function useChatController(): ChatController {
     const [offline, setOffline] = useState(false)
 
     const hostRef = useRef<Ui2Host | null>(null)
+    const hostChatRef = useRef<Ui2HostChat | null>(null)
     const agentRef = useRef<Ui2Agent | null>(null)
     const projectRootRef = useRef("")
     const peerRef = useRef<SimpleRpcPeer | null>(null)
@@ -216,7 +217,7 @@ export function useChatController(): ChatController {
                 const result = applyChatEvent(tabsRef.current, event, activeIdRef.current)
                 updateTabs(result.tabs)
                 if (result.effects.refreshPaths.length > 0) {
-                    void hostRef.current?.refreshProjectFiles(result.effects.refreshPaths).catch(() => {
+                    void hostChatRef.current?.refreshProjectFiles(result.effects.refreshPaths).catch(() => {
                     })
                 }
                 if (result.effects.error) setError(result.effects.error)
@@ -254,7 +255,7 @@ export function useChatController(): ChatController {
     )
 
     const persistWorkspace = useCallback(async () => {
-        const chatHost = hostRef.current
+        const chatHost = hostChatRef.current
         if (!chatHost || offlineRef.current) return
         try {
             await chatHost.saveChatWorkspaceState({
@@ -269,20 +270,20 @@ export function useChatController(): ChatController {
     }, [])
 
     const bootstrap = useCallback(
-        async (ui2Host: Ui2Host, isDisposed: () => boolean) => {
+        async (ui2Host: Ui2Host, ui2HostChat: Ui2HostChat, isDisposed: () => boolean) => {
             try {
                 await ui2Host.getAppVersion()
-                await ui2Host.chatUiReady()
-                projectRootRef.current = await ui2Host.getProjectRoot()
+                await ui2HostChat.chatUiReady()
+                projectRootRef.current = await ui2HostChat.getProjectRoot()
                 const [workspace] = await Promise.all([
-                    ui2Host.getChatWorkspaceState(),
+                    ui2HostChat.getChatWorkspaceState(),
                     loadModelPreferences(ui2Host),
                 ])
                 if (isDisposed()) return
                 setHostStatus("connected")
 
                 const connection = connectAgentRpc({
-                    ui2Host,
+                    ui2HostChat,
                     isStopped: isDisposed,
                     onReady(proxy) {
                         agentRef.current = proxy
@@ -390,32 +391,29 @@ export function useChatController(): ChatController {
 
     useEffect(() => {
         let disposed = false
-        const rpc = createUiRpc({
-            setStatus(message) {
-                setHostStatus(message)
+        const rpc = createChatUiRpc({
+            host2Ui: {
+                setStatus(message) {
+                    setHostStatus(message)
+                },
+                async setTheme(mode) {
+                    applyJbTheme(mode)
+                },
             },
-            async loginOpenUrl() {
-            },
-            async loginProgress() {
-            },
-            async requestLoginInput() {
-                return {text: "", cancelled: true}
-            },
-            async addChatContexts(sessionId, incoming) {
-                appendContexts(
-                    sessionId,
-                    incoming.map((item) => ({
-                        id: item.id,
-                        kind: item.kind === "selection" ? "selection" : "file",
-                        path: item.path,
-                        text: item.text ?? undefined,
-                        startLine: item.startLine ?? undefined,
-                        endLine: item.endLine ?? undefined,
-                    })),
-                )
-            },
-            async setTheme(mode) {
-                applyJbTheme(mode)
+            host2UiChat: {
+                async addChatContexts(sessionId, incoming) {
+                    appendContexts(
+                        sessionId,
+                        incoming.map((item) => ({
+                            id: item.id,
+                            kind: item.kind === "selection" ? "selection" : "file",
+                            path: item.path,
+                            text: item.text ?? undefined,
+                            startLine: item.startLine ?? undefined,
+                            endLine: item.endLine ?? undefined,
+                        })),
+                    )
+                },
             },
         })
 
@@ -428,9 +426,10 @@ export function useChatController(): ChatController {
             updateActiveId(demo.summary.sessionId)
         } else {
             hostRef.current = rpc.ui2Host
+            hostChatRef.current = rpc.ui2HostChat
             peerRef.current = rpc.peer
             unbindConsoleRef.current = bindConsoleToHost(rpc.ui2Host)
-            void bootstrap(rpc.ui2Host, () => disposed)
+            void bootstrap(rpc.ui2Host, rpc.ui2HostChat, () => disposed)
         }
 
         return () => {
@@ -441,6 +440,8 @@ export function useChatController(): ChatController {
             unbindConsoleRef.current = null
             peerRef.current?.close()
             peerRef.current = null
+            hostRef.current = null
+            hostChatRef.current = null
             agentRef.current = null
             const permission = pendingPermissionRef.current
             if (permission) {
@@ -652,9 +653,9 @@ export function useChatController(): ChatController {
 
     const chooseContextFiles = async () => {
         const sessionId = activeIdRef.current
-        if (!hostRef.current || offlineRef.current || !sessionId) return
+        if (!hostChatRef.current || offlineRef.current || !sessionId) return
         try {
-            const relativePaths = await hostRef.current.selectChatContextFiles()
+            const relativePaths = await hostChatRef.current.selectChatContextFiles()
             appendContexts(
                 sessionId,
                 relativePaths.map((relativePath) => ({
@@ -750,11 +751,11 @@ export function useChatController(): ChatController {
     }
 
     const openLocation = useCallback((path: string, line?: number) => {
-        if (!offlineRef.current) void hostRef.current?.openProjectFile(path, line ?? null)
+        if (!offlineRef.current) void hostChatRef.current?.openProjectFile(path, line ?? null)
     }, [])
 
     const showDiff = useCallback((path: string) => {
-        if (!offlineRef.current) void hostRef.current?.showProjectDiff(path)
+        if (!offlineRef.current) void hostChatRef.current?.showProjectDiff(path)
     }, [])
 
     const openExternalUrl = useCallback((url: string) => {
@@ -805,7 +806,7 @@ export function useChatController(): ChatController {
             respondInput,
             setInputReply,
             dismissError: () => setError(null),
-            openSettings: () => void hostRef.current?.openIdeSettings(),
+            openSettings: () => void hostChatRef.current?.openIdeSettings(),
             openLocation,
             showDiff,
             openExternalUrl,

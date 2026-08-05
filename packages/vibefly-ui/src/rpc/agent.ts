@@ -12,7 +12,7 @@ import {
     type UserInputResponse,
 } from "@vibefly/uiagent-shared"
 import {log} from "../log"
-import type {AgentConnection, Ui2Host} from "../generated/rpc"
+import type {AgentConnection, Ui2HostChat} from "../generated/rpc"
 
 export type AgentStatus =
     | "idle"
@@ -30,11 +30,11 @@ export type AgentRpc = {
 const BACKOFF_MS = [250, 500, 1000, 2000] as const
 
 /**
- * Connect UI ↔ Agent WebSocket using Ui2Host session tickets.
+ * Connect UI ↔ Agent WebSocket using Ui2HostChat session tickets.
  * Reconnects with backoff until [stop] or page teardown.
  */
 export function connectAgentRpc(options: {
-    ui2Host: Ui2Host
+    ui2HostChat: Ui2HostChat
     onEvent?: (event: AgentEvent) => void
     onChatEvents: (batch: ChatEventBatch) => void
     requestToolPermission: (request: ToolPermissionRequest) => Promise<ToolPermissionResponse>
@@ -80,7 +80,7 @@ export function connectAgentRpc(options: {
         let connection: AgentConnection | null | undefined
         const ticketStarted = performance.now()
         try {
-            connection = await options.ui2Host.getAgentConnection()
+            connection = await options.ui2HostChat.getAgentConnection()
         } catch (e) {
             log.warn("getAgentConnection failed", {
                 attempt: attemptNo,

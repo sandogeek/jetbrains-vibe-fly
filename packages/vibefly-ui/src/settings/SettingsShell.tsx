@@ -3,8 +3,15 @@ import {applyUiLocale, i18n, useAppTranslation} from "../i18n"
 import {type ReactNode, useEffect, useRef, useState} from "react"
 
 import {useLocation, useNavigate} from "react-router-dom"
-import type {Host2UiService, IdeSettingsDto, LoginInputResponse, Ui2Host,} from "../generated/rpc"
-import {createUiRpc} from "../rpc/client"
+import type {
+    Host2UiService,
+    Host2UiSettingsService,
+    IdeSettingsDto,
+    LoginInputResponse,
+    Ui2Host,
+    Ui2HostSettings,
+} from "../generated/rpc"
+import {createSettingsUiRpc} from "../rpc/client"
 import {bindConsoleToHost} from "../rpc/console"
 import {applyJbTheme} from "../theme"
 import {CommitMessagePage} from "./CommitMessagePage"
@@ -42,6 +49,7 @@ export function SettingsShell() {
     const [search, setSearch] = useState("")
     const [state, setState] = useState<SettingsState>(() => initialState())
     const [ui2Host, setUi2Host] = useState<Ui2Host | null>(null)
+    const [ui2HostSettings, setUi2HostSettings] = useState<Ui2HostSettings | null>(null)
     const loginHandlers = useRef<LoginHandlers | null>(null)
 
     useEffect(() => {
@@ -52,6 +60,11 @@ export function SettingsShell() {
             async setStatus(message) {
                 if (!cancelled) setState((current) => ({...current, status: message}))
             },
+            async setTheme(mode) {
+                applyJbTheme(mode)
+            },
+        }
+        const host2UiSettings: Host2UiSettingsService = {
             async loginOpenUrl(url, launchUrl) {
                 loginHandlers.current?.onOpenUrl(url, launchUrl)
             },
@@ -62,16 +75,12 @@ export function SettingsShell() {
                 if (!loginHandlers.current) return {text: "", cancelled: true}
                 return loginHandlers.current.onRequestInput(prompt, placeholder)
             },
-            async addChatContexts() {
-            },
-            async setTheme(mode) {
-                applyJbTheme(mode)
-            },
         }
 
-        const rpc = createUiRpc(host2Ui)
+        const rpc = createSettingsUiRpc({host2Ui, host2UiSettings})
         if (rpc) {
             setUi2Host(rpc.ui2Host)
+            setUi2HostSettings(rpc.ui2HostSettings)
             peerClose = () => rpc.peer.close()
             unbindConsole = bindConsoleToHost(rpc.ui2Host)
         }
@@ -82,8 +91,9 @@ export function SettingsShell() {
             let snapshot: ProvidersSnapshot | null = null
             let loadError: string | null = null
             const host = rpc?.ui2Host ?? null
+            const settingsHost = rpc?.ui2HostSettings ?? null
 
-            if (host) {
+            if (host && settingsHost) {
                 try {
                     settings = normalizeSettings(await host.getIdeSettings())
                     applyUiLocale(settings.ui?.locale)
@@ -91,7 +101,7 @@ export function SettingsShell() {
                     loadError = error instanceof Error ? error.message : String(error)
                 }
                 try {
-                    const refresh = await host.refreshProviders(PROVIDER_CONFIG_RPC_OPTIONS)
+                    const refresh = await settingsHost.refreshProviders(PROVIDER_CONFIG_RPC_OPTIONS)
                     if (refresh.ok) snapshot = mergeProvidersSnapshot(refresh.snapshot, state.catalog)
                     else loadError = loadError ?? refresh.error ?? i18n.t("settings:refreshFailed")
                 } catch (error) {
@@ -109,6 +119,7 @@ export function SettingsShell() {
             peerClose?.()
             unbindConsole?.()
             setUi2Host(null)
+            setUi2HostSettings(null)
         }
     }, [])
 
@@ -187,6 +198,7 @@ export function SettingsShell() {
                 ) : (
                     <ProvidersPage
                         ui2Host={ui2Host}
+                        ui2HostSettings={ui2HostSettings}
                         settings={state.settings}
                         snapshot={state.snapshot}
                         catalog={state.catalog}

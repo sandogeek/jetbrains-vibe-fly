@@ -1,20 +1,17 @@
 package com.github.sandogeek.jetbrainsvibefly.toolWindow
 
 import com.github.sandogeek.jetbrainsvibefly.agent.VibeflyAgentService
-import com.github.sandogeek.jetbrainsvibefly.chat.ChatWorkspaceState
 import com.github.sandogeek.jetbrainsvibefly.chat.ChatContextDeliveryService
+import com.github.sandogeek.jetbrainsvibefly.chat.ChatWorkspaceState
 import com.github.sandogeek.jetbrainsvibefly.settings.VibeflyModelPreferencesState
 import com.github.sandogeek.jetbrainsvibefly.settings.VibeflySettingsConfigurable
 import com.github.sandogeek.jetbrainsvibefly.settings.VibeflyUiSettingsState
 import com.github.sandogeek.jetbrainsvibefly.util.Edt
-import com.github.sandogeek.vibefly.jcef.rpc.HostChatContextItem
-import com.github.sandogeek.vibefly.jcef.rpc.ModelPreferencesDto
 import com.github.sandogeek.vibefly.jcef.AgentOrigin
 import com.github.sandogeek.vibefly.jcef.VibeflyBrowserPanel
-import com.github.sandogeek.vibefly.jcef.rpc.Ui2HostImpl
-import com.github.sandogeek.vibefly.jcef.rpc.UiFormDto
-import com.intellij.diff.DiffManager
+import com.github.sandogeek.vibefly.jcef.rpc.*
 import com.intellij.diff.DiffContentFactory
+import com.intellij.diff.DiffManager
 import com.intellij.diff.requests.SimpleDiffRequest
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.fileChooser.FileChooser
@@ -33,10 +30,10 @@ import com.intellij.ui.content.ContentFactory
 import com.intellij.ui.jcef.JBCefApp
 import com.intellij.util.ui.JBUI
 import java.awt.BorderLayout
-import javax.swing.JPanel
 import java.nio.file.Files
 import java.nio.file.Path
-import java.util.UUID
+import java.util.*
+import javax.swing.JPanel
 
 class VibeflyToolWindowFactory : ToolWindowFactory {
 
@@ -65,14 +62,6 @@ class VibeflyToolWindowFactory : ToolWindowFactory {
         val expectedOrigin = AgentOrigin.currentPanel()
         var panel: VibeflyBrowserPanel? = null
         val ui2Host = Ui2HostImpl(
-            agentConnectionProvider = {
-                try {
-                    agentService.openSession(expectedOrigin)
-                } catch (e: Exception) {
-                    log.warn("Failed to open agent session for origin=$expectedOrigin", e)
-                    null
-                }
-            },
             modelPreferencesProvider = {
                 ModelPreferencesDto(
                     recentModelSpecs = modelPreferences.recentModelSpecs.toList(),
@@ -87,6 +76,16 @@ class VibeflyToolWindowFactory : ToolWindowFactory {
             },
             uiSettingsProvider = {
                 UiFormDto(locale = uiSettings.locale)
+            },
+        )
+        val ui2HostChat = Ui2HostChatImpl(
+            agentConnectionProvider = {
+                try {
+                    agentService.openSession(expectedOrigin)
+                } catch (e: Exception) {
+                    log.warn("Failed to open agent session for origin=$expectedOrigin", e)
+                    null
+                }
             },
             projectRootProvider = { projectRoot },
             workspaceStateProvider = { workspaceState.snapshot() },
@@ -122,7 +121,8 @@ class VibeflyToolWindowFactory : ToolWindowFactory {
             },
         )
         panel = VibeflyBrowserPanel(
-            ui2Host,
+            ui2Host = ui2Host,
+            ui2HostChat = ui2HostChat,
             onFilesDropped = { paths ->
                 val relativePaths = projectRelativeFiles(projectRoot, paths)
                 if (relativePaths.isNotEmpty()) {
@@ -140,7 +140,7 @@ class VibeflyToolWindowFactory : ToolWindowFactory {
         )
         val browserPanel = panel
         contextDelivery.bind { sessionId, contexts ->
-            browserPanel.rpc.host2Ui.addChatContexts(sessionId, contexts)
+            browserPanel.rpc.host2UiChat.addChatContexts(sessionId, contexts)
         }
         val content = contentFactory.createContent(browserPanel, null, false)
         Disposer.register(content, browserPanel)

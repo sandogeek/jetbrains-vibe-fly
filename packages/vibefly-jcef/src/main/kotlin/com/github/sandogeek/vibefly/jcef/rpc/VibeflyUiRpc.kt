@@ -8,12 +8,6 @@ import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.util.Disposer
 import com.intellij.ui.jcef.JBCefApp
 import com.intellij.ui.jcef.JBCefBrowser
-import com.intellij.ui.jcef.JBCefJSQuery
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.intOrNull
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import org.cef.browser.CefBrowser
 import org.cef.browser.CefFrame
 import org.cef.browser.CefMessageRouter
@@ -28,10 +22,12 @@ import java.util.concurrent.atomic.AtomicLong
  * Call [attach] before [JBCefBrowser.loadURL]. Each panel uses a unique native query
  * function name to avoid multi-panel MessageRouter collisions. The panel puts
  * [channelId] in its start URL so the page binds the exact pair of functions.
+ *
+ * Hosts register only the services they implement (shared + chat and/or settings).
  */
 class VibeflyUiRpc(
     private val browser: JBCefBrowser,
-    ui2Host: Ui2Host = Ui2HostImpl(),
+    registerHosts: (RpcSession) -> Unit,
 ) : Disposable {
 
     private val transport = CefMessageRouterTransport { script ->
@@ -44,6 +40,10 @@ class VibeflyUiRpc(
 
     val host2Ui: Host2Ui = session.proxy()
 
+    val host2UiChat: Host2UiChat = session.proxy()
+
+    val host2UiSettings: Host2UiSettings = session.proxy()
+
     private val router: CefMessageRouter
 
     /** Identifies this panel's exact CEF query-function pair to the page. */
@@ -55,7 +55,7 @@ class VibeflyUiRpc(
     private val ownedBrowser: CefBrowser = browser.cefBrowser
 
     init {
-        session.register(Ui2Host::class.java, ui2Host)
+        registerHosts(session)
 
         val config = CefMessageRouterConfig(queryFunction, cancelFunction)
         // JBCefApp delegates router creation to the remote JCEF implementation when
@@ -74,7 +74,10 @@ class VibeflyUiRpc(
                     callback: CefQueryCallback?,
                 ): Boolean {
                     if (browser != ownedBrowser) {
-                        log.error("queryFunction cancelFunction名字一致的情况下onQuery可能串台，改为唯一后不应该出现此问题 ${browser} ${ownedBrowser}")
+                        log.error(
+                            "queryFunction cancelFunction名字一致的情况下onQuery可能串台，" +
+                                    "改为唯一后不应该出现此问题 $browser $ownedBrowser",
+                        )
                         return false
                     }
                     if (request == null || callback == null) return false
@@ -98,10 +101,7 @@ class VibeflyUiRpc(
             true,
         )
         browser.jbCefClient.cefClient.addMessageRouter(router)
-        log.info(
-            "SimpleRpc CefMessageRouter attached host=${ui2Host.javaClass.name} " +
-                "queryFn=$queryFunction",
-        )
+        log.info("SimpleRpc CefMessageRouter attached queryFn=$queryFunction")
     }
 
     override fun dispose() {
@@ -125,15 +125,38 @@ class VibeflyUiRpc(
 
         /**
          * Attach SimpleRpc to [browser] and register disposal on [parent].
+         * [registerHosts] must register every `@TsCallKotlin` service this panel exposes.
          */
         fun attach(
             browser: JBCefBrowser,
             parent: Disposable,
-            ui2Host: Ui2Host = Ui2HostImpl(),
+            registerHosts: (RpcSession) -> Unit,
         ): VibeflyUiRpc {
-            val rpc = VibeflyUiRpc(browser, ui2Host)
+            val rpc = VibeflyUiRpc(browser, registerHosts)
             Disposer.register(parent, rpc)
             return rpc
+        }
+
+        /** Chat tool window: shared [Ui2Host] + [Ui2HostChat]. */
+        fun attachChat(
+            browser: JBCefBrowser,
+            parent: Disposable,
+            ui2Host: Ui2Host,
+            ui2HostChat: Ui2HostChat,
+        ): VibeflyUiRpc = attach(browser, parent) { session ->
+            session.register(Ui2Host::class.java, ui2Host)
+            session.register(Ui2HostChat::class.java, ui2HostChat)
+        }
+
+        /** Settings panel: shared [Ui2Host] + [Ui2HostSettings]. */
+        fun attachSettings(
+            browser: JBCefBrowser,
+            parent: Disposable,
+            ui2Host: Ui2Host,
+            ui2HostSettings: Ui2HostSettings,
+        ): VibeflyUiRpc = attach(browser, parent) { session ->
+            session.register(Ui2Host::class.java, ui2Host)
+            session.register(Ui2HostSettings::class.java, ui2HostSettings)
         }
     }
 }

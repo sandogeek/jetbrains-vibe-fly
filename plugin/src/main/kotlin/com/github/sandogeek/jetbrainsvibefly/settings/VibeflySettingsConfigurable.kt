@@ -47,9 +47,13 @@ class VibeflySettingsConfigurable : SearchableConfigurable, Configurable.NoScrol
         uiDisposable = disposable
         lateinit var host: SettingsUi2Host
         host = SettingsUi2Host(
-            host2UiProvider = { browserPanel?.rpc?.host2Ui },
+            host2UiSettingsProvider = { browserPanel?.rpc?.host2UiSettings },
         )
-        val browser = VibeflyBrowserPanel(host, route = "settings").apply {
+        val browser = VibeflyBrowserPanel(
+            ui2Host = host,
+            ui2HostSettings = host,
+            route = "settings",
+        ).apply {
             // IDE Settings dialog is short by default; give the JCEF host a usable minimum.
             preferredSize = JBUI.size(760, 560)
             minimumSize = Dimension(JBUI.scale(480), JBUI.scale(360))

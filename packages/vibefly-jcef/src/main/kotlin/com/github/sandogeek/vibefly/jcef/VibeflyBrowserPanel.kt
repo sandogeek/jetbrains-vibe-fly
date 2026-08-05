@@ -1,8 +1,7 @@
 package com.github.sandogeek.vibefly.jcef
 
-import com.github.sandogeek.vibefly.jcef.rpc.Ui2Host
-import com.github.sandogeek.vibefly.jcef.rpc.Ui2HostImpl
-import com.github.sandogeek.vibefly.jcef.rpc.VibeflyUiRpc
+import com.github.sandogeek.simplerpc.RpcSession
+import com.github.sandogeek.vibefly.jcef.rpc.*
 import com.intellij.ide.ui.LafManagerListener
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
@@ -10,12 +9,7 @@ import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.util.Disposer
 import com.intellij.ui.jcef.JBCefBrowser
 import com.intellij.util.ui.UIUtil
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.*
 import org.cef.browser.CefBrowser
 import org.cef.browser.CefFrame
 import org.cef.handler.CefLoadHandlerAdapter
@@ -30,7 +24,7 @@ import java.io.File
 import javax.swing.JPanel
 
 /**
- * Tool-window host for the vibefly JCEF UI.
+ * JCEF host for vibefly WebView panels (chat tool window or settings).
  *
  * Production: [VibeflyScheme.INDEX_URL] via classpath.
  * Dev (Vite HMR): [VibeflyUiDev] → e.g. `http://127.0.0.1:5173/`.
@@ -41,8 +35,8 @@ import javax.swing.JPanel
  *
  * Optional [onFilesDropped] receives absolute local file paths from OS / Project View drops.
  */
-class VibeflyBrowserPanel(
-    ui2Host: Ui2Host = Ui2HostImpl(),
+class VibeflyBrowserPanel private constructor(
+    registerHosts: (RpcSession) -> Unit,
     /** Hash path without `#` (e.g. `settings`, `settings/providers`). Empty = chat shell. */
     route: String = "",
     /**
@@ -51,6 +45,34 @@ class VibeflyBrowserPanel(
      */
     private val onFilesDropped: ((List<String>) -> Unit)? = null,
 ) : JPanel(BorderLayout()), Disposable {
+
+    /** Chat tool window: shared + chat hosts. */
+    constructor(
+        ui2Host: Ui2Host = Ui2HostImpl(),
+        ui2HostChat: Ui2HostChat,
+        onFilesDropped: ((List<String>) -> Unit)? = null,
+    ) : this(
+        registerHosts = { session ->
+            session.register(Ui2Host::class.java, ui2Host)
+            session.register(Ui2HostChat::class.java, ui2HostChat)
+        },
+        route = "",
+        onFilesDropped = onFilesDropped,
+    )
+
+    /** Settings panel: shared + settings hosts. */
+    constructor(
+        ui2Host: Ui2Host,
+        ui2HostSettings: Ui2HostSettings,
+        route: String = "settings",
+    ) : this(
+        registerHosts = { session ->
+            session.register(Ui2Host::class.java, ui2Host)
+            session.register(Ui2HostSettings::class.java, ui2HostSettings)
+        },
+        route = route,
+        onFilesDropped = null,
+    )
 
     private val browser: JBCefBrowser
     private val uiRpc: VibeflyUiRpc
@@ -72,7 +94,7 @@ class VibeflyBrowserPanel(
         add(browser.component, BorderLayout.CENTER)
         Disposer.register(this, browser)
         // MessageRouter must be registered before the page creates createCefSimpleRpc.
-        uiRpc = VibeflyUiRpc.attach(browser, this, ui2Host)
+        uiRpc = VibeflyUiRpc.attach(browser, this, registerHosts)
         val startUrl = VibeflyStartUrl.withQueryParameter(
             routedStartUrl,
             VibeflyUiRpc.CHANNEL_QUERY_PARAMETER,
@@ -116,7 +138,7 @@ class VibeflyBrowserPanel(
     val jbCefBrowser: JBCefBrowser
         get() = browser
 
-    /** SimpleRpc session for this panel (Ui2Host registered; [host2Ui] proxies into the page). */
+    /** SimpleRpc session for this panel. */
     val rpc: VibeflyUiRpc
         get() = uiRpc
 

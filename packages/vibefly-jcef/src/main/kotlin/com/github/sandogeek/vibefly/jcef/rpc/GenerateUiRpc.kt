@@ -14,7 +14,14 @@ fun main(args: Array<String>) {
     val output = Path.of(args[0])
     TypeScriptGenerator.generateTo(
         output,
-        listOf(Ui2Host::class.java, Host2Ui::class.java),
+        listOf(
+            Ui2Host::class.java,
+            Ui2HostChat::class.java,
+            Ui2HostSettings::class.java,
+            Host2Ui::class.java,
+            Host2UiChat::class.java,
+            Host2UiSettings::class.java,
+        ),
         TypeScriptGenerationOptions(runtimeModule = "@sandogeek/simple-rpc"),
     )
     println("Wrote $output")

@@ -1,10 +1,31 @@
 import {createCefSimpleRpc, type SimpleRpcPeer} from "@sandogeek/simple-rpc"
 import {log} from "../log"
-import {createUi2HostProxy, type Host2UiService, registerHost2UiService, type Ui2Host,} from "../generated/rpc"
+import {
+    createUi2HostChatProxy,
+    createUi2HostProxy,
+    createUi2HostSettingsProxy,
+    type Host2UiChatService,
+    type Host2UiService,
+    type Host2UiSettingsService,
+    registerHost2UiChatService,
+    registerHost2UiService,
+    registerHost2UiSettingsService,
+    type Ui2Host,
+    type Ui2HostChat,
+    type Ui2HostSettings,
+} from "../generated/rpc"
 
 export type UiRpc = {
     peer: SimpleRpcPeer
     ui2Host: Ui2Host
+}
+
+export type ChatUiRpc = UiRpc & {
+    ui2HostChat: Ui2HostChat
+}
+
+export type SettingsUiRpc = UiRpc & {
+    ui2HostSettings: Ui2HostSettings
 }
 
 type CefQueryRequest = {
@@ -56,25 +77,47 @@ export function resolveCefQueryFns(win: CefWindow): {
     return null
 }
 
-/**
- * Create SimpleRpc peer when running inside JCEF (cefQuery present).
- * Returns null in plain browser / Vite-only preview.
- */
-export function createUiRpc(host2Ui: Host2UiService): UiRpc | null {
+function openPeer(): SimpleRpcPeer | null {
     const win = window as CefWindow
     const cef = resolveCefQueryFns(win)
     if (cef == null) {
         log.debug("createUiRpc: cefQuery unavailable")
         return null
     }
-
-    const peer = createCefSimpleRpc({
+    return createCefSimpleRpc({
         query: (req) => cef.query(req),
         cancelQuery: (id) => cef.cancel(id),
     })
-    registerHost2UiService(peer, host2Ui)
+}
+
+/** Chat tool window: Host2Ui + Host2UiChat; proxies Ui2Host + Ui2HostChat. */
+export function createChatUiRpc(options: {
+    host2Ui: Host2UiService
+    host2UiChat: Host2UiChatService
+}): ChatUiRpc | null {
+    const peer = openPeer()
+    if (peer == null) return null
+    registerHost2UiService(peer, options.host2Ui)
+    registerHost2UiChatService(peer, options.host2UiChat)
     return {
         peer,
         ui2Host: createUi2HostProxy(peer),
+        ui2HostChat: createUi2HostChatProxy(peer),
+    }
+}
+
+/** Settings panel: Host2Ui + Host2UiSettings; proxies Ui2Host + Ui2HostSettings. */
+export function createSettingsUiRpc(options: {
+    host2Ui: Host2UiService
+    host2UiSettings: Host2UiSettingsService
+}): SettingsUiRpc | null {
+    const peer = openPeer()
+    if (peer == null) return null
+    registerHost2UiService(peer, options.host2Ui)
+    registerHost2UiSettingsService(peer, options.host2UiSettings)
+    return {
+        peer,
+        ui2Host: createUi2HostProxy(peer),
+        ui2HostSettings: createUi2HostSettingsProxy(peer),
     }
 }

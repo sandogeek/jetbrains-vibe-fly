@@ -7,7 +7,7 @@ import org.junit.Test
 class Ui2HostImplTest {
 
     @Test
-    fun `tool window callbacks only expose and save model preferences`() = runBlocking {
+    fun `tool window host only exposes and saves model preferences`() = runBlocking {
         val initial = ModelPreferencesDto(
             recentModelSpecs = listOf("openai/gpt-4o"),
             pinnedModelSpecs = listOf("anthropic/claude-sonnet"),
