@@ -14,25 +14,25 @@ export type Locale = (typeof supportedLocales)[number]
 export const fallbackLocale: Locale = "en"
 
 export const namespaces = [
-  "common",
-  "chat",
-  "settings",
-  "sidebar",
-  "providers",
-  "dialogs",
-  "commit",
-  "modelPicker",
+    "common",
+    "chat",
+    "settings",
+    "sidebar",
+    "providers",
+    "dialogs",
+    "commit",
+    "modelPicker",
 ] as const
 
 export type Namespace = (typeof namespaces)[number]
 
 export type EnResources = {
-  common: typeof common
-  chat: typeof chat
-  settings: typeof settings
-  sidebar: typeof sidebar
-  providers: typeof providers
-  dialogs: typeof dialogs
-  commit: typeof commit
-  modelPicker: typeof modelPicker
+    common: typeof common
+    chat: typeof chat
+    settings: typeof settings
+    sidebar: typeof sidebar
+    providers: typeof providers
+    dialogs: typeof dialogs
+    commit: typeof commit
+    modelPicker: typeof modelPicker
 }
