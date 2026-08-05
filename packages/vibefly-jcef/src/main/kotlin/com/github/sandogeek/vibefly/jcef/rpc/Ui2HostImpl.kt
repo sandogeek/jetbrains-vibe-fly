@@ -17,6 +17,7 @@ open class Ui2HostImpl(
     private val agentConnectionProvider: (suspend () -> AgentConnection?)? = null,
     private val modelPreferencesProvider: (() -> ModelPreferencesDto)? = null,
     private val modelPreferencesSaver: (suspend (ModelPreferencesDto) -> Unit)? = null,
+    private val uiSettingsProvider: (() -> UiFormDto)? = null,
     private val projectRootProvider: () -> String = { "" },
     private val workspaceStateProvider: () -> ChatWorkspaceStateDto = { ChatWorkspaceStateDto() },
     private val workspaceStateSaver: (suspend (ChatWorkspaceStateDto) -> Unit)? = null,
@@ -47,6 +48,7 @@ open class Ui2HostImpl(
 
     override suspend fun getIdeSettings(): IdeSettingsDto = IdeSettingsDto(
         modelPreferences = modelPreferencesProvider?.invoke() ?: ModelPreferencesDto(),
+        ui = uiSettingsProvider?.invoke() ?: UiFormDto(),
     )
 
     override suspend fun saveIdeSettings(settings: IdeSettingsDto) {

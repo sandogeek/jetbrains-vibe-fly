@@ -19,6 +19,7 @@ import com.github.sandogeek.vibefly.jcef.rpc.ProvidersPatchResult
 import com.github.sandogeek.vibefly.jcef.rpc.ProvidersRefreshResult
 import com.github.sandogeek.vibefly.jcef.rpc.CommitFormDto
 import com.github.sandogeek.vibefly.jcef.rpc.Host2Agent
+import com.github.sandogeek.vibefly.jcef.rpc.UiFormDto
 import com.github.sandogeek.vibefly.jcef.rpc.Ui2HostImpl
 import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.project.Project
@@ -53,6 +54,7 @@ class SettingsUi2Host(
         val providers = VibeflyProviderSettingsState.getInstance()
         val commit = VibeflyCommitMessageSettingsState.getInstance()
         val prefs = VibeflyModelPreferencesState.getInstance()
+        val ui = VibeflyUiSettingsState.getInstance()
         return IdeSettingsDto(
             providers = ProvidersFormDto(
                 defaultProvider = providers.defaultProvider,
@@ -68,6 +70,9 @@ class SettingsUi2Host(
                 recentModelSpecs = prefs.recentModelSpecs.toList(),
                 pinnedModelSpecs = prefs.pinnedModelSpecs.toList(),
             ),
+            ui = UiFormDto(
+                locale = ui.locale,
+            ),
         )
     }
 
@@ -75,6 +80,7 @@ class SettingsUi2Host(
         val providersState = VibeflyProviderSettingsState.getInstance()
         val commitState = VibeflyCommitMessageSettingsState.getInstance()
         val prefsState = VibeflyModelPreferencesState.getInstance()
+        val uiState = VibeflyUiSettingsState.getInstance()
 
         val prevDefaultProvider = providersState.defaultProvider
         val prevDefaultModel = providersState.defaultModel
@@ -93,6 +99,8 @@ class SettingsUi2Host(
         // Wholesale replace pin/MRU (no separate toggle RPC).
         val prefs = settings.modelPreferences
         prefsState.replace(prefs.recentModelSpecs, prefs.pinnedModelSpecs)
+
+        uiState.locale = VibeflyUiSettingsState.normalizeLocale(settings.ui.locale)
 
         val defaultSpec = providersState.defaultModelSpec()
         if (defaultSpec.isNotEmpty()) {

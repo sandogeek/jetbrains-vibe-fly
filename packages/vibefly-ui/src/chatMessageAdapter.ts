@@ -30,7 +30,7 @@ function safeStringify(value: unknown): string {
   }
 }
 
-function convertPart(part: ChatPart): ConvertedPart {
+function convertPart(part: ChatPart): ConvertedPart | null {
   switch (part.kind) {
     case "text":
       return { type: "text", text: part.text }
@@ -59,15 +59,29 @@ function convertPart(part: ChatPart): ConvertedPart {
         isError: part.isError || part.status === "failed",
       }
     }
+    default:
+      return null
   }
 }
 
 export function convertChatMessage(message: ChatMessage): ThreadMessageLike {
+  const content = message.parts.map(convertPart).filter((part): part is ConvertedPart => part != null)
+  // assistant-ui (fromThreadMessageLike):
+  // - status is only valid on assistant messages
+  // - system messages must be a single text part; map system notices to assistant
+  if (message.role === "user") {
+    return {
+      id: message.id,
+      role: "user",
+      createdAt: new Date(message.createdAt),
+      content,
+    }
+  }
   return {
     id: message.id,
-    role: message.role,
+    role: "assistant",
     createdAt: new Date(message.createdAt),
-    content: message.parts.map(convertPart),
+    content,
     status: messageStatus(message),
   }
 }

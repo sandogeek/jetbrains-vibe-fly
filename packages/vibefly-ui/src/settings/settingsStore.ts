@@ -3,7 +3,9 @@ import type {
   IdeSettingsDto,
   ModelPreferencesDto,
   ProvidersFormDto,
+  UiFormDto,
 } from "../generated/rpc"
+import { normalizeUiLocaleMode } from "../i18n"
 import { bundledCatalog, type BundledCatalog } from "./catalog"
 import type { ProviderSnapshot, ProvidersSnapshot } from "./providerSnapshots"
 
@@ -32,6 +34,9 @@ export function emptySettings(): IdeSettingsDto {
       recentModelSpecs: [],
       pinnedModelSpecs: [],
     },
+    ui: {
+      locale: "follow_ide",
+    },
   }
 }
 
@@ -53,6 +58,9 @@ export function normalizeSettings(raw: IdeSettingsDto | null | undefined): IdeSe
       recentModelSpecs: [...(raw.modelPreferences?.recentModelSpecs ?? [])],
       pinnedModelSpecs: [...(raw.modelPreferences?.pinnedModelSpecs ?? [])],
     },
+    ui: {
+      locale: normalizeUiLocaleMode(raw.ui?.locale),
+    },
   }
 }
 
@@ -70,6 +78,15 @@ export function withCommit(settings: IdeSettingsDto, patch: Partial<CommitFormDt
   return {
     ...settings,
     commit: { ...settings.commit!, ...patch },
+  }
+}
+
+export function withUi(settings: IdeSettingsDto, patch: Partial<UiFormDto>): IdeSettingsDto {
+  return {
+    ...settings,
+    ui: {
+      locale: normalizeUiLocaleMode(patch.locale ?? settings.ui?.locale),
+    },
   }
 }
 

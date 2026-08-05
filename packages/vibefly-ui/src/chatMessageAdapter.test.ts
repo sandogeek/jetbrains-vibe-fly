@@ -72,6 +72,8 @@ describe("convertChatMessage", () => {
       parts: [{ kind: "notice", level: "error", text: "Connection lost" }],
     })
 
+    // system → assistant so assistant-ui accepts status + data parts
+    expect(converted.role).toBe("assistant")
     expect(converted.status).toEqual({ type: "incomplete", reason: "error" })
     expect(converted.content).toEqual([
       {
@@ -80,5 +82,19 @@ describe("convertChatMessage", () => {
         data: { level: "error", text: "Connection lost" },
       },
     ])
+  })
+
+  test("omits status on user messages", () => {
+    const converted = convertChatMessage({
+      id: "user-1",
+      role: "user",
+      status: "complete",
+      createdAt: 1,
+      parts: [{ kind: "text", text: "hello" }],
+    })
+
+    expect(converted.role).toBe("user")
+    expect(converted.status).toBeUndefined()
+    expect(converted.content).toEqual([{ type: "text", text: "hello" }])
   })
 })

@@ -1,5 +1,11 @@
 {
   "title": "Settings",
+  "general": "General",
+  "generalSubtitle": "Display language and other UI preferences.",
+  "displayLanguage": "Display language",
+  "followIde": "Follow IDE",
+  "english": "English",
+  "simplifiedChinese": "简体中文",
   "providers": "Providers",
   "commitMessage": "Commit Message",
   "hostUnavailable": "Host RPC unavailable (open inside IDE JCEF)",

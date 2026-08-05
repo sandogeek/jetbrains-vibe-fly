@@ -20,6 +20,16 @@ export function detectLocale(language?: string): Locale {
   return supportedLocales.find((locale) => locale === baseLanguage) ?? fallbackLocale
 }
 
+/** Settings-persisted UI language mode: follow_ide | en | zh. */
+export type UiLocaleMode = "follow_ide" | Locale
+
+export function normalizeUiLocaleMode(mode?: string | null): UiLocaleMode {
+  const raw = (mode ?? "follow_ide").trim().toLowerCase()
+  if (raw === "en" || raw === "english") return "en"
+  if (raw === "zh" || raw === "zh-cn" || raw === "zh_cn" || raw === "chinese" || raw === "cn") return "zh"
+  return "follow_ide"
+}
+
 const baseUrl = (import.meta as ImportMeta & { env?: { BASE_URL?: string } }).env?.BASE_URL || "./"
 const loadPath = `${baseUrl}locales/{{lng}}/{{ns}}.json`.replace(/([^:]\/)\/+/g, "$1")
 
@@ -53,6 +63,14 @@ export const i18nReady = i18n
       useSuspense: false,
     },
   })
+
+/** Apply IDE-persisted UI language preference to the active i18n instance. */
+export function applyUiLocale(mode?: string | null): void {
+  const normalized = normalizeUiLocaleMode(mode)
+  const lng = normalized === "follow_ide" ? detectLocale() : normalized
+  if (i18n.resolvedLanguage === lng || i18n.language === lng) return
+  void i18n.changeLanguage(lng)
+}
 
 /**
  * Subscribe to (and lazy-load) only the namespaces this component needs.

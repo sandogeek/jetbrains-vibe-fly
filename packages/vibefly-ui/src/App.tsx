@@ -64,7 +64,7 @@ import {
 } from "react"
 
 import remarkBreaks from "remark-breaks"
-import { i18n, useAppTranslation } from "./i18n"
+import { applyUiLocale, i18n, useAppTranslation } from "./i18n"
 import { convertChatMessage, type ToolArtifact } from "./chatMessageAdapter"
 import type { ModelPreferencesDto, Ui2Host } from "./generated/rpc"
 import { log } from "./log"
@@ -483,11 +483,13 @@ export function App() {
 
   const loadModelPreferences = useCallback(async (ui2Host: Ui2Host) => {
     try {
-      const preferences = (await ui2Host.getIdeSettings()).modelPreferences
+      const settings = await ui2Host.getIdeSettings()
+      const preferences = settings.modelPreferences
       setModelPreferences({
         recentModelSpecs: [...(preferences?.recentModelSpecs ?? [])],
         pinnedModelSpecs: [...(preferences?.pinnedModelSpecs ?? [])],
       })
+      applyUiLocale(settings.ui?.locale)
     } catch (preferencesError) {
       log.warn("model preferences unavailable", preferencesError)
     }

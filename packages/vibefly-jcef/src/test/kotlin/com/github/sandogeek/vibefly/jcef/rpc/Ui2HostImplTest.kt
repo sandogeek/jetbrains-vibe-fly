@@ -13,15 +13,18 @@ class Ui2HostImplTest {
             pinnedModelSpecs = listOf("anthropic/claude-sonnet"),
         )
         var saved: ModelPreferencesDto? = null
+        val ui = UiFormDto(locale = "zh")
         val host = Ui2HostImpl(
             modelPreferencesProvider = { initial },
             modelPreferencesSaver = { saved = it },
+            uiSettingsProvider = { ui },
         )
 
         val settings = host.getIdeSettings()
         assertEquals(ProvidersFormDto(), settings.providers)
         assertEquals(CommitFormDto(), settings.commit)
         assertEquals(initial, settings.modelPreferences)
+        assertEquals(ui, settings.ui)
 
         val next = ModelPreferencesDto(
             recentModelSpecs = listOf("openai/gpt-4.1"),
@@ -32,6 +35,7 @@ class Ui2HostImplTest {
                 providers = ProvidersFormDto(defaultProvider = "ignored"),
                 commit = CommitFormDto(customPrompt = "ignored"),
                 modelPreferences = next,
+                ui = UiFormDto(locale = "en"),
             ),
         )
         assertEquals(next, saved)

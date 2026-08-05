@@ -24,10 +24,17 @@ data class ModelPreferencesDto(
 )
 
 @Serializable
+data class UiFormDto(
+    /** follow_ide | en | zh — UI display language. */
+    val locale: String = "follow_ide",
+)
+
+@Serializable
 data class IdeSettingsDto(
     val providers: ProvidersFormDto = ProvidersFormDto(),
     val commit: CommitFormDto = CommitFormDto(),
     val modelPreferences: ModelPreferencesDto = ModelPreferencesDto(),
+    val ui: UiFormDto = UiFormDto(),
 )
 
 @Serializable

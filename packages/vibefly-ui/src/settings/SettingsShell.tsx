@@ -1,5 +1,5 @@
-import { Search, Settings2, SlidersHorizontal } from "lucide-react"
-import { i18n, useAppTranslation } from "../i18n"
+import { Languages, Search, Settings2, SlidersHorizontal } from "lucide-react"
+import { applyUiLocale, i18n, useAppTranslation } from "../i18n"
 import { useEffect, useRef, useState, type ReactNode } from "react"
 
 import { useLocation, useNavigate } from "react-router-dom"
@@ -13,6 +13,7 @@ import { createUiRpc } from "../rpc/client"
 import { bindConsoleToHost } from "../rpc/console"
 import { applyJbTheme } from "../theme"
 import { CommitMessagePage } from "./CommitMessagePage"
+import { GeneralPage } from "./GeneralPage"
 import { ProvidersPage } from "./ProvidersPage"
 import { mergeProvidersSnapshot, type ProvidersSnapshot } from "./providerSnapshots"
 import { PROVIDER_CONFIG_RPC_OPTIONS } from "./rpcOptions"
@@ -89,6 +90,7 @@ export function SettingsShell() {
       if (host) {
         try {
           settings = normalizeSettings(await host.getIdeSettings())
+          applyUiLocale(settings.ui?.locale)
         } catch (error) {
           loadError = error instanceof Error ? error.message : String(error)
         }
@@ -129,6 +131,7 @@ export function SettingsShell() {
   const activePath = location.pathname
   const hasSearch = (label: string) => !search.trim() || label.toLowerCase().includes(search.trim().toLowerCase())
   const showingCommit = activePath.includes("/commit-message")
+  const showingGeneral = activePath.includes("/general") || (!activePath.includes("/providers") && !showingCommit)
 
   return (
     <SidebarProvider className="h-full min-h-0 overflow-hidden">
@@ -141,6 +144,9 @@ export function SettingsShell() {
           <SidebarGroup>
             <SidebarGroupContent>
               <SidebarMenu>
+                {hasSearch(t("settings:general")) && (
+                  <SettingsNavItem label={t("settings:general")} icon={<Languages />} active={showingGeneral} onSelect={() => navigate("/settings/general")} />
+                )}
                 {hasSearch(t("settings:providers")) && (
                   <SettingsNavItem label={t("settings:providers")} icon={<Settings2 />} active={activePath.includes("/settings/providers")} onSelect={() => navigate("/settings/providers")} />
                 )}
@@ -162,6 +168,13 @@ export function SettingsShell() {
             settings={state.settings}
             snapshot={state.snapshot}
             catalog={state.catalog}
+            busy={state.busy}
+            onSettings={(settings) => setState((current) => ({ ...current, settings }))}
+            onSave={saveSettings}
+          />
+        ) : showingGeneral ? (
+          <GeneralPage
+            settings={state.settings}
             busy={state.busy}
             onSettings={(settings) => setState((current) => ({ ...current, settings }))}
             onSave={saveSettings}

@@ -5,12 +5,14 @@ import com.github.sandogeek.jetbrainsvibefly.chat.ChatWorkspaceState
 import com.github.sandogeek.jetbrainsvibefly.chat.ChatContextDeliveryService
 import com.github.sandogeek.jetbrainsvibefly.settings.VibeflyModelPreferencesState
 import com.github.sandogeek.jetbrainsvibefly.settings.VibeflySettingsConfigurable
+import com.github.sandogeek.jetbrainsvibefly.settings.VibeflyUiSettingsState
 import com.github.sandogeek.jetbrainsvibefly.util.Edt
 import com.github.sandogeek.vibefly.jcef.rpc.HostChatContextItem
 import com.github.sandogeek.vibefly.jcef.rpc.ModelPreferencesDto
 import com.github.sandogeek.vibefly.jcef.AgentOrigin
 import com.github.sandogeek.vibefly.jcef.VibeflyBrowserPanel
 import com.github.sandogeek.vibefly.jcef.rpc.Ui2HostImpl
+import com.github.sandogeek.vibefly.jcef.rpc.UiFormDto
 import com.intellij.diff.DiffManager
 import com.intellij.diff.DiffContentFactory
 import com.intellij.diff.requests.SimpleDiffRequest
@@ -59,6 +61,7 @@ class VibeflyToolWindowFactory : ToolWindowFactory {
         val workspaceState = ChatWorkspaceState.getInstance(project)
         val contextDelivery = ChatContextDeliveryService.getInstance(project)
         val modelPreferences = VibeflyModelPreferencesState.getInstance()
+        val uiSettings = VibeflyUiSettingsState.getInstance()
         val expectedOrigin = AgentOrigin.currentPanel()
         var panel: VibeflyBrowserPanel? = null
         val ui2Host = Ui2HostImpl(
@@ -81,6 +84,9 @@ class VibeflyToolWindowFactory : ToolWindowFactory {
                     preferences.recentModelSpecs,
                     preferences.pinnedModelSpecs,
                 )
+            },
+            uiSettingsProvider = {
+                UiFormDto(locale = uiSettings.locale)
             },
             projectRootProvider = { projectRoot },
             workspaceStateProvider = { workspaceState.snapshot() },

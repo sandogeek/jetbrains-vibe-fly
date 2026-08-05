@@ -27,10 +27,15 @@ export interface ModelPreferencesDto {
   pinnedModelSpecs?: Array<string>;
 }
 
+export interface UiFormDto {
+  locale?: string;
+}
+
 export interface IdeSettingsDto {
   providers?: ProvidersFormDto;
   commit?: CommitFormDto;
   modelPreferences?: ModelPreferencesDto;
+  ui?: UiFormDto;
 }
 
 export interface ProviderModelSnapshot {

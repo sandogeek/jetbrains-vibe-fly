@@ -1,5 +1,11 @@
 {
   "title": "设置",
+  "general": "通用",
+  "generalSubtitle": "界面显示语言及其他 UI 偏好。",
+  "displayLanguage": "显示语言",
+  "followIde": "跟随 IDE",
+  "english": "English",
+  "simplifiedChinese": "简体中文",
   "providers": "模型提供商",
   "commitMessage": "提交信息",
   "hostUnavailable": "Host RPC 不可用（请在 IDE JCEF 中打开）",
