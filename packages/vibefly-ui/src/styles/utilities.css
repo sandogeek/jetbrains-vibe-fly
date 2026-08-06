@@ -43,13 +43,13 @@
         border-radius: var(--vf-radius-lg);
     }
 
-    .composer-selectors .model-picker-compact {
-        width: 126px;
+    .composer-select-group .model-picker-compact {
+        width: 112px;
     }
 
-    .composer-thinking-select {
-        width: 88px;
-        max-width: 88px;
+    .composer-select-group .composer-thinking-select {
+        max-width: 72px;
+        min-width: 56px;
     }
 }
 
@@ -70,8 +70,8 @@
         display: none;
     }
 
-    .composer-selectors .model-picker-compact {
-        width: 116px;
+    .composer-select-group .model-picker-compact {
+        width: 100px;
     }
 
     .composer-input {

@@ -3,7 +3,7 @@
     z-index: 10;
     width: calc(100% - clamp(24px, 6vw, 82px));
     max-width: 980px;
-    min-height: 112px;
+    min-height: 88px;
     margin: 0 auto 14px;
     flex: none;
     overflow: visible;
@@ -71,16 +71,16 @@
 
 .composer-input {
     width: 100%;
-    min-height: 68px;
+    min-height: 44px;
     max-height: 190px;
-    padding: 14px 16px 6px;
+    padding: 10px 12px 4px;
     resize: none;
     border: 0;
     outline: none;
     background: transparent;
     color: var(--vf-fg);
-    font-size: 13.5px;
-    line-height: 1.55;
+    font-size: 13px;
+    line-height: 1.5;
 }
 
 .composer-input::placeholder {
@@ -88,12 +88,12 @@
 }
 
 .composer-toolbar {
-    min-height: 44px;
-    padding: 6px 10px 9px;
+    min-height: 34px;
+    padding: 4px 8px 8px;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
+    gap: 6px;
 }
 
 .composer-selectors,
@@ -101,32 +101,32 @@
     min-width: 0;
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 4px;
 }
 
 .toolbar-button {
-    width: 30px;
-    height: 30px;
+    width: 28px;
+    height: 28px;
     flex: none;
-    border-radius: 8px;
+    border-radius: 6px;
 }
 
 .composer-select-trigger {
     width: auto;
     max-width: 190px;
-    height: 30px;
-    min-height: 30px;
-    padding: 0 8px 0 10px;
+    height: 26px;
+    min-height: 26px;
+    padding: 0 6px 0 8px;
     display: inline-flex;
     align-items: center;
     justify-content: space-between;
-    gap: 6px;
+    gap: 4px;
     border: 1px solid var(--vf-border-soft);
-    border-radius: 8px;
+    border-radius: 999px;
     outline: none;
-    background: color-mix(in srgb, var(--vf-surface-raised) 80%, transparent);
+    background: transparent;
     color: var(--vf-fg);
-    font-size: 11.5px;
+    font-size: 11px;
     line-height: 1;
     cursor: pointer;
     transition: background 120ms ease, border-color 120ms ease;
@@ -150,9 +150,10 @@
 }
 
 .composer-select-trigger > svg {
-    width: 14px;
-    height: 14px;
+    width: 12px;
+    height: 12px;
     flex: none;
+    display: block;
     color: var(--vf-muted);
     transition: transform 0.15s ease;
 }
@@ -161,8 +162,114 @@
     transform: rotate(180deg);
 }
 
+.composer-select-group {
+    display: inline-flex;
+    align-items: stretch;
+    min-width: 0;
+    flex: none;
+    height: 26px;
+    border: 1px solid var(--vf-border-soft);
+    border-radius: 999px;
+    background: transparent;
+}
+
+.composer-select-group:hover {
+    border-color: var(--vf-border);
+    background: color-mix(in srgb, var(--vf-surface-raised) 70%, transparent);
+}
+
+.composer-select-group .model-picker-compact {
+    width: 148px;
+    max-width: 100%;
+    min-width: 0;
+    height: 100%;
+    flex: none;
+    display: flex;
+    align-items: stretch;
+}
+
+.composer-select-group .model-picker-compact > button {
+    width: 100%;
+    height: 100% !important;
+    min-height: 0 !important;
+    padding: 0 6px 0 8px !important;
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+    border: 0;
+    border-radius: 999px 0 0 999px;
+    background: transparent !important;
+    font-size: 11px;
+    line-height: 1;
+}
+
+.composer-select-group .model-picker-compact > button > span {
+    display: block;
+    line-height: 1;
+    font-size: 11px;
+}
+
+.composer-select-group .model-picker-compact > button > span > span {
+    font-size: inherit;
+    line-height: inherit;
+}
+
+.composer-select-group .composer-select-chevron {
+    width: 12px !important;
+    height: 12px !important;
+    min-width: 12px;
+    min-height: 12px;
+    flex: none;
+    display: block;
+    color: var(--vf-muted);
+    transition: transform 0.15s ease;
+}
+
+.composer-select-group .model-picker-compact > button:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--vf-surface-raised) 80%, transparent) !important;
+}
+
+.composer-select-group .composer-thinking-picker {
+    position: relative;
+    display: inline-flex;
+    align-items: stretch;
+    flex: none;
+    min-width: 0;
+    height: 100%;
+    border-left: 1px solid var(--vf-border-soft);
+}
+
+.composer-select-group .composer-thinking-select {
+    width: auto;
+    max-width: 92px;
+    min-width: 64px;
+    height: 100%;
+    min-height: 0;
+    padding: 0 6px 0 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+    border: 0;
+    border-radius: 0 999px 999px 0;
+    background: transparent;
+    font-size: 11px;
+    line-height: 1;
+}
+
+.composer-select-group .composer-thinking-select > span {
+    display: block;
+    line-height: 1;
+    font-size: 11px;
+}
+
+.composer-select-group .composer-thinking-select:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--vf-surface-raised) 80%, transparent);
+}
+
 .model-picker-compact {
-    width: 190px;
+    width: 148px;
     max-width: 100%;
     min-width: 0;
     flex: none;
@@ -175,8 +282,9 @@
 }
 
 .composer-thinking-select {
-    width: 105px;
-    max-width: 105px;
+    width: auto;
+    max-width: 92px;
+    min-width: 64px;
 }
 
 .composer-thinking-menu {
@@ -222,35 +330,31 @@
 
 .send-button,
 .stop-button {
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    transition: background 120ms ease, color 120ms ease, transform 100ms ease, opacity 120ms ease;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--vf-muted);
+    box-shadow: none;
+    transition: background 120ms ease, color 120ms ease, opacity 120ms ease;
 }
 
-.send-button {
-    background: var(--vf-accent-strong);
-    color: #0d1f18;
-    box-shadow: 0 1px 3px color-mix(in srgb, var(--vf-accent) 28%, transparent);
+.send-button:hover:not(:disabled),
+.stop-button:hover:not(:disabled) {
+    background: var(--vf-surface-raised);
+    color: var(--vf-fg);
 }
 
-.send-button:hover:not(:disabled) {
-    filter: brightness(1.08);
-}
-
-.send-button:active:not(:disabled) {
-    transform: scale(0.96);
+.send-button:active:not(:disabled),
+.stop-button:active:not(:disabled) {
+    transform: none;
 }
 
 .stop-button {
-    background: color-mix(in srgb, var(--vf-danger) 14%, transparent);
     color: var(--vf-danger);
 }
 
-.stop-button:hover {
-    background: color-mix(in srgb, var(--vf-danger) 22%, transparent);
-}
-
-html[data-jb-theme="light"] .send-button {
-    color: #ffffff;
+.stop-button:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--vf-danger) 12%, transparent);
+    color: var(--vf-danger);
 }

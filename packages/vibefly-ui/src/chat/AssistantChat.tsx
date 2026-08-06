@@ -199,24 +199,26 @@ export function AssistantChat(props: AssistantChatProps) {
                         >
                             <Paperclip size={15}/>
                         </button>
-                        <ModelPicker
-                            options={props.modelOptions}
-                            value={props.tab.summary.modelId ?? ""}
-                            pinnedSpecs={props.modelPreferences.pinnedModelSpecs ?? []}
-                            recentSpecs={props.modelPreferences.recentModelSpecs ?? []}
-                            variant="compact"
-                            placeholder={t("chat:defaultModel")}
-                            ariaLabel={t("chat:model")}
-                            disabled={running || props.offline}
-                            onChange={props.onModelChange}
-                        />
-                        <ThinkingSelect
-                            value={props.tab.summary.thinkingLevel ?? "off"}
-                            options={props.thinkingOptions}
-                            ariaLabel={t("chat:thinkingLevel")}
-                            disabled={running || props.offline}
-                            onChange={(level) => void props.onThinkingChange(level)}
-                        />
+                        <div className="composer-select-group">
+                            <ModelPicker
+                                options={props.modelOptions}
+                                value={props.tab.summary.modelId ?? ""}
+                                pinnedSpecs={props.modelPreferences.pinnedModelSpecs ?? []}
+                                recentSpecs={props.modelPreferences.recentModelSpecs ?? []}
+                                variant="compact"
+                                placeholder={t("chat:defaultModel")}
+                                ariaLabel={t("chat:model")}
+                                disabled={running || props.offline}
+                                onChange={props.onModelChange}
+                            />
+                            <ThinkingSelect
+                                value={props.tab.summary.thinkingLevel ?? "off"}
+                                options={props.thinkingOptions}
+                                ariaLabel={t("chat:thinkingLevel")}
+                                disabled={running || props.offline}
+                                onChange={(level) => void props.onThinkingChange(level)}
+                            />
+                        </div>
                     </div>
                     <div className="composer-actions">
                         <button type="button" className="toolbar-button" title={t("common:more")}>
@@ -227,11 +229,11 @@ export function AssistantChat(props: AssistantChatProps) {
                                 className="stop-button"
                                 title={props.queued ? t("chat:cancelQueued") : t("chat:stop")}
                             >
-                                <CircleStop size={18}/>
+                                <CircleStop size={16}/>
                             </ComposerPrimitive.Cancel>
                         ) : (
                             <ComposerPrimitive.Send className="send-button" title={t("chat:send")}>
-                                <Send size={17} fill="currentColor"/>
+                                <Send size={15}/>
                             </ComposerPrimitive.Send>
                         )}
                     </div>
@@ -368,7 +370,7 @@ function ThinkingSelect({
                 onClick={() => setOpen((current) => !current)}
             >
                 <span>{selected?.label ?? value}</span>
-                <ChevronDown size={14} className={open ? "rotated" : ""}/>
+                <ChevronDown size={12} strokeWidth={2} className={`composer-select-chevron ${open ? "" : "rotated"}`}/>
             </button>
             {open ? (
                 <div className="composer-thinking-menu" role="listbox" aria-label={ariaLabel}>

@@ -120,7 +120,8 @@ export function ModelPicker(props: ModelPickerProps) {
                 className={compact ? "text-[11px]" : "text-sm"}>{primary}</span>{!compact && secondary && <span
                 className={`ml-2 text-xs ${selectedUnavailable ? "text-warning" : "text-muted"}`}>{selectedUnavailable &&
                 <AlertTriangle className="mr-1 inline size-3"/>}{secondary}</span>}</span>
-            <ChevronDown className={`size-4 shrink-0 text-muted transition-transform ${open ? "rotate-180" : ""}`}/>
+            <ChevronDown size={compact ? 12 : 16} strokeWidth={2}
+                         className={`composer-select-chevron shrink-0 text-muted transition-transform ${compact ? (open ? "" : "rotate-180") : (open ? "rotate-180" : "")}`}/>
         </button>
         {open && <div
             className={`absolute z-50 flex max-h-[min(420px,calc(100vh-16px))] flex-col overflow-hidden rounded border border-border bg-bg shadow-lg ${
