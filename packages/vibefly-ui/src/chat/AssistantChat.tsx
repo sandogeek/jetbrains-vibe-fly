@@ -1,6 +1,7 @@
 import {
     type AppendMessage,
     AssistantRuntimeProvider,
+    AuiIf,
     ComposerPrimitive,
     ThreadPrimitive,
     useExternalStoreRuntime,
@@ -28,10 +29,8 @@ import {ModelPicker, type ModelPickerOption} from "../settings/ModelPicker"
 import {ChatMessageActionsContext, ChatMessageView} from "./MessageParts"
 import type {ChatTab, PendingInput, PendingPermission, ThinkingOption} from "./types"
 
-/** Stable identity — inline Message components remount on every stream tick. */
-const threadMessageComponents = {
-    Message: ChatMessageView,
-}
+/** Stable identity — inline children remount on every stream tick. */
+const renderThreadMessage = () => <ChatMessageView/>
 
 export type AssistantChatProps = {
     tab: ChatTab
@@ -120,7 +119,7 @@ export function AssistantChat(props: AssistantChatProps) {
                     onClick={onMarkdownClick}
                 >
                     <div className="message-stream">
-                        <ThreadPrimitive.Empty>
+                        <AuiIf condition={(s) => s.thread.isEmpty}>
                             <div className="new-session-state">
                                 <div className="new-session-mark">
                                     <Sparkles size={22}/>
@@ -128,8 +127,10 @@ export function AssistantChat(props: AssistantChatProps) {
                                 <h1>{t("chat:startSession")}</h1>
                                 <p>{modelLabel(props.tab.summary.modelId, t("chat:defaultModel"))}</p>
                             </div>
-                        </ThreadPrimitive.Empty>
-                        <ThreadPrimitive.Messages components={threadMessageComponents}/>
+                        </AuiIf>
+                        <ThreadPrimitive.Messages>
+                            {renderThreadMessage}
+                        </ThreadPrimitive.Messages>
 
                         {props.pendingPermission ? (
                             <PermissionCard
