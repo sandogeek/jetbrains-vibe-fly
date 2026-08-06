@@ -1,5 +1,5 @@
 import {AlertTriangle, Check, ChevronDown, Search, Star, X} from "lucide-react"
-import {useEffect, useMemo, useRef, useState} from "react"
+import {useEffect, useLayoutEffect, useMemo, useRef, useState} from "react"
 
 import type {ProviderSnapshot} from "./providerSnapshots"
 import {type Translator, useAppTranslation} from "../i18n"
@@ -48,6 +48,8 @@ export function ModelPicker(props: ModelPickerProps) {
     const [openRecent, setOpenRecent] = useState<string[]>(props.recentSpecs)
     const [activeIndex, setActiveIndex] = useState(-1)
     const triggerRef = useRef<HTMLButtonElement>(null)
+    const labelRef = useRef<HTMLSpanElement>(null)
+    const measureRef = useRef<HTMLSpanElement>(null)
     const searchRef = useRef<HTMLInputElement>(null)
     const compact = props.variant === "compact"
     const entries = useMemo(() => "options" in props && props.options ? buildOptionEntries(props.options) : buildEntries(props.providers, props.catalog), [props])
@@ -57,6 +59,7 @@ export function ModelPicker(props: ModelPickerProps) {
     const selectedUnavailable = Boolean(props.value && !selectedEntry)
     const followDefaultEntry = entries.find((entry) => entry.spec === props.followDefaultSpec?.trim())
     const resultCount = rows.filter((row) => row.tier !== "follow_default" && row.tier !== "clear").length
+    const [showProvider, setShowProvider] = useState(true)
 
     useEffect(() => {
         if (!open) return
@@ -109,18 +112,54 @@ export function ModelPicker(props: ModelPickerProps) {
         }
     }
     const primary = selectedEntry?.modelLabel ?? (props.value || props.placeholder || t("modelPicker:selectModel"))
-    const secondary = selectedUnavailable ? t("modelPicker:unavailable") : selectedEntry?.providerLabel ?? (followDefaultEntry?.modelLabel ?? props.followDefaultSpec ?? "")
+    const providerSecondary = selectedUnavailable
+        ? null
+        : selectedEntry?.providerLabel ?? (followDefaultEntry?.modelLabel ?? props.followDefaultSpec ?? "")
+    const statusSecondary = selectedUnavailable ? t("modelPicker:unavailable") : null
+    const secondary = statusSecondary ?? (showProvider ? providerSecondary : null)
+    const fullTitle = selectedUnavailable
+        ? `${primary} · ${t("modelPicker:unavailable")}`
+        : providerSecondary
+            ? `${primary} · ${providerSecondary}`
+            : primary
+
+    useLayoutEffect(() => {
+        if (selectedUnavailable || !providerSecondary) {
+            setShowProvider(false)
+            return
+        }
+        const label = labelRef.current
+        const measure = measureRef.current
+        if (!label || !measure) return
+        const update = () => {
+            setShowProvider(measure.scrollWidth <= label.clientWidth)
+        }
+        update()
+        const observer = new ResizeObserver(update)
+        observer.observe(label)
+        return () => observer.disconnect()
+    }, [primary, providerSecondary, selectedUnavailable, compact, props.value])
 
     return <div className={`relative ${compact ? "model-picker-compact" : "w-full"}`}>
         <button ref={triggerRef} type="button"
                 className={`flex items-center justify-between gap-1 rounded border border-border text-left text-fg outline-none focus-visible:ring-2 focus-visible:ring-ring ${compact ? "h-[29px] min-h-[29px] max-w-full bg-surface-raised px-2 py-0 text-[11px]" : "w-full min-h-10 bg-surface px-3 py-1.5 text-sm"}`}
                 aria-label={props.ariaLabel} aria-expanded={open} aria-controls={open ? listId : undefined}
-                title={primary}
+                title={fullTitle}
                 disabled={props.disabled} onClick={() => setOpen((current) => !current)} onKeyDown={onKeyDown}>
-            <span className="min-w-0 flex-1 truncate"><span
-                className={compact ? "text-[11px]" : "text-sm"}>{primary}</span>{!compact && secondary && <span
-                className={`ml-2 text-xs ${selectedUnavailable ? "text-warning" : "text-muted"}`}>{selectedUnavailable &&
-                <AlertTriangle className="mr-1 inline size-3"/>}{secondary}</span>}</span>
+            <span ref={labelRef} className="relative min-w-0 flex-1 truncate">
+                <span ref={measureRef} className="pointer-events-none absolute left-0 top-0 whitespace-nowrap opacity-0"
+                      aria-hidden>
+                    <span className={compact ? "text-[11px]" : "text-sm"}>{primary}</span>
+                    {providerSecondary ? <span className="ml-2 text-xs">{providerSecondary}</span> : null}
+                </span>
+                <span className={compact ? "text-[11px]" : "text-sm"}>{primary}</span>
+                {secondary ? (
+                    <span className={`ml-2 text-xs ${selectedUnavailable ? "text-warning" : "text-muted"}`}>
+                        {selectedUnavailable ? <AlertTriangle className="mr-1 inline size-3"/> : null}
+                        {secondary}
+                    </span>
+                ) : null}
+            </span>
             <ChevronDown size={compact ? 12 : 16} strokeWidth={2}
                          className={`composer-select-chevron shrink-0 text-muted transition-transform ${compact ? (open ? "" : "rotate-180") : (open ? "rotate-180" : "")}`}/>
         </button>
