@@ -113,8 +113,9 @@ export function ModelPicker(props: ModelPickerProps) {
 
     return <div className={`relative ${compact ? "model-picker-compact" : "w-full"}`}>
         <button ref={triggerRef} type="button"
-                className={`flex w-full items-center justify-between gap-1 rounded border border-border text-left text-fg outline-none focus-visible:ring-2 focus-visible:ring-ring ${compact ? "h-[29px] min-h-[29px] bg-surface-raised px-2 py-0 text-[11px]" : "min-h-10 bg-surface px-3 py-1.5 text-sm"}`}
+                className={`flex items-center justify-between gap-1 rounded border border-border text-left text-fg outline-none focus-visible:ring-2 focus-visible:ring-ring ${compact ? "h-[29px] min-h-[29px] max-w-full bg-surface-raised px-2 py-0 text-[11px]" : "w-full min-h-10 bg-surface px-3 py-1.5 text-sm"}`}
                 aria-label={props.ariaLabel} aria-expanded={open} aria-controls={open ? listId : undefined}
+                title={primary}
                 disabled={props.disabled} onClick={() => setOpen((current) => !current)} onKeyDown={onKeyDown}>
             <span className="min-w-0 flex-1 truncate"><span
                 className={compact ? "text-[11px]" : "text-sm"}>{primary}</span>{!compact && secondary && <span

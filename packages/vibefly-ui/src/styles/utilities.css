@@ -44,7 +44,7 @@
     }
 
     .composer-select-group .model-picker-compact {
-        width: 112px;
+        max-width: 180px;
     }
 
     .composer-select-group .composer-thinking-select {
@@ -71,7 +71,7 @@
     }
 
     .composer-select-group .model-picker-compact {
-        width: 100px;
+        max-width: 150px;
     }
 
     .composer-input {
