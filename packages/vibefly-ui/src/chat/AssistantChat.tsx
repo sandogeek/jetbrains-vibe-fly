@@ -13,7 +13,6 @@ import {
     CircleStop,
     FileCode2,
     MessageSquareText,
-    MoreHorizontal,
     Paperclip,
     Send,
     ShieldCheck,
@@ -222,9 +221,6 @@ export function AssistantChat(props: AssistantChatProps) {
                         </div>
                     </div>
                     <div className="composer-actions">
-                        <button type="button" className="toolbar-button" title={t("common:more")}>
-                            <MoreHorizontal size={16}/>
-                        </button>
                         {running ? (
                             <ComposerPrimitive.Cancel
                                 className="stop-button"
