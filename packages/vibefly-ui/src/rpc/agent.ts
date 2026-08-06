@@ -1,7 +1,6 @@
-import {createWebSocketSimpleRpc, type SimpleRpcPeer,} from "@sandogeek/simple-rpc"
+import {createWebSocketTransport, SimpleRpcPeer} from "@sandogeek/simple-rpc"
 import {
     type Agent2UiService,
-    type AgentEvent,
     type ChatEventBatch,
     createUi2AgentProxy,
     registerAgent2UiService,
@@ -32,10 +31,13 @@ const BACKOFF_MS = [250, 500, 1000, 2000] as const
 /**
  * Connect UI ↔ Agent WebSocket using Ui2HostChat session tickets.
  * Reconnects with backoff until [stop] or page teardown.
+ *
+ * Single reconnect state machine: a connection generation token invalidates
+ * in-flight attempts and stale transport onClose handlers so an old socket
+ * cannot schedule reconnects against a newer connection.
  */
 export function connectAgentRpc(options: {
     ui2HostChat: Ui2HostChat
-    onEvent?: (event: AgentEvent) => void
     onChatEvents: (batch: ChatEventBatch) => void
     requestToolPermission: (request: ToolPermissionRequest) => Promise<ToolPermissionResponse>
     requestUserInput: (request: UserInputRequest) => Promise<UserInputResponse>
@@ -47,35 +49,83 @@ export function connectAgentRpc(options: {
     let timer: ReturnType<typeof setTimeout> | null = null
     let current: AgentRpc | null = null
     let stopped = false
+    /** Bumped to invalidate in-flight connectOnce and stale onClose handlers. */
+    let generation = 0
 
-    const stop = () => {
-        stopped = true
+    const clearTimer = () => {
         if (timer != null) {
             clearTimeout(timer)
             timer = null
         }
-        current?.close()
+    }
+
+    const isLive = (gen: number) =>
+        !stopped && !options.isStopped() && gen === generation
+
+    const abandon = (rpc: AgentRpc | null) => {
+        if (rpc == null) return
+        if (current === rpc) current = null
+        try {
+            rpc.close()
+        } catch {
+            // ignore
+        }
+    }
+
+    const stop = () => {
+        stopped = true
+        generation += 1
+        clearTimer()
+        const rpc = current
         current = null
+        abandon(rpc)
         options.onReady?.(null)
     }
 
-    const schedule = () => {
-        if (stopped || options.isStopped()) return
+    /** Schedule reconnect for [gen] (replaces any pending timer). */
+    const schedule = (gen: number) => {
+        if (!isLive(gen)) return
+        clearTimer()
         const delay = BACKOFF_MS[Math.min(attempt, BACKOFF_MS.length - 1)]!
         attempt += 1
         timer = setTimeout(() => {
             timer = null
-            void connectOnce()
+            if (!isLive(gen)) return
+            void connectOnce(gen)
         }, delay)
     }
 
-    const connectOnce = async () => {
-        if (stopped || options.isStopped()) return
+    /**
+     * Unexpected transport close for [gen]: claim the generation so intentional
+     * peer teardown from the same close path does not double-schedule.
+     */
+    const onTransportClosed = (gen: number, rpc: AgentRpc) => {
+        if (!isLive(gen)) return
+        generation += 1
+        if (current === rpc) current = null
+        options.onReady?.(null)
+        log.info("agent closed, reconnecting")
+        options.onStatus("closed")
+        schedule(generation)
+    }
+
+    /** Intentional failure: bump generation so transport close is silent. */
+    const failAndReconnect = (gen: number, rpc: AgentRpc | null, status: AgentStatus) => {
+        if (!isLive(gen)) return
+        generation += 1
+        abandon(rpc)
+        options.onReady?.(null)
+        options.onStatus(status)
+        schedule(generation)
+    }
+
+    const connectOnce = async (gen: number) => {
+        if (!isLive(gen)) return
         const attemptNo = attempt + 1
         const started = performance.now()
         const stageMs = (from: number) => Math.round(performance.now() - from)
         options.onStatus("connecting")
-        log.info("agent connecting", {attempt: attemptNo})
+        log.info("agent connecting", {attempt: attemptNo, generation: gen})
 
         let connection: AgentConnection | null | undefined
         const ticketStarted = performance.now()
@@ -90,16 +140,15 @@ export function connectAgentRpc(options: {
             })
             connection = null
         }
+        if (!isLive(gen)) return
         const ticketMs = stageMs(ticketStarted)
-        if (stopped || options.isStopped()) return
         if (connection == null) {
             log.warn("agent connection unavailable", {
                 attempt: attemptNo,
                 ticketMs,
                 totalMs: stageMs(started),
             })
-            options.onStatus("unavailable")
-            schedule()
+            failAndReconnect(gen, null, "unavailable")
             return
         }
         log.info("agent ticket received", {
@@ -109,9 +158,6 @@ export function connectAgentRpc(options: {
         })
 
         const agent2Ui: Agent2UiService = {
-            onAgentEvent(event) {
-                options.onEvent?.(event)
-            },
             onChatEvents(batch) {
                 options.onChatEvents(batch)
             },
@@ -123,13 +169,38 @@ export function connectAgentRpc(options: {
             },
         }
 
-        let peer: SimpleRpcPeer
         const wsStarted = performance.now()
+        let rpc: AgentRpc
         try {
-            peer = createWebSocketSimpleRpc({
+            // options.onClose runs in addition to transport.onClose (used by peer).
+            // Do not call transport.onClose here — it would replace the peer listener.
+            let rpcRef: AgentRpc | null = null
+            const transport = createWebSocketTransport({
                 url: connection.url,
                 ticket: connection.ticket,
+                onClose: () => {
+                    if (rpcRef != null) onTransportClosed(gen, rpcRef)
+                },
             })
+            const peer = new SimpleRpcPeer(transport)
+            rpc = {
+                peer,
+                ui2Agent: createUi2AgentProxy(peer),
+                close() {
+                    try {
+                        peer.close()
+                    } catch {
+                        // ignore
+                    }
+                    try {
+                        transport.close()
+                    } catch {
+                        // ignore
+                    }
+                },
+            }
+            rpcRef = rpc
+            registerAgent2UiService(peer, agent2Ui)
         } catch (e) {
             log.warn("agent websocket create failed", {
                 attempt: attemptNo,
@@ -138,40 +209,29 @@ export function connectAgentRpc(options: {
                 totalMs: stageMs(started),
                 err: e,
             })
-            options.onStatus("unavailable")
-            schedule()
+            failAndReconnect(gen, null, "unavailable")
             return
         }
         const wsCreateMs = stageMs(wsStarted)
 
-        registerAgent2UiService(peer, agent2Ui)
-        const ui2Agent = createUi2AgentProxy(peer)
-        current = {
-            peer,
-            ui2Agent,
-            close() {
-                try {
-                    peer.close()
-                } catch {
-                    // ignore
-                }
-            },
+        if (!isLive(gen)) {
+            abandon(rpc)
+            return
         }
+        current = rpc
 
-        // Probe ready with ping; transport may still be handshaking.
         const pingStarted = performance.now()
         try {
-            const pong = await ui2Agent.ping("ui")
+            const pong = await rpc.ui2Agent.ping("ui")
             const pingMs = stageMs(pingStarted)
-            if (stopped || options.isStopped()) {
-                current.close()
-                current = null
+            if (!isLive(gen)) {
+                abandon(rpc)
                 return
             }
             if (typeof pong === "string") {
                 attempt = 0
                 options.onStatus("ready")
-                options.onReady?.(ui2Agent)
+                options.onReady?.(rpc.ui2Agent)
                 log.info("agent ready", {
                     attempt: attemptNo,
                     ticketMs,
@@ -189,37 +249,10 @@ export function connectAgentRpc(options: {
                 totalMs: stageMs(started),
                 err: e,
             })
-            current?.close()
-            current = null
-            options.onReady?.(null)
-            if (!stopped && !options.isStopped()) {
-                options.onStatus("unavailable")
-                schedule()
-            }
-            return
+            failAndReconnect(gen, rpc, "unavailable")
         }
-
-        // Peer close → reconnect
-        const transportClose = () => {
-            if (stopped || options.isStopped()) return
-            current = null
-            log.info("agent closed, reconnecting")
-            options.onStatus("closed")
-            schedule()
-        }
-        // SimpleRpcPeer closes on transport onClose; poll isClosed lightly.
-        const watch = setInterval(() => {
-            if (stopped || options.isStopped()) {
-                clearInterval(watch)
-                return
-            }
-            if (peer.isClosed) {
-                clearInterval(watch)
-                transportClose()
-            }
-        }, 500)
     }
 
-    void connectOnce()
+    void connectOnce(generation)
     return {stop}
 }
