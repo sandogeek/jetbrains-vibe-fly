@@ -154,35 +154,12 @@ async function main(): Promise<void> {
   }
   registerHost2AgentService(peer, controlImpl)
 
-  let taskSeq = 0
   wsServer.setSessionFactory((wsPeer) => {
     const agent2Ui: Agent2Ui = createAgent2UiProxy(wsPeer)
     chatSessions.attach(agent2Ui)
     const ui2AgentImpl: Ui2AgentService = {
       ping(text: string) {
         return `pong:${text}`
-      },
-      startTask(request) {
-        taskSeq += 1
-        const taskId = `task-${taskSeq}`
-        const message = request.prompt.slice(0, 200)
-        queueMicrotask(() => {
-          void agent2Ui
-            .onAgentEvent({
-              kind: "log",
-              message: `started ${taskId}: ${message}`,
-            })
-            .catch(() => {})
-          void agent2Ui
-            .onAgentEvent({
-              kind: "taskDone",
-              taskId,
-              ok: true,
-              message: "mvp stub complete",
-            })
-            .catch(() => {})
-        })
-        return taskId
       },
       listChatSessions(request) {
         return chatSessions.listChatSessions(request)

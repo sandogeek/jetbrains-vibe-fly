@@ -1,19 +1,5 @@
 /** Shared UI <-> Agent DTOs. Every value crossing RPC must be JSON-serializable. */
 
-export type TaskId = string
-
-export type StartTaskRequest = {
-  prompt: string
-  /** Optional workspace-relative path hints for the agent. */
-  paths?: string[]
-}
-
-/** Legacy event kept for wire compatibility with the original shell. */
-export type AgentEvent =
-  | { kind: "log"; message: string }
-  | { kind: "status"; status: string }
-  | { kind: "taskDone"; taskId: TaskId; ok: boolean; message?: string }
-
 export type ChatSessionState =
   | "idle"
   | "running"

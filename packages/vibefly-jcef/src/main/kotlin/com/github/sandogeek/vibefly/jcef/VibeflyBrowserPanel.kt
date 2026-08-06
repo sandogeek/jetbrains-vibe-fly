@@ -112,7 +112,7 @@ class VibeflyBrowserPanel private constructor(
                     httpStatusCode: Int,
                 ) {
                     if (frame == null || !frame.isMain) return
-                    // Host2Ui may not be registered until Solid mounts; retry briefly.
+                    // Host2Ui may not be registered until UI mounts; retry briefly.
                     applyTheme(retry = true)
                 }
             },

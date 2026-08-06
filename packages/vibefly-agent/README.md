@@ -6,12 +6,12 @@ Vibe Fly Node agent：对接 [pi](https://github.com/earendil-works/pi)（`@eare
 
 服务名约定：`Caller2Callee`（调用方 → 被调方）。
 
-| 方向 | 协议 | 说明 |
-| --- | --- | --- |
-| Host → Agent | SimpleRpc `Host2Agent`（stdio） | `openWebSocketSession` / `shutdown` |
-| UI → Agent | SimpleRpc `Ui2Agent`（WebSocket） | `ping` / `startTask` |
-| Agent → UI | SimpleRpc `Agent2Ui`（WebSocket） | `onAgentEvent` |
-| Agent 内部 | pi SDK | `createAgentSession` + 会话事件 |
+| 方向         | 协议                              | 说明                                |
+|--------------|-----------------------------------|-------------------------------------|
+| Host → Agent | SimpleRpc `Host2Agent`（stdio）   | `openWebSocketSession` / `shutdown` |
+| UI → Agent   | SimpleRpc `Ui2Agent`（WebSocket） | `ping` / chat session APIs          |
+| Agent → UI   | SimpleRpc `Agent2Ui`（WebSocket） | `onChatEvents` / permission / input |
+| Agent 内部   | pi SDK                            | `createAgentSession` + 会话事件     |
 
 约定（见仓库 `设想.md`）：
 

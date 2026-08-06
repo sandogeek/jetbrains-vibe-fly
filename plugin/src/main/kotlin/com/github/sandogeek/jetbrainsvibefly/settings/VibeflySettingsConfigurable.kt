@@ -16,7 +16,7 @@ import javax.swing.JPanel
 
 /**
  * Single IDE Settings node: Tools → Vibe Fly.
- * Hosts the Solid settings app in JCEF with write-through RPC (no Apply draft).
+ * Hosts the React settings app in JCEF with write-through RPC (no Apply draft).
  */
 class VibeflySettingsConfigurable : SearchableConfigurable, Configurable.NoScroll {
     private var panel: JComponent? = null

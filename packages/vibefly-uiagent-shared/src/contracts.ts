@@ -1,10 +1,6 @@
+import type {BrandedRpcOptions, CancelablePromise,} from "@sandogeek/simple-rpc"
+import {rpcId, rpcService} from "./rpc-annotations.js"
 import type {
-  BrandedRpcOptions,
-  CancelablePromise,
-} from "@sandogeek/simple-rpc"
-import { rpcId, rpcService } from "./rpc-annotations.js"
-import type {
-  AgentEvent,
   ChatEventBatch,
   ChatModelOption,
   ChatSessionSnapshot,
@@ -14,8 +10,6 @@ import type {
   RecentChatSession,
   SendChatMessageRequest,
   SendChatMessageResult,
-  StartTaskRequest,
-  TaskId,
   ToolPermissionRequest,
   ToolPermissionResponse,
   UserInputRequest,
@@ -34,13 +28,7 @@ export abstract class Ui2Agent {
     return contractOnly("Ui2Agent.ping")
   }
 
-  /** Legacy method retained so its wire id is never reused. */
   @rpcId(2)
-  startTask(request: StartTaskRequest, options?: BrandedRpcOptions): CancelablePromise<TaskId> {
-    return contractOnly("Ui2Agent.startTask")
-  }
-
-  @rpcId(3)
   listChatSessions(
     request: ListChatSessionsRequest,
     options?: BrandedRpcOptions,
@@ -48,7 +36,7 @@ export abstract class Ui2Agent {
     return contractOnly("Ui2Agent.listChatSessions")
   }
 
-  @rpcId(4)
+  @rpcId(3)
   listRecentChatSessions(
     request: ListChatSessionsRequest,
     options?: BrandedRpcOptions,
@@ -56,7 +44,7 @@ export abstract class Ui2Agent {
     return contractOnly("Ui2Agent.listRecentChatSessions")
   }
 
-  @rpcId(5)
+  @rpcId(4)
   openChatSession(
     request: OpenChatSessionRequest,
     options?: BrandedRpcOptions,
@@ -64,7 +52,7 @@ export abstract class Ui2Agent {
     return contractOnly("Ui2Agent.openChatSession")
   }
 
-  @rpcId(6)
+  @rpcId(5)
   createChatSession(
     request: ListChatSessionsRequest,
     options?: BrandedRpcOptions,
@@ -72,7 +60,7 @@ export abstract class Ui2Agent {
     return contractOnly("Ui2Agent.createChatSession")
   }
 
-  @rpcId(7)
+  @rpcId(6)
   releaseChatSession(
     sessionId: string,
     options?: BrandedRpcOptions,
@@ -80,7 +68,7 @@ export abstract class Ui2Agent {
     return contractOnly("Ui2Agent.releaseChatSession")
   }
 
-  @rpcId(8)
+  @rpcId(7)
   sendChatMessage(
     request: SendChatMessageRequest,
     options?: BrandedRpcOptions,
@@ -88,7 +76,7 @@ export abstract class Ui2Agent {
     return contractOnly("Ui2Agent.sendChatMessage")
   }
 
-  @rpcId(9)
+  @rpcId(8)
   cancelQueuedTurn(
     sessionId: string,
     options?: BrandedRpcOptions,
@@ -96,12 +84,12 @@ export abstract class Ui2Agent {
     return contractOnly("Ui2Agent.cancelQueuedTurn")
   }
 
-  @rpcId(10)
+  @rpcId(9)
   abortChatTurn(sessionId: string, options?: BrandedRpcOptions): CancelablePromise<void> {
     return contractOnly("Ui2Agent.abortChatTurn")
   }
 
-  @rpcId(11)
+  @rpcId(10)
   listChatModels(
     sessionId: string,
     options?: BrandedRpcOptions,
@@ -109,7 +97,7 @@ export abstract class Ui2Agent {
     return contractOnly("Ui2Agent.listChatModels")
   }
 
-  @rpcId(12)
+  @rpcId(11)
   setChatModel(
     sessionId: string,
     modelId: string,
@@ -118,7 +106,7 @@ export abstract class Ui2Agent {
     return contractOnly("Ui2Agent.setChatModel")
   }
 
-  @rpcId(13)
+  @rpcId(12)
   setChatThinkingLevel(
     sessionId: string,
     level: string,
@@ -127,7 +115,7 @@ export abstract class Ui2Agent {
     return contractOnly("Ui2Agent.setChatThinkingLevel")
   }
 
-  @rpcId(14)
+  @rpcId(13)
   markChatSessionRead(
     sessionId: string,
     options?: BrandedRpcOptions,
@@ -139,18 +127,12 @@ export abstract class Ui2Agent {
 /** Agent -> UI methods over WebSocket SimpleRpc. */
 @rpcService()
 export abstract class Agent2Ui {
-  /** Legacy callback retained so its wire id is never reused. */
   @rpcId(1)
-  onAgentEvent(event: AgentEvent, options?: BrandedRpcOptions): CancelablePromise<void> {
-    return contractOnly("Agent2Ui.onAgentEvent")
-  }
-
-  @rpcId(2)
   onChatEvents(batch: ChatEventBatch, options?: BrandedRpcOptions): CancelablePromise<void> {
     return contractOnly("Agent2Ui.onChatEvents")
   }
 
-  @rpcId(3)
+  @rpcId(2)
   requestToolPermission(
     request: ToolPermissionRequest,
     options?: BrandedRpcOptions,
@@ -158,7 +140,7 @@ export abstract class Agent2Ui {
     return contractOnly("Agent2Ui.requestToolPermission")
   }
 
-  @rpcId(4)
+  @rpcId(3)
   requestUserInput(
     request: UserInputRequest,
     options?: BrandedRpcOptions,
