@@ -276,12 +276,30 @@
 }
 
 /*
- * Streamdown code shell: keep its padding/sticky action chrome.
- * Only retokenize colors/radius — do not force padding:0 or overflow:hidden.
+ * Streamdown code shell: drop the outer double-frame.
+ * Only the inner body (or mermaid canvas) keeps a single border.
  */
-.markdown-body [data-streamdown="code-block"] {
+.markdown-body [data-streamdown="code-block"],
+.markdown-body [data-streamdown="mermaid-block"] {
+    position: relative;
     max-width: 100%;
     margin: 0.9em 0;
+    padding: 0;
+    gap: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+}
+
+.markdown-body [data-streamdown="code-block-header"] {
+    display: none;
+}
+
+.markdown-body [data-streamdown="code-block-body"],
+.markdown-body [data-streamdown="mermaid-block"] > div:last-child {
+    position: relative;
+    margin: 0;
     border: 1px solid var(--vf-border-soft);
     border-radius: var(--vf-radius-lg);
     background: var(--vf-surface-deep);
@@ -289,9 +307,7 @@
 }
 
 .markdown-body [data-streamdown="code-block-body"] {
-    border-color: var(--vf-border-soft);
-    border-radius: var(--vf-radius);
-    background: color-mix(in srgb, var(--vf-surface-deep) 88%, transparent);
+    padding: 14px 16px;
 }
 
 .markdown-body [data-streamdown="code-block"] pre,
@@ -302,6 +318,68 @@
     border-radius: 0;
     box-shadow: none;
     background: transparent;
+}
+
+/*
+ * Copy / download: float inside the inner frame, only on hover.
+ * Streamdown places actions as a sticky sibling of the body; re-pin them.
+ */
+.markdown-body [data-streamdown="code-block"] > div:has(> [data-streamdown="code-block-actions"]),
+.markdown-body [data-streamdown="mermaid-block"] > div:has(> [data-streamdown="mermaid-block-actions"]) {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    z-index: 2;
+    margin: 0;
+    height: auto;
+    pointer-events: none;
+}
+
+.markdown-body [data-streamdown="code-block-actions"],
+.markdown-body [data-streamdown="mermaid-block-actions"] {
+    gap: 0;
+    padding: 1px;
+    border: 0;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--vf-surface-deep) 88%, transparent);
+    box-shadow: none;
+    backdrop-filter: none;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 140ms ease, background 140ms ease;
+}
+
+.markdown-body [data-streamdown="code-block"]:hover [data-streamdown="code-block-actions"],
+.markdown-body [data-streamdown="code-block"]:focus-within [data-streamdown="code-block-actions"],
+.markdown-body [data-streamdown="mermaid-block"]:hover [data-streamdown="mermaid-block-actions"],
+.markdown-body [data-streamdown="mermaid-block"]:focus-within [data-streamdown="mermaid-block-actions"] {
+    opacity: 1;
+    pointer-events: auto;
+    background: color-mix(in srgb, var(--vf-surface-raised) 92%, transparent);
+}
+
+.markdown-body [data-streamdown="code-block-actions"] button,
+.markdown-body [data-streamdown="mermaid-block-actions"] button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border-radius: 5px;
+    color: color-mix(in srgb, var(--vf-muted) 88%, transparent);
+}
+
+.markdown-body [data-streamdown="code-block-actions"] button:hover,
+.markdown-body [data-streamdown="mermaid-block-actions"] button:hover {
+    color: var(--vf-fg);
+    background: color-mix(in srgb, var(--vf-surface) 70%, transparent);
+}
+
+.markdown-body [data-streamdown="code-block-actions"] button:focus-visible,
+.markdown-body [data-streamdown="mermaid-block-actions"] button:focus-visible {
+    outline: 1px solid color-mix(in srgb, var(--vf-accent) 55%, transparent);
+    outline-offset: 1px;
 }
 
 .markdown-body blockquote {
