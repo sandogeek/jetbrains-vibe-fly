@@ -36,7 +36,7 @@ class VibeflyApplicationSettingsService : Disposable {
         }
         val current = snapshot(refresh = true)
         val updates: Map<SettingsDocument, String> = try {
-            buildMap<SettingsDocument, String> {
+            buildMap {
                 request.settingsJson?.let {
                     put(
                         SettingsDocument.SETTINGS,
@@ -71,9 +71,6 @@ class VibeflyApplicationSettingsService : Disposable {
             updates = mapOf(SettingsDocument.AUTH to request.authJson),
             expectedRevision = request.expectedRevision,
         ).toRpcResult()
-
-    internal fun providersSnapshot(refresh: Boolean = false): ProvidersSnapshot =
-        ProviderSettingsJson.snapshot(snapshot(refresh))
 
     internal fun applyProvidersPatch(
         request: ProvidersPatchRequest,

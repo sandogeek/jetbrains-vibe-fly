@@ -36,7 +36,7 @@ class VibeflyProjectSettingsService(project: Project) : Disposable {
         )
         val current = active.reloadFromDisk()
         val updates: Map<SettingsDocument, String> = try {
-            buildMap<SettingsDocument, String> {
+            buildMap {
                 request.settingsJson?.let {
                     put(
                         SettingsDocument.SETTINGS,
