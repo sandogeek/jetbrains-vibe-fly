@@ -1,5 +1,5 @@
 /* eslint-disable */
-/* Generated from contracts.ts by generate-rpc-contracts.mjs. Do not edit. */
+/* Generated from contracts.ts by generate-rpc-contracts.ts. Do not edit. */
 
 import {
   defineRpcService,

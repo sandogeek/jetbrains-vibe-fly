@@ -21,8 +21,8 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "generate": "node ./scripts/generate-rpc-contracts.mjs",
-    "generate:check": "node ./scripts/generate-rpc-contracts.mjs --check",
+    "generate": "tsx ./scripts/generate-rpc-contracts.ts",
+    "generate:check": "tsx ./scripts/generate-rpc-contracts.ts --check",
     "test": "pnpm run generate:check && node --import tsx --test 'test/**/*.test.ts'",
     "typecheck": "pnpm run generate:check && tsc -p tsconfig.json --noEmit"
   },

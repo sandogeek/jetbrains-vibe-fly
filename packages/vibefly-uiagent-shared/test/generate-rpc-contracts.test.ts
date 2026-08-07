@@ -1,9 +1,6 @@
 import assert from "node:assert/strict"
-import { describe, it } from "node:test"
-import {
-  emitRpcContracts,
-  parseRpcContracts,
-} from "../scripts/generate-rpc-contracts.mjs"
+import {describe, it} from "node:test"
+import {emitRpcContracts, parseRpcContracts,} from "../scripts/generate-rpc-contracts.js"
 
 describe("RPC contract AST generator", () => {
   it("generates runtime definitions from decorated abstract classes", () => {
