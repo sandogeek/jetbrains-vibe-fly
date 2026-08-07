@@ -86,6 +86,13 @@ internal class SettingsScopeStore(
     private var debounceExecutor: ScheduledExecutorService? = null
     private var pendingReload: ScheduledFuture<*>? = null
 
+    /** When true, the next debounced reload refreshes every allowed document. */
+    private var pendingFullReload: Boolean = false
+
+    /** Accumulated documents for a partial debounced reload; ignored when [pendingFullReload]. */
+    private val pendingPartialDocuments = EnumSet.noneOf(SettingsDocument::class.java)
+    private val documentsByFileName = allowedDocuments.associateBy { it.fileName }
+
     private data class StagedDocument(
         val document: SettingsDocument,
         val target: Path,
@@ -137,12 +144,19 @@ internal class SettingsScopeStore(
 
     fun snapshot(): SettingsScopeSnapshot = stateLock.withLock { snapshotLocked() }
 
-    /** Force an immediate disk refresh. Repeated equivalent reads do not change revision. */
-    fun reloadFromDisk(): SettingsScopeSnapshot {
+    /** Force an immediate full disk refresh. Repeated equivalent reads do not change revision. */
+    fun reloadFromDisk(): SettingsScopeSnapshot = reloadFromDisk(documents = null)
+
+    /**
+     * Refresh documents from disk.
+     *
+     * @param documents `null` refreshes every allowed document; otherwise only the given ones.
+     */
+    private fun reloadFromDisk(documents: Set<SettingsDocument>?): SettingsScopeSnapshot {
         var changedSnapshot: SettingsScopeSnapshot? = null
         val snapshot = stateLock.withLock {
             withScopeFileLock {
-                if (refreshStateLocked()) changedSnapshot = snapshotLocked()
+                if (refreshStateLocked(documents)) changedSnapshot = snapshotLocked()
                 snapshotLocked()
             }
         }
@@ -273,13 +287,26 @@ internal class SettingsScopeStore(
         }
     }
 
-    /** Must be called with [stateLock] and the scope file lock held. */
-    private fun refreshStateLocked(): Boolean {
+    /**
+     * Must be called with [stateLock] and the scope file lock held.
+     *
+     * @param documentsToRefresh `null` refreshes every allowed document; otherwise only those
+     * that are also in [allowedDocuments].
+     */
+    private fun refreshStateLocked(documentsToRefresh: Set<SettingsDocument>? = null): Boolean {
         ensureDirectory()
+        val targets = when (documentsToRefresh) {
+            null -> allowedDocuments
+            else -> documentsToRefresh.filterTo(EnumSet.noneOf(SettingsDocument::class.java)) {
+                it in allowedDocuments
+            }
+        }
+        if (targets.isEmpty()) return false
+
         val beforeDocuments = documents.toMap()
         val beforeDiagnostics = diagnostics.toMap()
 
-        for (document in allowedDocuments) {
+        for (document in targets) {
             val path = directory.resolve(document.fileName)
             if (Files.notExists(path, LinkOption.NOFOLLOW_LINKS)) {
                 documents[document] = EMPTY_JSON
@@ -486,16 +513,26 @@ internal class SettingsScopeStore(
             try {
                 while (!closed.get()) {
                     val key = watcher.take()
-                    val relevant = key.pollEvents().any { event ->
-                        if (event.kind() == StandardWatchEventKinds.OVERFLOW) return@any true
-                        val relative = event.context() as? Path ?: return@any false
-                        allowedDocuments.any { it.fileName == relative.fileName.toString() }
+                    var overflow = false
+                    val changedDocuments = EnumSet.noneOf(SettingsDocument::class.java)
+                    for (event in key.pollEvents()) {
+                        if (event.kind() == StandardWatchEventKinds.OVERFLOW) {
+                            overflow = true
+                            continue
+                        }
+                        if (overflow) continue
+                        val relative = event.context() as? Path ?: continue
+                        documentsByFileName[relative.fileName.toString()]?.let(changedDocuments::add)
                     }
                     if (!key.reset()) {
                         if (!recoverWatcherRegistration(watcher)) break
+                        // Directory watch was lost; force a full resync after re-register.
                         scheduleReload(delayMillis = 0)
+                    } else if (overflow) {
+                        scheduleReload()
+                    } else if (changedDocuments.isNotEmpty()) {
+                        scheduleReload(documents = changedDocuments)
                     }
-                    if (relevant) scheduleReload()
                 }
             } catch (_: ClosedWatchServiceException) {
             } catch (_: InterruptedException) {
@@ -540,19 +577,43 @@ internal class SettingsScopeStore(
         return false
     }
 
+    /**
+     * @param documents `null` schedules a full refresh of every allowed document; otherwise only
+     * those documents are re-read after debounce. Concurrent partial requests are merged; a full
+     * request supersedes any pending partial set.
+     */
     private fun scheduleReload(
         delayMillis: Long = debounceMillis,
         retryAttempt: Int = 0,
+        documents: Set<SettingsDocument>? = null,
     ) {
         val executor = debounceExecutor ?: return
         stateLock.withLock {
             if (closed.get()) return
+            if (documents == null) {
+                pendingFullReload = true
+                pendingPartialDocuments.clear()
+            } else if (!pendingFullReload) {
+                pendingPartialDocuments.addAll(documents)
+            }
             pendingReload?.cancel(false)
             pendingReload = executor.schedule(
                 {
                     if (closed.get()) return@schedule
+                    val documentsToReload = stateLock.withLock {
+                        val scope = if (pendingFullReload) {
+                            null
+                        } else {
+                            pendingPartialDocuments.toSet()
+                        }
+                        pendingFullReload = false
+                        pendingPartialDocuments.clear()
+                        pendingReload = null
+                        scope
+                    }
+                    if (documentsToReload != null && documentsToReload.isEmpty()) return@schedule
                     try {
-                        reloadFromDisk()
+                        reloadFromDisk(documentsToReload)
                     } catch (error: Exception) {
                         if (closed.get()) return@schedule
                         val nextAttempt = retryAttempt + 1
@@ -560,12 +621,14 @@ internal class SettingsScopeStore(
                             scheduleReload(
                                 delayMillis = WATCH_RELOAD_RETRY_MILLIS * nextAttempt,
                                 retryAttempt = nextAttempt,
+                                documents = documentsToReload,
                             )
                         } else {
                             onWarning("Settings watcher reload failed for $scope; retrying", error)
                             scheduleReload(
                                 delayMillis = WATCH_RELOAD_RECOVERY_MILLIS,
                                 retryAttempt = 0,
+                                documents = documentsToReload,
                             )
                         }
                     }
