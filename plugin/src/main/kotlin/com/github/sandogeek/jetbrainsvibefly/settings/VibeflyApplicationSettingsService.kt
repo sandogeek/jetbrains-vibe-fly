@@ -34,34 +34,9 @@ class VibeflyApplicationSettingsService : Disposable {
         require(request.scope == SETTINGS_SCOPE_APPLICATION) {
             "Application settings service cannot save ${request.scope} scope"
         }
-        val current = snapshot(refresh = true)
-        val updates: Map<SettingsDocument, String> = try {
-            buildMap {
-                request.settingsJson?.let {
-                    put(
-                        SettingsDocument.SETTINGS,
-                        UiSettingsJsonProjection.mergeSettings(
-                            current.content(SettingsDocument.SETTINGS),
-                            it,
-                        ),
-                    )
-                }
-                request.vibeflyJson?.let {
-                    put(
-                        SettingsDocument.VIBEFLY,
-                        UiSettingsJsonProjection.mergeVibefly(
-                            current.content(SettingsDocument.VIBEFLY),
-                            it,
-                        ),
-                    )
-                }
-            }
-        } catch (error: InvalidUiSettingsJsonException) {
-            return SettingsSaveResult(
-                ok = false,
-                revision = current.revision,
-                error = error.message,
-            )
+        val updates = buildMap {
+            request.settingsJson?.let { put(SettingsDocument.SETTINGS, it) }
+            request.vibeflyJson?.let { put(SettingsDocument.VIBEFLY, it) }
         }
         return store.saveDocuments(updates, request.expectedRevision).toRpcResult()
     }

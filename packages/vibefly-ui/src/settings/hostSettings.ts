@@ -18,35 +18,9 @@ const FILE_NAMES = new Set([
     "models.json",
     "auth.json",
 ])
-type SafeValueKind = "string" | "boolean" | "stringArray"
 
-const SAFE_SETTINGS_KEYS: ReadonlyMap<string, SafeValueKind> = new Map([
-    ["defaultProvider", "string"],
-    ["defaultModel", "string"],
-] as const)
-const SAFE_VIBEFLY_KEYS: ReadonlyMap<string, ReadonlyMap<string, SafeValueKind>> =
-    new Map<string, ReadonlyMap<string, SafeValueKind>>([
-        ["commit", new Map<string, SafeValueKind>([
-            ["languageMode", "string"],
-            ["commitModelSpec", "string"],
-            ["useCustomPrompt", "boolean"],
-            ["customPrompt", "string"],
-        ] as const)],
-        ["modelPreferences", new Map<string, SafeValueKind>([
-            ["recentModelSpecs", "stringArray"],
-            ["pinnedModelSpecs", "stringArray"],
-        ] as const)],
-        ["ui", new Map<string, SafeValueKind>([["locale", "string"]])],
-    ] as const)
-
-function isSafeValue(value: unknown, kind: SafeValueKind): boolean {
-    if (value === null) return true
-    if (kind === "string") return typeof value === "string"
-    if (kind === "boolean") return typeof value === "boolean"
-    return Array.isArray(value) && value.every((item) => typeof item === "string")
-}
-
-function safeJsonProjection(raw: unknown, vibefly: boolean): string {
+/** settings.json / settings.vibefly.json are opaque objects (no secrets; auth lives elsewhere). */
+function normalizeJsonObjectDocument(raw: unknown): string {
     let parsed: unknown
     try {
         parsed = JSON.parse(String(raw ?? "{}"))
@@ -54,29 +28,7 @@ function safeJsonProjection(raw: unknown, vibefly: boolean): string {
         return "{}"
     }
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return "{}"
-    const source = parsed as Record<string, unknown>
-    const projected: Record<string, unknown> = {}
-    if (!vibefly) {
-        for (const [key, kind] of SAFE_SETTINGS_KEYS) {
-            if (hasOwn(source, key) && isSafeValue(source[key], kind)) projected[key] = source[key]
-        }
-    } else {
-        for (const [group, fields] of SAFE_VIBEFLY_KEYS) {
-            const rawGroup = source[group]
-            if (rawGroup === null) {
-                projected[group] = null
-                continue
-            }
-            if (!rawGroup || typeof rawGroup !== "object" || Array.isArray(rawGroup)) continue
-            const values: Record<string, unknown> = {}
-            for (const [key, kind] of fields) {
-                const value = (rawGroup as Record<string, unknown>)[key]
-                if (hasOwn(rawGroup, key) && isSafeValue(value, kind)) values[key] = value
-            }
-            projected[group] = values
-        }
-    }
-    return JSON.stringify(projected)
+    return JSON.stringify(parsed)
 }
 
 function safeDiagnostics(raw: UiSettingsSnapshot["diagnostics"]): SettingsDiagnostic[] {
@@ -93,11 +45,11 @@ function safeDiagnostics(raw: UiSettingsSnapshot["diagnostics"]): SettingsDiagno
     return diagnostics
 }
 
-/** Copy only fields that are safe to retain in the WebView. */
+/** Normalize Host UI settings snapshot; preserve unknown keys for forward-compatible saves. */
 export function safeUiSettingsSnapshot(raw: UiSettingsSnapshot): SafeSettingsSnapshot {
     const common = {
-        settingsJson: safeJsonProjection(raw.settingsJson, false),
-        vibeflyJson: safeJsonProjection(raw.vibeflyJson, true),
+        settingsJson: normalizeJsonObjectDocument(raw.settingsJson),
+        vibeflyJson: normalizeJsonObjectDocument(raw.vibeflyJson),
         revision: String(raw.revision),
         diagnostics: safeDiagnostics(raw.diagnostics),
     }

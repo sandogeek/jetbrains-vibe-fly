@@ -63,6 +63,9 @@ pi 或 Agent 绕过 Host 直接读取另一个 project 配置源。
 `settings.vibefly.json` 保存 Commit Message、pin / MRU、UI locale 等产品字段。`models.json` 保存 Provider / Model 定义，
 `auth.json` 只保存凭据；凭据不得进入其他三个文件。
 
+**不变量：** `settings.json` 与 `settings.vibefly.json` **不得**存放凭据或含密字段。Host 对这两份文档做 UI 透传（只校验
+JSON 语法 / object 根），不按字段白名单投影；UI 保存时整文件替换已提供的文档。
+
 ### 合并语义
 
 application 和 project 的两个文件分别独立合并：
@@ -206,8 +209,9 @@ type SettingsSaveRequest = {
 
 `UiSettingsSnapshot` 和 `SettingsSaveRequest` 都不能包含原始 `modelsJson` 或 `authJson`。UI 通过现有 Providers RPC
 读取脱敏后的模型和鉴权状态；Provider / Model 编辑使用带 `expectedRevision` 的语义 patch，由 Host 在最新 application
-`models.json` 上应用并保留未知键。`AgentSettingsSnapshot` 在受信任的本机 stdio 控制面上传输完整 application 四文件和
-project 两文件。
+`models.json` 上应用并保留未知键。`UiSettingsSnapshot` 的 `settingsJson` / `vibeflyJson` 与磁盘原始文档一致（无字段投影）；
+`SettingsSaveRequest` 对提供的文档做整文件替换（省略的文件不变）。`AgentSettingsSnapshot` 在受信任的本机 stdio 控制面上传输完整
+application 四文件和 project 两文件。
 
 Agent 登录、登出或刷新凭据时，Host-backed credential adapter 使用专门的 `Agent2Host.saveAuth`，请求只允许 application
 scope、`authJson` 和 `expectedRevision`。发生冲突时 adapter 重新拉取最新 application 快照，在最新凭据 map 上重放本次

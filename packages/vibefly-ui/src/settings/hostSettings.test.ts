@@ -46,63 +46,40 @@ function project(vibeflyJson: string): SafeProjectSettingsSnapshot {
 }
 
 describe("Host-backed UI settings", () => {
-    test("projects only browser-safe settings fields", () => {
+    test("passes through raw object documents and coerces invalid JSON", () => {
+        const settings = {
+            defaultProvider: "openai",
+            defaultModel: "gpt",
+            futureSettings: {nested: true},
+            compaction: {enabled: true},
+        }
+        const vibefly = {
+            commit: {languageMode: "zh", useCustomPrompt: false},
+            modelPreferences: {pinnedModelSpecs: ["openai/gpt-5"]},
+            ui: {locale: "zh"},
+            futureVibefly: {flag: 1},
+        }
         const snapshot = safeUiSettingsSnapshot({
             scope: "application",
             projectRoot: null,
-            settingsJson: JSON.stringify({
-                defaultProvider: "openai",
-                defaultModel: {token: "invalid-model-secret"},
-                httpProxy: "https://proxy-user:proxy-password@example.com?token=proxy-secret",
-                apiKey: "unknown-api-key-secret",
-                futureSettings: {token: "unknown-nested-secret"},
-            }),
-            vibeflyJson: JSON.stringify({
-                commit: {
-                    languageMode: "zh",
-                    useCustomPrompt: false,
-                    unknownCredential: "unknown-commit-secret",
-                },
-                modelPreferences: {
-                    pinnedModelSpecs: ["openai/gpt-5"],
-                    recentModelSpecs: [{token: "invalid-array-secret"}],
-                    unknownToken: "unknown-preference-secret",
-                },
-                ui: {
-                    locale: "zh",
-                    futureSecret: "unknown-ui-secret",
-                },
-                auth: {token: "unknown-vibefly-secret"},
-            }),
-            revision: "application-safe",
+            settingsJson: JSON.stringify(settings),
+            vibeflyJson: JSON.stringify(vibefly),
+            revision: "application-raw",
             diagnostics: [],
         })
+        expect(JSON.parse(snapshot.settingsJson)).toEqual(settings)
+        expect(JSON.parse(snapshot.vibeflyJson)).toEqual(vibefly)
 
-        expect(JSON.parse(snapshot.settingsJson)).toEqual({
-            defaultProvider: "openai",
+        const invalid = safeUiSettingsSnapshot({
+            scope: "application",
+            projectRoot: null,
+            settingsJson: "[1,2]",
+            vibeflyJson: "not-json",
+            revision: "application-invalid",
+            diagnostics: [],
         })
-        expect(JSON.parse(snapshot.vibeflyJson)).toEqual({
-            commit: {
-                languageMode: "zh",
-                useCustomPrompt: false,
-            },
-            modelPreferences: {
-                pinnedModelSpecs: ["openai/gpt-5"],
-            },
-            ui: {locale: "zh"},
-        })
-        const serialized = JSON.stringify(snapshot)
-        expect(serialized).not.toContain("httpProxy")
-        expect(serialized).not.toContain("proxy-password")
-        expect(serialized).not.toContain("proxy-secret")
-        expect(serialized).not.toContain("unknown-api-key-secret")
-        expect(serialized).not.toContain("unknown-nested-secret")
-        expect(serialized).not.toContain("unknown-commit-secret")
-        expect(serialized).not.toContain("unknown-preference-secret")
-        expect(serialized).not.toContain("unknown-ui-secret")
-        expect(serialized).not.toContain("unknown-vibefly-secret")
-        expect(serialized).not.toContain("invalid-model-secret")
-        expect(serialized).not.toContain("invalid-array-secret")
+        expect(invalid.settingsJson).toBe("{}")
+        expect(invalid.vibeflyJson).toBe("{}")
     })
 
     test("reads pin and recent models from the application layer", async () => {

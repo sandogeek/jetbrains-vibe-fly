@@ -38,11 +38,15 @@ internal object SettingsHostAccess {
     private fun normalizeScope(scope: String): String = scope.trim().lowercase()
 }
 
+/**
+ * Pass through raw settings/vibefly documents. Those two files must never store secrets
+ * (credentials live only in auth.json / Providers path).
+ */
 private fun SettingsScopeSnapshot.toUiSnapshot(): UiSettingsSnapshot = UiSettingsSnapshot(
     scope = scope,
     projectRoot = projectRoot,
-    settingsJson = UiSettingsJsonProjection.projectSettings(content(SettingsDocument.SETTINGS)),
-    vibeflyJson = UiSettingsJsonProjection.projectVibefly(content(SettingsDocument.VIBEFLY)),
+    settingsJson = content(SettingsDocument.SETTINGS),
+    vibeflyJson = content(SettingsDocument.VIBEFLY),
     revision = revision,
     diagnostics = diagnostics,
 )

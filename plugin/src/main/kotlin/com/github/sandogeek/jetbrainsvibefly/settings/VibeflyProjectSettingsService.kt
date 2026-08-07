@@ -34,34 +34,9 @@ class VibeflyProjectSettingsService(project: Project) : Disposable {
             revision = "unavailable",
             error = "Project settings are unavailable",
         )
-        val current = active.reloadFromDisk()
-        val updates: Map<SettingsDocument, String> = try {
-            buildMap {
-                request.settingsJson?.let {
-                    put(
-                        SettingsDocument.SETTINGS,
-                        UiSettingsJsonProjection.mergeSettings(
-                            current.content(SettingsDocument.SETTINGS),
-                            it,
-                        ),
-                    )
-                }
-                request.vibeflyJson?.let {
-                    put(
-                        SettingsDocument.VIBEFLY,
-                        UiSettingsJsonProjection.mergeVibefly(
-                            current.content(SettingsDocument.VIBEFLY),
-                            it,
-                        ),
-                    )
-                }
-            }
-        } catch (error: InvalidUiSettingsJsonException) {
-            return SettingsSaveResult(
-                ok = false,
-                revision = current.revision,
-                error = error.message,
-            )
+        val updates = buildMap {
+            request.settingsJson?.let { put(SettingsDocument.SETTINGS, it) }
+            request.vibeflyJson?.let { put(SettingsDocument.VIBEFLY, it) }
         }
         return active.saveDocuments(updates, request.expectedRevision).toRpcResult()
     }
