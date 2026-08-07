@@ -2,8 +2,6 @@ package com.github.sandogeek.jetbrainsvibefly.commit
 
 import com.github.sandogeek.jetbrainsvibefly.VibeflyBundle
 import com.github.sandogeek.jetbrainsvibefly.agent.VibeflyAgentService
-import com.github.sandogeek.jetbrainsvibefly.settings.VibeflyCommitMessageSettingsState
-import com.github.sandogeek.jetbrainsvibefly.settings.VibeflyProviderSettingsState
 import com.github.sandogeek.jetbrainsvibefly.util.Edt
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
@@ -25,13 +23,8 @@ import com.intellij.openapi.vcs.changes.ChangeListManager
 import com.intellij.openapi.vcs.changes.CurrentContentRevision
 import com.intellij.vcs.commit.CommitMessageUi
 import com.intellij.vcs.commit.CommitWorkflowUi
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.*
+import java.util.*
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -106,16 +99,10 @@ class GenerateCommitMessageAction : AnAction(), DumbAware {
                     indicator.text = VibeflyBundle.message("commit.generate.progress.rpc")
                     if (indicator.isCanceled) throw ProcessCanceledException()
 
-                    val commitSettings = VibeflyCommitMessageSettingsState.getInstance()
-                    val providerSettings = VibeflyProviderSettingsState.getInstance()
-                    val language = commitSettings.resolvedLanguage()
-                    val style = if (language == "zh") "conventional_zh" else "conventional_en"
                     val request = collected.toRequest(
-                        style = style,
-                        commitModel = commitSettings.commitModelSpec,
-                        defaultModel = providerSettings.defaultModelSpec(),
-                        language = language,
-                        customPrompt = commitSettings.resolvedCustomPrompt(),
+                        // The Agent resolves configured language/model/prompt from the latest
+                        // Host snapshot. This value is only the IDE-locale fallback.
+                        language = if (Locale.getDefault().language.equals("zh", true)) "zh" else "en",
                     )
 
                     val agent = VibeflyAgentService.getInstance(project)

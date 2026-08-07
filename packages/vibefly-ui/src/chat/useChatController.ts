@@ -10,12 +10,19 @@ import type {
 import {useCallback, useEffect, useMemo, useRef, useState} from "react"
 
 import {applyUiLocale, i18n, useAppTranslation} from "../i18n"
-import type {ModelPreferencesDto, Ui2Host, Ui2HostChat} from "../generated/rpc"
+import type {Ui2Host, Ui2HostChat} from "../generated/rpc"
 import {log} from "../log"
 import {type AgentStatus, connectAgentRpc} from "../rpc/agent"
 import {createChatUiRpc} from "../rpc/client"
 import {bindConsoleToHost} from "../rpc/console"
 import type {ModelPickerOption} from "../settings/ModelPicker"
+import {
+    createUiSettingsManager,
+    modelPreferencesFromEffective,
+    prepareSettingsFormPatchSave,
+    settingsChanged as toSettingsChanged,
+} from "../settings/hostSettings"
+import type {ModelPreferences} from "../settings/settingsStore"
 import {applyJbTheme} from "../theme"
 import {applyChatEvent} from "./chatEventState"
 import {createDemoTab} from "./demoSession"
@@ -43,7 +50,7 @@ export type ChatController = {
     activeDraft: string
     activeContexts: ChatContextItem[]
     activeModelOptions: ModelPickerOption[]
-    modelPreferences: ModelPreferencesDto
+    modelPreferences: ModelPreferences
     thinkingOptions: ThinkingOption[]
     busy: boolean
     queued: boolean
@@ -91,7 +98,7 @@ export function useChatController(): ChatController {
     const [drafts, setDrafts] = useState<Record<string, string>>({})
     const [contexts, setContexts] = useState<ChatContexts>({})
     const [models, setModels] = useState<Record<string, ChatModelOption[]>>({})
-    const [modelPreferences, setModelPreferences] = useState<ModelPreferencesDto>({
+    const [modelPreferences, setModelPreferences] = useState<ModelPreferences>({
         recentModelSpecs: [],
         pinnedModelSpecs: [],
     })
@@ -110,7 +117,19 @@ export function useChatController(): ChatController {
     const peerRef = useRef<SimpleRpcPeer | null>(null)
     const stopAgentRef = useRef<(() => void) | null>(null)
     const unbindConsoleRef = useRef<(() => void) | null>(null)
+    const settingsManagerRef = useRef<ReturnType<typeof createUiSettingsManager> | null>(null)
+    const stopSettingsRef = useRef<(() => void) | null>(null)
+    const settingsReadyRef = useRef(false)
+    const pendingSettingsChangesRef = useRef(new Map<
+        "application" | "project",
+        NonNullable<ReturnType<typeof toSettingsChanged>>
+    >())
     const modelPreferencesSaveRef = useRef(Promise.resolve())
+    const pendingModelPreferencesRef = useRef<{
+        generation: number
+        value: ModelPreferences
+    } | null>(null)
+    const modelPreferencesGenerationRef = useRef(0)
     const tabsRef = useRef<ChatTab[]>([])
     const activeIdRef = useRef("")
     const contextsRef = useRef<ChatContexts>({})
@@ -118,6 +137,7 @@ export function useChatController(): ChatController {
     const offlineRef = useRef(false)
     const pendingPermissionRef = useRef<PendingPermission | null>(null)
     const pendingInputRef = useRef<PendingInput | null>(null)
+    const modelFetchGenerationRef = useRef<Record<string, number>>({})
 
     const updateTabs = useCallback((update: StateUpdater<ChatTab[]>) => {
         const next = typeof update === "function" ? update(tabsRef.current) : update
@@ -156,6 +176,23 @@ export function useChatController(): ChatController {
         pendingInputRef.current = value
         setPendingInput(value)
     }, [])
+
+    const loadModels = useCallback(
+        async (sessionId: string, force = false) => {
+            const chatAgent = agentRef.current
+            if (!chatAgent || (!force && modelsRef.current[sessionId])) return
+            const generation = (modelFetchGenerationRef.current[sessionId] ?? 0) + 1
+            modelFetchGenerationRef.current[sessionId] = generation
+            try {
+                const options = await chatAgent.listChatModels(sessionId)
+                if (modelFetchGenerationRef.current[sessionId] !== generation) return
+                updateModels((current) => ({...current, [sessionId]: options}))
+            } catch (modelError) {
+                log.debug("model list unavailable", modelError)
+            }
+        },
+        [updateModels],
+    )
 
     const activeTab = useMemo(
         () => tabs.find((tab) => tab.summary.sessionId === activeId) ?? null,
@@ -215,6 +252,10 @@ export function useChatController(): ChatController {
     const applyBatch = useCallback(
         (batch: ChatEventBatch) => {
             for (const event of batch.events) {
+                if (event.kind === "modelCatalogChanged") {
+                    void loadModels(event.sessionId, true)
+                    continue
+                }
                 const result = applyChatEvent(tabsRef.current, event, activeIdRef.current)
                 updateTabs(result.tabs)
                 if (result.effects.refreshPaths.length > 0) {
@@ -224,36 +265,36 @@ export function useChatController(): ChatController {
                 if (result.effects.error) setError(result.effects.error)
             }
         },
-        [updateTabs],
+        [loadModels, updateTabs],
     )
 
     const loadModelPreferences = useCallback(async (ui2Host: Ui2Host) => {
         try {
-            const settings = await ui2Host.getIdeSettings()
-            const preferences = settings.modelPreferences
-            setModelPreferences({
-                recentModelSpecs: [...(preferences?.recentModelSpecs ?? [])],
-                pinnedModelSpecs: [...(preferences?.pinnedModelSpecs ?? [])],
-            })
-            applyUiLocale(settings.ui?.locale)
+            const manager = createUiSettingsManager(ui2Host)
+            settingsReadyRef.current = false
+            pendingSettingsChangesRef.current.clear()
+            settingsManagerRef.current = manager
+            const applyEffective = (effective: Awaited<ReturnType<typeof manager.initialize>>) => {
+                const pending = pendingModelPreferencesRef.current
+                setModelPreferences(pending?.value ?? modelPreferencesFromEffective(effective))
+                applyUiLocale(effective.vibefly.ui?.locale)
+            }
+            stopSettingsRef.current?.()
+            stopSettingsRef.current = manager.subscribe(({effective}) => applyEffective(effective))
+            const initialEffective = await manager.initialize(true)
+            while (pendingSettingsChangesRef.current.size > 0) {
+                const changes = [...pendingSettingsChangesRef.current.values()]
+                pendingSettingsChangesRef.current.clear()
+                for (const change of changes) {
+                    await manager.handleSettingsChanged(change)
+                }
+            }
+            settingsReadyRef.current = true
+            applyEffective(manager.getEffectiveSettings() ?? initialEffective)
         } catch (preferencesError) {
             log.warn("model preferences unavailable", preferencesError)
         }
     }, [])
-
-    const loadModels = useCallback(
-        async (sessionId: string) => {
-            const chatAgent = agentRef.current
-            if (!chatAgent || modelsRef.current[sessionId]) return
-            try {
-                const options = await chatAgent.listChatModels(sessionId)
-                updateModels((current) => ({...current, [sessionId]: options}))
-            } catch (modelError) {
-                log.debug("model list unavailable", modelError)
-            }
-        },
-        [updateModels],
-    )
 
     const persistWorkspace = useCallback(async () => {
         const chatHost = hostChatRef.current
@@ -400,6 +441,20 @@ export function useChatController(): ChatController {
                 async setTheme(mode) {
                     applyJbTheme(mode)
                 },
+                async settingsChanged(scope, projectRoot, revision) {
+                    const manager = settingsManagerRef.current
+                    const change = toSettingsChanged(scope, projectRoot, revision)
+                    if (!manager || !change) return
+                    if (!settingsReadyRef.current) {
+                        pendingSettingsChangesRef.current.set(change.scope, change)
+                        return
+                    }
+                    try {
+                        await manager.handleSettingsChanged(change)
+                    } catch (settingsError) {
+                        log.warn("settings refresh failed", settingsError)
+                    }
+                },
             },
             host2UiChat: {
                 async addChatContexts(sessionId, incoming) {
@@ -439,6 +494,12 @@ export function useChatController(): ChatController {
             stopAgentRef.current = null
             unbindConsoleRef.current?.()
             unbindConsoleRef.current = null
+            stopSettingsRef.current?.()
+            stopSettingsRef.current = null
+            settingsReadyRef.current = false
+            pendingSettingsChangesRef.current.clear()
+            settingsManagerRef.current = null
+            pendingModelPreferencesRef.current = null
             peerRef.current?.close()
             peerRef.current = null
             hostRef.current = null
@@ -717,16 +778,54 @@ export function useChatController(): ChatController {
         }
     }
 
-    const persistModelPreferences = (preferences: ModelPreferencesDto) => {
+    const persistModelPreferences = (preferences: ModelPreferences) => {
         if (!hostRef.current || offlineRef.current) return
         const chatHost = hostRef.current
+        const manager = settingsManagerRef.current
+        if (!manager) return
+        const generation = ++modelPreferencesGenerationRef.current
+        const savedPreferences: ModelPreferences = {
+            recentModelSpecs: [...preferences.recentModelSpecs],
+            pinnedModelSpecs: [...preferences.pinnedModelSpecs],
+        }
+        pendingModelPreferencesRef.current = {generation, value: savedPreferences}
         modelPreferencesSaveRef.current = modelPreferencesSaveRef.current.then(async () => {
-            try {
-                await chatHost.saveIdeSettings({modelPreferences: preferences})
-            } catch (preferencesError) {
-                log.warn("model preferences save failed", preferencesError)
-                setError(errorText(preferencesError))
+            const scope = manager.getSnapshot("project") ? "project" : "application"
+            for (let attempt = 0; attempt < 4; attempt += 1) {
+                try {
+                    const prepared = prepareSettingsFormPatchSave(
+                        manager,
+                        {modelPreferences: savedPreferences},
+                        scope,
+                    )
+                    const result = await chatHost.saveSettings({scope, ...prepared})
+                    if (result.revision) {
+                        const projectRoot = scope === "project"
+                            ? manager.getSnapshot("project")?.projectRoot ?? null
+                            : null
+                        const change = toSettingsChanged(scope, projectRoot, result.revision)
+                        if (change) await manager.handleSettingsChanged(change)
+                    }
+                    if (result.ok) {
+                        if (pendingModelPreferencesRef.current?.generation === generation) {
+                            pendingModelPreferencesRef.current = null
+                        }
+                        const effective = manager.getEffectiveSettings()
+                        const pending = pendingModelPreferencesRef.current
+                        if (effective) {
+                            setModelPreferences(pending?.value ?? modelPreferencesFromEffective(effective))
+                        }
+                        return
+                    }
+                    if (result.conflict) continue
+                    throw new Error(result.error ?? "Settings save failed")
+                } catch (preferencesError) {
+                    log.warn("model preferences save failed", preferencesError)
+                    setError(errorText(preferencesError))
+                    return
+                }
             }
+            setError("Settings changed externally")
         })
     }
 

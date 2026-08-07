@@ -45,4 +45,6 @@ data class ProvidersPatchResult(
     val ok: Boolean,
     val error: String? = null,
     val snapshot: ProvidersSnapshot? = null,
+    val revision: String? = null,
+    val conflict: Boolean = false,
 )

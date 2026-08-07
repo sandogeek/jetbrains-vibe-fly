@@ -1,12 +1,10 @@
 package com.github.sandogeek.jetbrainsvibefly.settings
 
-import com.github.sandogeek.vibefly.jcef.rpc.Agent2Host
-import com.github.sandogeek.vibefly.jcef.rpc.LoginInputRequest
-import com.github.sandogeek.vibefly.jcef.rpc.LoginInputResponse
-import com.github.sandogeek.vibefly.jcef.rpc.LoginOpenUrlRequest
 import com.github.sandogeek.jetbrainsvibefly.util.Edt
+import com.github.sandogeek.vibefly.jcef.rpc.*
 import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.diagnostic.logger
+import com.intellij.openapi.project.Project
 import java.util.concurrent.atomic.AtomicReference
 
 /**
@@ -14,7 +12,7 @@ import java.util.concurrent.atomic.AtomicReference
  * Active [ProviderLoginUi] is set while a login dialog is running.
  * Active [CommitMessageProgressListener] is set while commit generation is in flight.
  */
-object Agent2HostBridge : Agent2Host {
+object Agent2HostBridge {
 
     private val log = logger<Agent2HostBridge>()
     private val activeUi = AtomicReference<ProviderLoginUi?>(null)
@@ -50,7 +48,10 @@ object Agent2HostBridge : Agent2Host {
         }
     }
 
-    override suspend fun openLoginUrl(request: LoginOpenUrlRequest) {
+    /** Bind settings calls to the project that owns one Agent stdio process. */
+    fun bind(project: Project): Agent2Host = ProjectBoundAgent2Host(project)
+
+    suspend fun openLoginUrl(request: LoginOpenUrlRequest) {
         val ui = activeUi.get()
         if (ui != null) {
             runOnEdt { ui.onOpenUrl(request) }
@@ -61,23 +62,23 @@ object Agent2HostBridge : Agent2Host {
             try {
                 runOnEdt { BrowserUtil.browse(target) }
             } catch (e: Exception) {
-                log.warn("BrowserUtil.browse failed for $target", e)
+                log.warn("BrowserUtil.browse failed", e)
             }
         }
     }
 
-    override suspend fun requestLoginInput(request: LoginInputRequest): LoginInputResponse {
+    suspend fun requestLoginInput(request: LoginInputRequest): LoginInputResponse {
         val ui = activeUi.get()
             ?: return LoginInputResponse(text = "", cancelled = true)
         return ui.requestInput(request)
     }
 
-    override suspend fun reportLoginProgress(message: String) {
+    suspend fun reportLoginProgress(message: String) {
         val ui = activeUi.get() ?: return
         runOnEdt { ui.onProgress(message) }
     }
 
-    override suspend fun reportCommitMessageProgress(message: String) {
+    suspend fun reportCommitMessageProgress(message: String) {
         val listener = commitProgress.get()
         if (listener == null) {
             log.debug("commit progress with no listener: $message")
@@ -85,6 +86,28 @@ object Agent2HostBridge : Agent2Host {
         }
         listener.onProgress(message)
     }
+}
+
+private class ProjectBoundAgent2Host(
+    private val project: Project,
+) : Agent2Host {
+    override suspend fun openLoginUrl(request: LoginOpenUrlRequest) =
+        Agent2HostBridge.openLoginUrl(request)
+
+    override suspend fun requestLoginInput(request: LoginInputRequest): LoginInputResponse =
+        Agent2HostBridge.requestLoginInput(request)
+
+    override suspend fun reportLoginProgress(message: String) =
+        Agent2HostBridge.reportLoginProgress(message)
+
+    override suspend fun reportCommitMessageProgress(message: String) =
+        Agent2HostBridge.reportCommitMessageProgress(message)
+
+    override suspend fun getSettingsSnapshot(scope: String): AgentSettingsSnapshot =
+        SettingsHostAccess.agentSnapshot(scope, project)
+
+    override suspend fun saveAuth(request: AuthSaveRequest): SettingsSaveResult =
+        VibeflyApplicationSettingsService.getInstance().saveAuth(request)
 }
 
 /**

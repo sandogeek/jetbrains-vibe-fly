@@ -1,13 +1,10 @@
-import { describe, test } from "node:test"
-import { expect } from "expect"
-import {
-  getLoginProviders,
-  providerSupportsLogin,
-  resolveLoginProviderId,
-} from "./providerLogin.js"
-import { mkdtempSync, rmSync } from "node:fs"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
+import {describe, test} from "node:test"
+import {expect} from "expect"
+import {getLoginProviders, providerSupportsLogin, resolveLoginProviderId,} from "./providerLogin.js"
+import {clearPiRuntimeCache, getPiRuntime} from "./piRuntime.js"
+import {mkdtempSync, rmSync} from "node:fs"
+import {tmpdir} from "node:os"
+import {join} from "node:path"
 
 describe("login providers", () => {
   test("resolveLoginProviderId maps known OAuth providers", () => {
@@ -20,12 +17,14 @@ describe("login providers", () => {
   test("getLoginProviders lists pi login registry", async () => {
     const dir = mkdtempSync(join(tmpdir(), "vibefly-login-"))
     try {
-      const list = await getLoginProviders(dir)
+        const runtime = await getPiRuntime({agentDir: dir, forceNew: true})
+        const list = await getLoginProviders(runtime)
       const ids = (list.providers ?? []).map((p) => p.id)
       expect(ids).toContain("anthropic")
       expect(ids).toContain("github-copilot")
       expect(ids.length).toBeGreaterThan(10)
     } finally {
+        clearPiRuntimeCache()
       rmSync(dir, { recursive: true, force: true })
     }
   })

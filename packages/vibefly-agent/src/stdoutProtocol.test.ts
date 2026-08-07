@@ -10,7 +10,7 @@ import {fileURLToPath} from "node:url"
 import {describe, test} from "node:test"
 import {expect} from "expect"
 import {ContentLengthDecoder, createStdioSimpleRpc,} from "@sandogeek/simple-rpc-node"
-import {host2Agent} from "./generated/controlRpc.js"
+import {agent2Host, host2Agent} from "./generated/controlRpc.js"
 
 const srcDir = dirname(fileURLToPath(import.meta.url))
 const mainTs = join(srcDir, "main.ts")
@@ -83,7 +83,7 @@ function assertStdoutIsFrames(stdout: Buffer, label: string): void {
 
 describe("agent stdout protocol isolation", () => {
     test(
-        "startup stdout is empty; control RPC stdout is Content-Length only",
+        "startup settings RPC and control RPC stdout are Content-Length only",
         {timeout: BOOT_TIMEOUT_MS + 15_000},
         async () => {
             const agentDir = mkdtempSync(join(tmpdir(), "vibefly-agent-stdout-"))
@@ -110,17 +110,48 @@ describe("agent stdout protocol isolation", () => {
                 stderrBuf.text += chunk.toString("utf8")
             })
 
+            const peer = createStdioSimpleRpc({
+                input: child.stdout,
+                output: child.stdin,
+            })
+            agent2Host.register(peer, {
+                openLoginUrl() {
+                },
+                requestLoginInput() {
+                    return {cancelled: true}
+                },
+                reportLoginProgress() {
+                },
+                reportCommitMessageProgress() {
+                },
+                getSettingsSnapshot(scope: string) {
+                    if (scope === "project") {
+                        return {
+                            scope,
+                            projectRoot: "/workspace/project",
+                            revision: "project-1",
+                        }
+                    }
+                    return {
+                        scope: "application",
+                        projectRoot: null,
+                        modelsJson: "{}",
+                        authJson: "{}",
+                        revision: "application-1",
+                    }
+                },
+                saveAuth() {
+                    return {ok: true, revision: "application-2"}
+                },
+            })
+
             try {
                 await waitForReady(child, stderrBuf)
 
                 const bootStdout = Buffer.concat(stdoutChunks)
-                expect(bootStdout.byteLength).toBe(0)
+                expect(bootStdout.byteLength).toBeGreaterThan(0)
                 assertStdoutIsFrames(bootStdout, "boot")
 
-                const peer = createStdioSimpleRpc({
-                    input: child.stdout,
-                    output: child.stdin,
-                })
                 const host = host2Agent.createProxy(peer)
 
                 const conn = await host.openWebSocketSession("http://localhost")

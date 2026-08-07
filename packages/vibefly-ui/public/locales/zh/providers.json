@@ -1,5 +1,5 @@
 {
-  "subtitle": "API 密钥与 OAuth 令牌保存在 pi 的 auth.json 中（不会写入 IDE XML）。",
+  "subtitle": "API 密钥与 OAuth 令牌保存在 Vibe Fly 的产品 auth.json 中（不会写入 IDE XML）。",
   "reload": "从磁盘重新加载",
   "defaultModel": "默认模型",
   "connectedProviders": "已连接提供商",
@@ -9,7 +9,7 @@
   "searchPlaceholder": "按名称或描述搜索…",
   "noMatch": "没有匹配的内置提供商",
   "noBuiltIn": "暂无可用的内置提供商",
-  "disconnectConfirm": "断开 {{name}}？这将从 auth.json 移除已存储的 API 密钥和 OAuth 会话。",
+  "disconnectConfirm": "断开 {{name}}？这将从 Vibe Fly 的 auth.json 移除已存储的 API 密钥和 OAuth 会话。",
   "deleteConfirm": "删除自定义提供商“{{id}}”？这将从 models.json 移除其配置并清除 API 密钥。",
   "saveFailed": "保存提供商配置失败",
   "logoutFailed": "退出登录失败",

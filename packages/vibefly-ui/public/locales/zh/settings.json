@@ -10,5 +10,7 @@
   "commitMessage": "提交信息",
   "hostUnavailable": "Host RPC 不可用（请在 IDE JCEF 中打开）",
   "hostUnavailableShort": "Host RPC 不可用",
-  "refreshFailed": "刷新失败"
+  "refreshFailed": "刷新失败",
+  "saveFailed": "设置保存失败",
+  "changedExternally": "设置已被外部修改，请确认最新值后重试"
 }

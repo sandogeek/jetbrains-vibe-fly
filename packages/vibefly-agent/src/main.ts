@@ -24,9 +24,10 @@ import {
 import {log} from "./log.js"
 import {ChatSessionRegistry} from "./chatSessionRegistry.js"
 import {applyAgentDirFromEnv, clearPiRuntimeCache, getPiRuntime} from "./piRuntime.js"
-import {applyProvidersPatch, getProvidersSnapshot,} from "./providerConfig.js"
+import {getProvidersSnapshot, rejectAgentProviderPatch,} from "./providerConfig.js"
 import {cancelActiveLogin, getLoginProviders, loginProvider, logoutProvider,} from "./providerLogin.js"
 import {createAgentWsServer, createTicketStore, isValidOrigin,} from "./ws.js"
+import {HostSettingsController} from "./hostSettings.js"
 
 /** Fire-and-forget reverse RPC; host resets idle timeout on each call. */
 const progressOpts = rpcOptions({ timeoutMs: 5_000 })
@@ -41,19 +42,32 @@ async function main(): Promise<void> {
     elapsedMs: Math.round(performance.now() - agentDirStarted),
   })
 
-  // Warm pi auth + model runtime.
+  let teardown: (code: number) => void = (code) => process.exit(code)
+  const peer = createStdioSimpleRpc({
+    input: process.stdin,
+    output: process.stdout,
+    onClosed: () => {
+      log.info("stdio closed")
+      teardown(0)
+    },
+  })
+  const agent2Host = createAgent2HostProxy(peer)
+
+  const hostSettings = new HostSettingsController(agent2Host, {
+    hasProject: Boolean(process.env.VIBEFLY_PROJECT_ROOT?.trim()),
+  })
+  await hostSettings.initialize()
+
   const piWarmStarted = performance.now()
-  try {
-    await getPiRuntime()
-    log.info("pi runtime warm done", {
-      elapsedMs: Math.round(performance.now() - piWarmStarted),
-    })
-  } catch (error) {
-    log.warn("pi runtime warm failed", {
-      err: error,
-      elapsedMs: Math.round(performance.now() - piWarmStarted),
-    })
-  }
+  const piRuntime = await getPiRuntime({
+    agentDir,
+    credentials: hostSettings.credentials,
+    forceNew: true,
+  })
+  await hostSettings.attachModelRuntime(piRuntime.modelRuntime)
+  log.info("host-backed pi runtime ready", {
+    elapsedMs: Math.round(performance.now() - piWarmStarted),
+  })
 
   const wsStarted = performance.now()
   const ticketStore = createTicketStore()
@@ -66,19 +80,11 @@ async function main(): Promise<void> {
   let shuttingDown = false
   const chatSessions = new ChatSessionRegistry(
     process.env.VIBEFLY_PROJECT_ROOT,
-    process.env.VIBEFLY_DEFAULT_MODEL,
+      undefined,
+      {settingsStorage: hostSettings.settingsStorage},
   )
-
-  const peer = createStdioSimpleRpc({
-    input: process.stdin,
-    output: process.stdout,
-    onClosed: () => {
-      log.info("stdio closed")
-      teardown(0)
-    },
-  })
-
-  const agent2Host = createAgent2HostProxy(peer)
+  hostSettings.setReloadLiveSessions((modelCatalogChanged) =>
+      chatSessions.reloadLiveSessions(modelCatalogChanged))
 
   const controlImpl: Host2AgentService = {
     openWebSocketSession(expectedOrigin: string): AgentConnection {
@@ -97,7 +103,7 @@ async function main(): Promise<void> {
       teardown(0)
     },
     async generateCommitMessage(request, ctx) {
-      return generateCommitMessage(request, {
+      return generateCommitMessage(hostSettings.applyCommitSettings(request), {
         signal: ctx?.signal,
         onProgress: (message) => {
           void agent2Host
@@ -106,54 +112,28 @@ async function main(): Promise<void> {
         },
       })
     },
-    async getProvidersSnapshot() {
-      return getProvidersSnapshot(agentDir)
+    settingsChanged(scope: string, projectRoot: string | null, revision: string) {
+      return hostSettings.handleSettingsChanged(scope, projectRoot, revision)
     },
-    async applyProvidersPatch(request) {
-      const result = await applyProvidersPatch(request)
-      if (result.ok) {
-        clearPiRuntimeCache()
-        try {
-          await getPiRuntime({ forceNew: true, agentDir })
-        } catch (error) {
-          log.warn("pi reload after patch failed", { err: error })
-        }
-      }
-      return result
+    async getProvidersSnapshot() {
+      return getProvidersSnapshot(piRuntime)
+    },
+    async applyProvidersPatch() {
+      return rejectAgentProviderPatch()
     },
     async getLoginProviders() {
-      return getLoginProviders(agentDir)
+      return getLoginProviders(piRuntime)
     },
     async loginProvider(request) {
-      const result = await loginProvider(request, agent2Host)
-      if (result.ok) {
-        clearPiRuntimeCache()
-        try {
-          await getPiRuntime({ forceNew: true, agentDir })
-        } catch (error) {
-          log.warn("pi reload after login failed", { err: error })
-        }
-      }
-      return result
+      return loginProvider(request, agent2Host, piRuntime)
     },
     async logoutProvider(request) {
-      const result = await logoutProvider(request)
-      if (result.ok) {
-        clearPiRuntimeCache()
-        try {
-          await getPiRuntime({ forceNew: true, agentDir })
-        } catch (error) {
-          log.warn("pi reload after logout failed", { err: error })
-        }
-      }
-      return result
+      return logoutProvider(request, piRuntime)
     },
     cancelProviderLogin() {
       cancelActiveLogin()
     },
   }
-  registerHost2AgentService(peer, controlImpl)
-
   wsServer.setSessionFactory((wsPeer) => {
     const agent2Ui: Agent2Ui = createAgent2UiProxy(wsPeer)
     chatSessions.attach(agent2Ui)
@@ -204,11 +184,17 @@ async function main(): Promise<void> {
     }
   })
 
+  registerHost2AgentService(peer, controlImpl)
+  // Settings can change after the initial snapshot but before Host2Agent is
+  // registered. Re-read both scopes once the control service can no longer
+  // miss invalidations; subsequent notifications are serialized normally.
+  await hostSettings.refreshFromHost()
+
   log.info("agent ready", {
     totalMs: Math.round(performance.now() - bootStarted),
   })
 
-  function teardown(code: number): void {
+  teardown = (code: number): void => {
     if (shuttingDown) return
     shuttingDown = true
     try {

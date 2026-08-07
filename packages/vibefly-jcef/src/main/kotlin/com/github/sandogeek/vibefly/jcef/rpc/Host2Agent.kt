@@ -21,6 +21,10 @@ interface Host2Agent {
         request: GenerateCommitMessageRequest,
     ): GenerateCommitMessageResult
 
+    /** Small invalidation notice; the Agent fetches the current snapshot separately. */
+    @RpcFun(4)
+    suspend fun settingsChanged(scope: String, projectRoot: String?, revision: String)
+
     @RpcFun(5)
     suspend fun getProvidersSnapshot(): ProvidersSnapshot
 

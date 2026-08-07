@@ -26,4 +26,12 @@ interface Agent2Host {
      */
     @RpcFun(4)
     suspend fun reportCommitMessageProgress(message: String)
+
+    /** Read a full settings snapshot over the trusted local stdio control plane. */
+    @RpcFun(5)
+    suspend fun getSettingsSnapshot(scope: String): AgentSettingsSnapshot
+
+    /** Persist application credentials through the Host-owned settings store. */
+    @RpcFun(6)
+    suspend fun saveAuth(request: AuthSaveRequest): SettingsSaveResult
 }

@@ -22,9 +22,9 @@ import {
 import {type MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState} from "react"
 
 import {convertChatMessage} from "../chatMessageAdapter"
-import type {ModelPreferencesDto} from "../generated/rpc"
 import {useAppTranslation} from "../i18n"
 import {ModelPicker, type ModelPickerOption} from "../settings/ModelPicker"
+import type {ModelPreferences} from "../settings/settingsStore"
 import {ChatMessageActionsContext, ChatMessageView} from "./MessageParts"
 import type {ChatTab, PendingInput, PendingPermission, ThinkingOption} from "./types"
 
@@ -36,7 +36,7 @@ export type AssistantChatProps = {
     draft: string
     contexts: ChatContextItem[]
     modelOptions: ModelPickerOption[]
-    modelPreferences: ModelPreferencesDto
+    modelPreferences: ModelPreferences
     thinkingOptions: ThinkingOption[]
     busy: boolean
     queued: boolean

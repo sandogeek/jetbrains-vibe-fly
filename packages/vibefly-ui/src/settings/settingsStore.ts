@@ -1,10 +1,37 @@
-import type {CommitFormDto, IdeSettingsDto, ModelPreferencesDto, ProvidersFormDto, UiFormDto,} from "../generated/rpc"
 import {normalizeUiLocaleMode} from "../i18n"
 import {bundledCatalog, type BundledCatalog} from "./catalog"
 import type {ProviderSnapshot, ProvidersSnapshot} from "./providerSnapshots"
 
+export type ProvidersForm = {
+    defaultProvider: string
+    defaultModel: string
+}
+
+export type CommitForm = {
+    languageMode: string
+    commitModelSpec: string
+    useCustomPrompt: boolean
+    customPrompt: string
+}
+
+export type ModelPreferences = {
+    recentModelSpecs: string[]
+    pinnedModelSpecs: string[]
+}
+
+export type UiForm = {
+    locale: string
+}
+
+export type IdeSettings = {
+    providers: ProvidersForm
+    commit: CommitForm
+    modelPreferences: ModelPreferences
+    ui: UiForm
+}
+
 export type SettingsState = {
-    settings: IdeSettingsDto
+    settings: IdeSettings
     snapshot: ProvidersSnapshot | null
     catalog: BundledCatalog
     loadError: string | null
@@ -12,7 +39,7 @@ export type SettingsState = {
     status: string | null
 }
 
-export function emptySettings(): IdeSettingsDto {
+export function emptySettings(): IdeSettings {
     return {
         providers: {
             defaultProvider: "",
@@ -34,7 +61,7 @@ export function emptySettings(): IdeSettingsDto {
     }
 }
 
-export function normalizeSettings(raw: IdeSettingsDto | null | undefined): IdeSettingsDto {
+export function normalizeSettings(raw: IdeSettings | null | undefined): IdeSettings {
     const base = emptySettings()
     if (!raw) return base
     return {
@@ -59,23 +86,23 @@ export function normalizeSettings(raw: IdeSettingsDto | null | undefined): IdeSe
 }
 
 export function withProviders(
-    settings: IdeSettingsDto,
-    patch: Partial<ProvidersFormDto>,
-): IdeSettingsDto {
+    settings: IdeSettings,
+    patch: Partial<ProvidersForm>,
+): IdeSettings {
     return {
         ...settings,
         providers: {...settings.providers!, ...patch},
     }
 }
 
-export function withCommit(settings: IdeSettingsDto, patch: Partial<CommitFormDto>): IdeSettingsDto {
+export function withCommit(settings: IdeSettings, patch: Partial<CommitForm>): IdeSettings {
     return {
         ...settings,
         commit: {...settings.commit!, ...patch},
     }
 }
 
-export function withUi(settings: IdeSettingsDto, patch: Partial<UiFormDto>): IdeSettingsDto {
+export function withUi(settings: IdeSettings, patch: Partial<UiForm>): IdeSettings {
     return {
         ...settings,
         ui: {
@@ -85,9 +112,9 @@ export function withUi(settings: IdeSettingsDto, patch: Partial<UiFormDto>): Ide
 }
 
 export function withModelPreferences(
-    settings: IdeSettingsDto,
-    patch: Partial<ModelPreferencesDto>,
-): IdeSettingsDto {
+    settings: IdeSettings,
+    patch: Partial<ModelPreferences>,
+): IdeSettings {
     return {
         ...settings,
         modelPreferences: {

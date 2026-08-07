@@ -18,4 +18,8 @@ interface Host2Ui {
      */
     @RpcFun(2)
     suspend fun setTheme(mode: String)
+
+    /** Small invalidation notice; the WebView fetches the current snapshot separately. */
+    @RpcFun(3)
+    suspend fun settingsChanged(scope: String, projectRoot: String?, revision: String)
 }

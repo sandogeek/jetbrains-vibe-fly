@@ -73,13 +73,13 @@ Kotlin 包根：`com.github.sandogeek.jetbrainsvibefly`。
 
 ## 数据与目录
 
-| 项             | 说明                                                                  |
-|----------------|-----------------------------------------------------------------------|
-| Agent 工作目录 | `~/.vibefly/<productCode 小写>/agent`（见 `VibeflyAgentDirectory`）   |
-| Node 解析      | `-Dvibefly.node` → 常见路径 → `PATH`（`VibeflyAgentPaths`）           |
-| Agent 入口     | `-Dvibefly.agent.entry` → 打包 `agent/dist/main.js` → monorepo 源码   |
-| Providers 文件 | Agent 侧 `models.json` / `auth.json`（经控制面读写）                  |
-| UI 生产资源    | `packages/vibefly-jcef/src/main/resources/web`（gitignore，构建生成） |
+| 项             | 说明                                                                                                           |
+|----------------|----------------------------------------------------------------------------------------------------------------|
+| Agent 工作目录 | `~/.vibefly/<productCode 小写>/agent`（见 `VibeflyAgentDirectory`）                                            |
+| Node 解析      | `-Dvibefly.node` → 常见路径 → `PATH`（`VibeflyAgentPaths`）                                                    |
+| Agent 入口     | `-Dvibefly.agent.entry` → 打包 `agent/dist/main.js` → monorepo 源码                                            |
+| Providers 文件 | Host application 设置目录中的 `models.json` / `auth.json`；Host 独占持久化，Agent 经 stdio 快照 / 凭据适配访问 |
+| UI 生产资源    | `packages/vibefly-jcef/src/main/resources/web`（gitignore，构建生成）                                          |
 
 ## 会话与调度（摘要）
 

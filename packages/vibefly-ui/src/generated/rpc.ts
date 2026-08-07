@@ -4,32 +4,33 @@
 import type {RpcClient, RpcService, SimpleRpcPeer} from "@sandogeek/simple-rpc";
 import {defineRpcService, rpcMethod} from "@sandogeek/simple-rpc";
 
-export interface ProvidersFormDto {
-  defaultProvider?: string;
-  defaultModel?: string;
+export interface SettingsDiagnostic {
+    file: string;
+    severity: string;
+    message: string;
 }
 
-export interface CommitFormDto {
-  languageMode?: string;
-  commitModelSpec?: string;
-  useCustomPrompt?: boolean;
-  customPrompt?: string;
+export interface UiSettingsSnapshot {
+    scope: string;
+    projectRoot?: string | null;
+    settingsJson?: string;
+    vibeflyJson?: string;
+    revision: string;
+    diagnostics?: Array<SettingsDiagnostic>;
 }
 
-export interface ModelPreferencesDto {
-  recentModelSpecs?: Array<string>;
-  pinnedModelSpecs?: Array<string>;
+export interface SettingsSaveRequest {
+    scope: string;
+    settingsJson?: string | null;
+    vibeflyJson?: string | null;
+    expectedRevision: string;
 }
 
-export interface UiFormDto {
-  locale?: string;
-}
-
-export interface IdeSettingsDto {
-  providers?: ProvidersFormDto;
-  commit?: CommitFormDto;
-  modelPreferences?: ModelPreferencesDto;
-  ui?: UiFormDto;
+export interface SettingsSaveResult {
+    ok: boolean;
+    revision: string;
+    conflict?: boolean;
+    error?: string | null;
 }
 
 export interface AgentConnection {
@@ -44,104 +45,112 @@ export interface ChatWorkspaceStateDto {
 }
 
 export interface ProviderModelSnapshot {
-  id: string;
-  name?: string | null;
-  api?: string | null;
-  isCustom?: boolean;
+    id: string;
+    name?: string | null;
+    api?: string | null;
+    isCustom?: boolean;
 }
 
 export interface ProviderCredentialStatus {
-  hasApiKey?: boolean;
-  hasOAuth?: boolean;
-  originKind?: string;
+    hasApiKey?: boolean;
+    hasOAuth?: boolean;
+    originKind?: string;
 }
 
 export interface ProviderRuntimeSnapshot {
-  id: string;
-  isConfigured?: boolean;
-  baseUrl?: string | null;
-  api?: string | null;
-  models?: Array<ProviderModelSnapshot>;
-  credential?: ProviderCredentialStatus;
+    id: string;
+    isConfigured?: boolean;
+    baseUrl?: string | null;
+    api?: string | null;
+    models?: Array<ProviderModelSnapshot>;
+    credential?: ProviderCredentialStatus;
 }
 
 export interface ProvidersSnapshot {
-  agentDir: string;
-  providers?: Array<ProviderRuntimeSnapshot>;
-  modelsPath?: string | null;
+    agentDir: string;
+    providers?: Array<ProviderRuntimeSnapshot>;
+    modelsPath?: string | null;
 }
 
 export interface ProvidersRefreshResult {
-  ok: boolean;
-  error?: string | null;
-  snapshot?: ProvidersSnapshot | null;
+    ok: boolean;
+    error?: string | null;
+    snapshot?: ProvidersSnapshot | null;
+    revision?: string | null;
+    conflict?: boolean;
 }
 
 export interface ProviderModelPatch {
-  id: string;
-  name?: string | null;
-  api?: string | null;
+    id: string;
+    name?: string | null;
+    api?: string | null;
 }
 
 export interface ProviderPatch {
-  id: string;
-  remove?: boolean;
-  baseUrl?: string | null;
-  api?: string | null;
-  models?: Array<ProviderModelPatch> | null;
-  clearBaseUrl?: boolean;
-  clearApi?: boolean;
+    id: string;
+    remove?: boolean;
+    baseUrl?: string | null;
+    api?: string | null;
+    models?: Array<ProviderModelPatch> | null;
+    clearBaseUrl?: boolean;
+    clearApi?: boolean;
 }
 
 export interface CredentialAction {
-  provider: string;
-  action: string;
-  apiKey?: string | null;
+    provider: string;
+    action: string;
+    apiKey?: string | null;
 }
 
 export interface ProvidersPatchRequest {
-  providers?: Array<ProviderPatch>;
-  credentials?: Array<CredentialAction>;
+    providers?: Array<ProviderPatch>;
+    credentials?: Array<CredentialAction>;
 }
 
 export interface ProvidersPatchResult {
-  ok: boolean;
-  error?: string | null;
-  snapshot?: ProvidersSnapshot | null;
+    ok: boolean;
+    error?: string | null;
+    snapshot?: ProvidersSnapshot | null;
+    revision?: string | null;
+    conflict?: boolean;
 }
 
 export interface ProviderLoginRequest {
-  providerId: string;
+    providerId: string;
 }
 
 export interface ProviderLoginResult {
-  ok: boolean;
-  error?: string | null;
-  identityType?: string | null;
-  email?: string | null;
-  accountId?: string | null;
-  orgId?: string | null;
-  orgName?: string | null;
-  snapshot?: ProvidersSnapshot | null;
+    ok: boolean;
+    error?: string | null;
+    identityType?: string | null;
+    email?: string | null;
+    accountId?: string | null;
+    orgId?: string | null;
+    orgName?: string | null;
+    snapshot?: ProvidersSnapshot | null;
+    revision?: string | null;
+    conflict?: boolean;
 }
 
 export interface ProviderLogoutRequest {
-  providerId: string;
+    providerId: string;
 }
 
 export interface ProviderLogoutResult {
-  ok: boolean;
-  error?: string | null;
-  snapshot?: ProvidersSnapshot | null;
+    ok: boolean;
+    error?: string | null;
+    snapshot?: ProvidersSnapshot | null;
+    revision?: string | null;
+    conflict?: boolean;
 }
 
 export interface HostChatContextItem {
-  id: string;
-  kind: string;
-  path: string;
-  text?: string | null;
-  startLine?: number | null;
-  endLine?: number | null;
+    id: string;
+    kind: string;
+    path: string;
+    text?: string | null;
+    startLine?: number | null;
+    endLine?: number | null;
 }
 
 export interface LoginInputResponse {
@@ -150,17 +159,17 @@ export interface LoginInputResponse {
 }
 
 export const ui2Host = defineRpcService("Ui2Host", {
-  getAppVersion: rpcMethod<[], string>(1),
-  logFromWeb: rpcMethod<[message: string], void>(2),
-    getIdeSettings: rpcMethod<[], IdeSettingsDto>(3),
-    saveIdeSettings: rpcMethod<[settings: IdeSettingsDto], void>(4),
+    getAppVersion: rpcMethod<[], string>(1),
+    logFromWeb: rpcMethod<[message: string], void>(2),
+    getSettingsSnapshot: rpcMethod<[scope: string], UiSettingsSnapshot>(3),
+    saveSettings: rpcMethod<[request: SettingsSaveRequest], SettingsSaveResult>(4),
     openExternalUrl: rpcMethod<[url: string], void>(5),
 });
 
 export type Ui2Host = RpcClient<typeof ui2Host>;
 
 export function createUi2HostProxy(peer: SimpleRpcPeer): Ui2Host {
-  return ui2Host.createProxy(peer);
+    return ui2Host.createProxy(peer);
 }
 
 export const ui2HostChat = defineRpcService("Ui2HostChat", {
@@ -184,7 +193,7 @@ export function createUi2HostChatProxy(peer: SimpleRpcPeer): Ui2HostChat {
 
 export const ui2HostSettings = defineRpcService("Ui2HostSettings", {
     refreshProviders: rpcMethod<[], ProvidersRefreshResult>(1),
-    applyProvidersPatch: rpcMethod<[request: ProvidersPatchRequest], ProvidersPatchResult>(2),
+    applyProvidersPatch: rpcMethod<[request: ProvidersPatchRequest, expectedRevision: string], ProvidersPatchResult>(2),
     loginProvider: rpcMethod<[request: ProviderLoginRequest], ProviderLoginResult>(3),
     cancelProviderLogin: rpcMethod<[], void>(4),
     logoutProvider: rpcMethod<[request: ProviderLogoutRequest], ProviderLogoutResult>(5),
@@ -197,14 +206,15 @@ export function createUi2HostSettingsProxy(peer: SimpleRpcPeer): Ui2HostSettings
 }
 
 export const host2Ui = defineRpcService("Host2Ui", {
-  setStatus: rpcMethod<[message: string], void>(1),
+    setStatus: rpcMethod<[message: string], void>(1),
     setTheme: rpcMethod<[mode: string], void>(2),
+    settingsChanged: rpcMethod<[scope: string, projectRoot: string | null, revision: string], void>(3),
 });
 
 export type Host2UiService = RpcService<typeof host2Ui>;
 
 export function registerHost2UiService(peer: SimpleRpcPeer, implementation: Host2UiService) {
-  return host2Ui.register(peer, implementation);
+    return host2Ui.register(peer, implementation);
 }
 
 export const host2UiChat = defineRpcService("Host2UiChat", {

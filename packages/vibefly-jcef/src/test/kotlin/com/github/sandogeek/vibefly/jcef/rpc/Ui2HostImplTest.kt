@@ -7,37 +7,40 @@ import org.junit.Test
 class Ui2HostImplTest {
 
     @Test
-    fun `tool window host only exposes and saves model preferences`() = runBlocking {
-        val initial = ModelPreferencesDto(
-            recentModelSpecs = listOf("openai/gpt-4o"),
-            pinnedModelSpecs = listOf("anthropic/claude-sonnet"),
+    fun `delegates raw snapshot reads and optimistic saves`() = runBlocking {
+        val initial = UiSettingsSnapshot(
+            scope = "application",
+            settingsJson = "{\"defaultProvider\":\"openai\"}",
+            vibeflyJson = "{\"locale\":\"zh\"}",
+            revision = "revision-1",
         )
-        var saved: ModelPreferencesDto? = null
-        val ui = UiFormDto(locale = "zh")
+        var saved: SettingsSaveRequest? = null
         val host = Ui2HostImpl(
-            modelPreferencesProvider = { initial },
-            modelPreferencesSaver = { saved = it },
-            uiSettingsProvider = { ui },
+            settingsSnapshotProvider = { scope ->
+                assertEquals("application", scope)
+                initial
+            },
+            settingsSaver = { request ->
+                saved = request
+                SettingsSaveResult(ok = true, revision = "revision-2")
+            },
         )
 
-        val settings = host.getIdeSettings()
-        assertEquals(ProvidersFormDto(), settings.providers)
-        assertEquals(CommitFormDto(), settings.commit)
-        assertEquals(initial, settings.modelPreferences)
-        assertEquals(ui, settings.ui)
+        assertEquals(initial, host.getSettingsSnapshot("application"))
 
-        val next = ModelPreferencesDto(
-            recentModelSpecs = listOf("openai/gpt-4.1"),
-            pinnedModelSpecs = emptyList(),
+        val request = SettingsSaveRequest(
+            scope = "application",
+            vibeflyJson = "{\"locale\":\"en\"}",
+            expectedRevision = initial.revision,
         )
-        host.saveIdeSettings(
-            IdeSettingsDto(
-                providers = ProvidersFormDto(defaultProvider = "ignored"),
-                commit = CommitFormDto(customPrompt = "ignored"),
-                modelPreferences = next,
-                ui = UiFormDto(locale = "en"),
-            ),
-        )
-        assertEquals(next, saved)
+        assertEquals("revision-2", host.saveSettings(request).revision)
+        assertEquals(request, saved)
+    }
+
+    @Test
+    fun `ui snapshot has no raw models or auth fields`() {
+        val names = UiSettingsSnapshot::class.java.declaredFields.map { it.name }.toSet()
+        assertEquals(false, "modelsJson" in names)
+        assertEquals(false, "authJson" in names)
     }
 }

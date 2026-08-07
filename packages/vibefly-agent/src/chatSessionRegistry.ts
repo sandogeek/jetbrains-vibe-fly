@@ -1,17 +1,17 @@
 import * as fs from "node:fs"
 import * as path from "node:path"
-import { rpcOptions } from "@sandogeek/simple-rpc"
+import {rpcOptions} from "@sandogeek/simple-rpc"
 import {
-  createAgentSession,
-  DefaultResourceLoader,
-  SessionManager,
-  SettingsManager,
   type AgentSession,
   type AgentSessionEvent,
+  createAgentSession,
+  DefaultResourceLoader,
   type ExtensionFactory,
+  SessionManager,
+  SettingsManager,
 } from "@earendil-works/pi-coding-agent"
-import type { AgentMessage } from "@earendil-works/pi-agent-core"
-import type { Api, Model } from "@earendil-works/pi-ai"
+import type {AgentMessage} from "@earendil-works/pi-agent-core"
+import type {Api, Model} from "@earendil-works/pi-ai"
 import type {
   Agent2Ui,
   ChatContextItem,
@@ -22,7 +22,6 @@ import type {
   ChatModelOption,
   ChatPart,
   ChatSessionSnapshot,
-  ChatSessionState,
   ChatSessionSummary,
   ListChatSessionsRequest,
   OpenChatSessionRequest,
@@ -32,13 +31,47 @@ import type {
   SendChatMessageResult,
   ToolPermissionDecision,
 } from "@vibefly/uiagent-shared"
-import { log } from "./log.js"
-import { getPiRuntime } from "./piRuntime.js"
-import { SerialTurnScheduler } from "./chatScheduler.js"
+import {log} from "./log.js"
+import {getPiRuntime} from "./piRuntime.js"
+import {SerialTurnScheduler} from "./chatScheduler.js"
 
 type RuntimeSession = {
   session: AgentSession
   unsubscribe: () => void
+}
+
+type SettingsStorage = Parameters<typeof SettingsManager.fromStorage>[0]
+
+export async function reloadSessionsIndependently(
+    sessions: Iterable<{ sessionId: string; reload: () => Promise<void> }>,
+    onReloaded: (sessionId: string) => void = () => {
+    },
+): Promise<void> {
+  for (const session of sessions) {
+    try {
+      await session.reload()
+      onReloaded(session.sessionId)
+    } catch (error) {
+      log.warn("chat session reload failed", {
+        sessionId: session.sessionId,
+        err: error,
+      })
+    }
+  }
+}
+
+export function refreshSessionModelFromRuntime(
+    session: Pick<
+        AgentSession,
+        "model" | "modelRuntime" | "setThinkingLevel" | "state" | "thinkingLevel"
+    >,
+): void {
+  const current = session.model
+  if (!current) return
+  const refreshed = session.modelRuntime.getModel(current.provider, current.id)
+  if (!refreshed || refreshed === current) return
+  session.state.model = refreshed
+  session.setThinkingLevel(session.thinkingLevel)
 }
 
 type SessionRecord = {
@@ -374,7 +407,11 @@ export class ChatSessionRegistry {
   #projectRoot: string | undefined
   #disposed = false
 
-  constructor(expectedProjectRoot?: string, private readonly defaultModelId?: string) {
+  constructor(
+      expectedProjectRoot?: string,
+      private readonly defaultModelId?: string,
+      private readonly options: { settingsStorage?: SettingsStorage } = {},
+  ) {
     if (expectedProjectRoot?.trim()) this.#projectRoot = normalizeProjectRoot(expectedProjectRoot)
   }
 
@@ -408,6 +445,34 @@ export class ChatSessionRegistry {
     this.#eventTimers.clear()
     for (const record of this.#records.values()) await this.#disposeRuntime(record)
     this.#records.clear()
+  }
+
+  async reloadLiveSessions(modelCatalogChanged = false): Promise<void> {
+    const records = [...this.#records.values()].filter(
+        (record): record is SessionRecord & { runtime: RuntimeSession } => Boolean(record.runtime),
+    )
+    const byId = new Map(records.map((record) => [record.summary.sessionId, record]))
+    await reloadSessionsIndependently(
+        records.map((record) => ({
+          sessionId: record.summary.sessionId,
+          reload: async () => {
+            refreshSessionModelFromRuntime(record.runtime.session)
+            await record.runtime.session.reload()
+          },
+        })),
+        (sessionId) => {
+          const record = byId.get(sessionId)
+          if (!record) return
+          this.#syncSummaryFromRuntime(record)
+          this.#emitSummary(record)
+          if (modelCatalogChanged) {
+            this.#emit(record, {
+              kind: "modelCatalogChanged",
+              sessionId: record.summary.sessionId,
+            })
+          }
+        },
+    )
   }
 
   async listChatSessions(request: ListChatSessionsRequest): Promise<ChatSessionSummary[]> {
@@ -644,7 +709,9 @@ export class ChatSessionRegistry {
     const initialModel = manager.getBranch().length === 0
       ? resolveModel(piRuntime.registry, this.defaultModelId)
       : undefined
-    const settingsManager = SettingsManager.create(record.projectRoot, piRuntime.agentDir)
+    const settingsManager = this.options.settingsStorage
+        ? SettingsManager.fromStorage(this.options.settingsStorage)
+        : SettingsManager.inMemory()
     const resourceLoader = new DefaultResourceLoader({
       cwd: record.projectRoot,
       agentDir: piRuntime.agentDir,

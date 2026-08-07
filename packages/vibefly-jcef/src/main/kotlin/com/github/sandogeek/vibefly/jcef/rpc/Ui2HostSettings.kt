@@ -14,7 +14,10 @@ interface Ui2HostSettings {
     suspend fun refreshProviders(): ProvidersRefreshResult
 
     @RpcFun(2)
-    suspend fun applyProvidersPatch(request: ProvidersPatchRequest): ProvidersPatchResult
+    suspend fun applyProvidersPatch(
+        request: ProvidersPatchRequest,
+        expectedRevision: String,
+    ): ProvidersPatchResult
 
     @RpcFun(3)
     suspend fun loginProvider(request: ProviderLoginRequest): ProviderLoginResult

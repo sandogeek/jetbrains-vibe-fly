@@ -1,25 +1,36 @@
 /** Shared pi model/auth runtime used by chat sessions and commit generation. */
 import * as fs from "node:fs"
-import { ModelRegistry, ModelRuntime } from "@earendil-works/pi-coding-agent"
-import type { Api, Model } from "@earendil-works/pi-ai"
-import {
-  authJsonPath,
-  modelsJsonPath,
-  PiAuthStorage,
-  repairModelsJsonAuthForPi,
-  resolveAgentDir,
-} from "./providerConfig.js"
-import { log } from "./log.js"
+import * as os from "node:os"
+import * as path from "node:path"
+import {ModelRegistry, ModelRuntime} from "@earendil-works/pi-coding-agent"
+import {type Api, type CredentialStore, InMemoryCredentialStore, type Model,} from "@earendil-works/pi-ai"
+import {log} from "./log.js"
 
 export type PiRuntime = {
   agentDir: string
-  auth: PiAuthStorage
+  auth: CredentialStore
   modelRuntime: ModelRuntime
   registry: ModelRegistry
   close: () => void
 }
 
 let cached: PiRuntime | null = null
+
+function expandHome(value: string): string {
+  if (value === "~") return os.homedir()
+  if (value.startsWith("~/") || value.startsWith("~\\")) {
+    return path.join(os.homedir(), value.slice(2))
+  }
+  return value
+}
+
+export function resolveAgentDir(agentDir?: string | null): string {
+  const raw = (agentDir ?? "").trim()
+  if (raw) return path.resolve(expandHome(raw))
+  const env = (process.env.PI_CODING_AGENT_DIR || "").trim()
+  if (env) return path.resolve(expandHome(env))
+  return path.join(os.homedir(), ".pi", "agent")
+}
 
 export function applyAgentDirFromEnv(agentDir?: string | null): string {
   const dir = resolveAgentDir(agentDir)
@@ -29,26 +40,26 @@ export function applyAgentDirFromEnv(agentDir?: string | null): string {
 
 export async function getPiRuntime(options?: {
   agentDir?: string | null
+  credentials?: CredentialStore
   forceNew?: boolean
 }): Promise<PiRuntime> {
   const started = performance.now()
   const agentDir = applyAgentDirFromEnv(options?.agentDir)
-  if (!options?.forceNew && cached?.agentDir === agentDir) return cached
+  const credentialsMatch = !options?.credentials || cached?.auth === options.credentials
+  if (!options?.forceNew && cached?.agentDir === agentDir && credentialsMatch) return cached
 
-  if (options?.forceNew && cached) {
+  if (cached) {
     cached.close()
     cached = null
   }
 
-  repairModelsJsonAuthForPi(agentDir)
-  const auth = new PiAuthStorage(authJsonPath(agentDir))
+  const auth = options?.credentials ?? new InMemoryCredentialStore()
   const modelRuntime = await ModelRuntime.create({
     credentials: auth,
-    authPath: authJsonPath(agentDir),
-    modelsPath: modelsJsonPath(agentDir),
+    modelsPath: null,
+    allowModelNetwork: false,
   })
   const registry = new ModelRegistry(modelRuntime)
-  await registry.refresh()
 
   const runtime: PiRuntime = {
     agentDir,
@@ -59,10 +70,10 @@ export async function getPiRuntime(options?: {
       if (cached === runtime) cached = null
     },
   }
-  if (!options?.forceNew) cached = runtime
+  cached = runtime
   log.info("pi runtime ready", {
     agentDir,
-    modelsPath: modelsJsonPath(agentDir),
+    modelsPath: null,
     modelCount: modelRuntime.getModels().length,
     totalMs: Math.round(performance.now() - started),
   })

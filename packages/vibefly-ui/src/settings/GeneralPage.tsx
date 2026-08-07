@@ -1,30 +1,42 @@
 import {useEffect, useRef} from "react"
 import {applyUiLocale, useAppTranslation} from "../i18n"
-import type {IdeSettingsDto} from "../generated/rpc"
-import {withUi} from "./settingsStore"
+import {isEmptySettingsFormPatch, mergeSettingsFormPatches, type SettingsFormPatch,} from "./hostSettings"
+import {type IdeSettings, withUi} from "./settingsStore"
 
 export type GeneralPageProps = {
-    settings: IdeSettingsDto
+    settings: IdeSettings
     busy: boolean
-    onSettings: (next: IdeSettingsDto) => void
-    onSave: (settings: IdeSettingsDto) => Promise<void>
+    onSettings: (next: IdeSettings) => void
+    onSave: (patch: SettingsFormPatch) => Promise<void>
 }
 
 export function GeneralPage(props: GeneralPageProps) {
     const {t} = useAppTranslation(["settings"])
     const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+    const pendingSave = useRef<SettingsFormPatch>({})
+    const onSaveRef = useRef(props.onSave)
+    onSaveRef.current = props.onSave
     useEffect(() => () => {
         if (saveTimer.current) clearTimeout(saveTimer.current)
+        const patch = pendingSave.current
+        pendingSave.current = {}
+        if (!isEmptySettingsFormPatch(patch)) void onSaveRef.current(patch)
     }, [])
     const locale = props.settings.ui?.locale ?? "follow_ide"
-    const debounceSave = (next: IdeSettingsDto) => {
+    const debounceSave = (next: IdeSettings, patch: SettingsFormPatch) => {
         props.onSettings(next)
+        pendingSave.current = mergeSettingsFormPatches(pendingSave.current, patch)
         if (saveTimer.current) clearTimeout(saveTimer.current)
-        saveTimer.current = setTimeout(() => void props.onSave(next), 300)
+        saveTimer.current = setTimeout(() => {
+            saveTimer.current = undefined
+            const pending = pendingSave.current
+            pendingSave.current = {}
+            if (!isEmptySettingsFormPatch(pending)) void onSaveRef.current(pending)
+        }, 300)
     }
     const onLocale = (value: string) => {
         applyUiLocale(value)
-        debounceSave(withUi(props.settings, {locale: value}))
+        debounceSave(withUi(props.settings, {locale: value}), {ui: {locale: value}})
     }
     return (
         <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto p-4">

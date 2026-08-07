@@ -1,13 +1,13 @@
 package com.github.sandogeek.jetbrainsvibefly.settings
 
-import com.github.sandogeek.jetbrainsvibefly.agent.VibeflyAgentDirectory
 import com.github.sandogeek.jetbrainsvibefly.agent.VibeflyAgentService
 import com.github.sandogeek.vibefly.jcef.rpc.*
 import com.intellij.ide.BrowserUtil
+import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.*
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
@@ -18,122 +18,70 @@ import java.util.concurrent.atomic.AtomicReference
  */
 class SettingsUi2Host(
     private val project: Project? = null,
+    private val host2UiProvider: () -> Host2Ui? = { null },
     private val host2UiSettingsProvider: () -> Host2UiSettings? = { null },
-) : Ui2Host by Ui2HostImpl(), Ui2HostSettings {
+) : Ui2Host by Ui2HostImpl(), Ui2HostSettings, Disposable {
 
     private val log = logger<SettingsUi2Host>()
     private val activeControl = AtomicReference<Host2Agent?>(null)
+    private val settingsNotificationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val boundProjectRoot = project
+        ?.takeUnless(Project::isDisposed)
+        ?.let(VibeflyProjectSettingsService::getInstance)
+        ?.projectRoot
+
+    init {
+        VibeflyApplicationSettingsService.getInstance()
+        ApplicationManager.getApplication().messageBus
+            .connect(this)
+            .subscribe(
+                VIBEFLY_SETTINGS_TOPIC,
+                VibeflySettingsListener(::forwardSettingsChanged),
+            )
+    }
 
     override suspend fun logFromWeb(message: String) {
         log.info("WebView: $message")
     }
 
-    override suspend fun getIdeSettings(): IdeSettingsDto {
-        val providers = VibeflyProviderSettingsState.getInstance()
-        val commit = VibeflyCommitMessageSettingsState.getInstance()
-        val prefs = VibeflyModelPreferencesState.getInstance()
-        val ui = VibeflyUiSettingsState.getInstance()
-        return IdeSettingsDto(
-            providers = ProvidersFormDto(
-                defaultProvider = providers.defaultProvider,
-                defaultModel = providers.defaultModel,
-            ),
-            commit = CommitFormDto(
-                languageMode = commit.languageMode,
-                commitModelSpec = commit.commitModelSpec,
-                useCustomPrompt = commit.useCustomPrompt,
-                customPrompt = commit.customPrompt,
-            ),
-            modelPreferences = ModelPreferencesDto(
-                recentModelSpecs = prefs.recentModelSpecs.toList(),
-                pinnedModelSpecs = prefs.pinnedModelSpecs.toList(),
-            ),
-            ui = UiFormDto(
-                locale = ui.locale,
-            ),
-        )
-    }
+    override suspend fun getSettingsSnapshot(scope: String): UiSettingsSnapshot =
+        SettingsHostAccess.uiSnapshot(scope, project)
 
-    override suspend fun saveIdeSettings(settings: IdeSettingsDto) {
-        val providersState = VibeflyProviderSettingsState.getInstance()
-        val commitState = VibeflyCommitMessageSettingsState.getInstance()
-        val prefsState = VibeflyModelPreferencesState.getInstance()
-        val uiState = VibeflyUiSettingsState.getInstance()
-
-        val prevDefaultProvider = providersState.defaultProvider
-        val prevDefaultModel = providersState.defaultModel
-
-        val form = settings.providers
-        providersState.defaultProvider = form.defaultProvider
-        providersState.defaultModel = form.defaultModel
-
-        val commit = settings.commit
-        commitState.languageMode =
-            VibeflyCommitMessageSettingsState.normalizeLanguageMode(commit.languageMode)
-        commitState.commitModelSpec = commit.commitModelSpec
-        commitState.useCustomPrompt = commit.useCustomPrompt
-        commitState.customPrompt = commit.customPrompt
-
-        // Wholesale replace pin/MRU (no separate toggle RPC).
-        val prefs = settings.modelPreferences
-        prefsState.replace(prefs.recentModelSpecs, prefs.pinnedModelSpecs)
-
-        uiState.locale = VibeflyUiSettingsState.normalizeLocale(settings.ui.locale)
-
-        val defaultSpec = providersState.defaultModelSpec()
-        if (defaultSpec.isNotEmpty()) {
-            prefsState.recordUsed(defaultSpec)
-        }
-        val commitSpec = commitState.commitModelSpec.trim()
-        if (commitSpec.isNotEmpty()) {
-            prefsState.recordUsed(commitSpec)
-        }
-
-        val providersChanged =
-            prevDefaultProvider != providersState.defaultProvider ||
-                prevDefaultModel != providersState.defaultModel
-        if (providersChanged) {
-            // TODO 不要stopAllOpenProjects，而是通知其它project重新getIdeSettings
-            VibeflyAgentService.stopAllOpenProjects()
-        }
-    }
+    override suspend fun saveSettings(request: SettingsSaveRequest): SettingsSaveResult =
+        SettingsHostAccess.saveSettings(request, project)
 
     override suspend fun refreshProviders(): ProvidersRefreshResult {
-        val fixedAgentDir = VibeflyAgentDirectory.current()
         val requestId = providerRequestSequence.incrementAndGet()
         val startedAt = System.nanoTime()
         fun elapsedMs(): Long = (System.nanoTime() - startedAt) / 1_000_000L
-        log.info("refreshProviders start request=$requestId agentDir=$fixedAgentDir")
+        log.info("refreshProviders start request=$requestId")
         return try {
-            val result = ProvidersSettingsLoader.fetch(project)
+            val application = VibeflyApplicationSettingsService.getInstance()
+            val settings = application.snapshot(refresh = true)
+            val snapshot = ProviderSettingsJson.snapshot(settings)
             log.info(
                 "refreshProviders done request=$requestId elapsedMs=${elapsedMs()} " +
-                    "providers=${result.snapshot.providers.size}",
+                        "providers=${snapshot.providers.size}",
             )
-            ProvidersRefreshResult(ok = true, snapshot = result.snapshot)
+            ProvidersRefreshResult(
+                ok = true,
+                snapshot = snapshot,
+                revision = settings.revision,
+            )
         } catch (e: Exception) {
             log.warn(
-                "refreshProviders failed request=$requestId agentDir=$fixedAgentDir " +
-                    "elapsedMs=${elapsedMs()}",
+                "refreshProviders failed request=$requestId elapsedMs=${elapsedMs()}",
                 e,
             )
             ProvidersRefreshResult(ok = false, error = e.message ?: e.toString())
         }
     }
 
-    override suspend fun applyProvidersPatch(request: ProvidersPatchRequest): ProvidersPatchResult {
-        return try {
-            VibeflyAgentService.withControlForSettings(
-                project = project,
-                operation = "applyProvidersPatch",
-            ) { control ->
-                control.applyProvidersPatch(request)
-            }
-        } catch (e: Exception) {
-            log.warn("applyProvidersPatch failed", e)
-            ProvidersPatchResult(ok = false, error = e.message ?: e.toString())
-        }
-    }
+    override suspend fun applyProvidersPatch(
+        request: ProvidersPatchRequest,
+        expectedRevision: String,
+    ): ProvidersPatchResult = VibeflyApplicationSettingsService.getInstance()
+        .applyProvidersPatch(request, expectedRevision)
 
     override suspend fun loginProvider(request: ProviderLoginRequest): ProviderLoginResult {
         val webUi = WebProviderLoginUi(host2UiSettingsProvider)
@@ -151,7 +99,7 @@ class SettingsUi2Host(
                         activeControl.compareAndSet(control, null)
                     }
                 }
-            }
+            }.withHostSnapshot()
         } catch (e: Exception) {
             log.warn("loginProvider failed", e)
             ProviderLoginResult(ok = false, error = e.message ?: e.toString())
@@ -178,11 +126,51 @@ class SettingsUi2Host(
                 operation = "logoutProvider",
             ) { control ->
                 control.logoutProvider(request)
-            }
+            }.withHostSnapshot()
         } catch (e: Exception) {
             log.warn("logoutProvider failed", e)
             ProviderLogoutResult(ok = false, error = e.message ?: e.toString())
         }
+    }
+
+    override fun dispose() {
+        settingsNotificationScope.cancel()
+    }
+
+    private fun forwardSettingsChanged(event: VibeflySettingsChanged) {
+        val applies = event.scope == SETTINGS_SCOPE_APPLICATION ||
+                (event.scope == SETTINGS_SCOPE_PROJECT && event.projectRoot == boundProjectRoot)
+        if (!applies) return
+        val host2Ui = host2UiProvider() ?: return
+        settingsNotificationScope.launch {
+            try {
+                host2Ui.settingsChanged(event.scope, event.projectRoot, event.revision)
+            } catch (error: Exception) {
+                log.debug("Host2Ui.settingsChanged failed", error)
+            }
+        }
+    }
+
+    private fun ProviderLoginResult.withHostSnapshot(): ProviderLoginResult {
+        if (!ok) return this
+        val application = VibeflyApplicationSettingsService.getInstance()
+        val settings = application.snapshot(refresh = true)
+        return copy(
+            snapshot = ProviderSettingsJson.snapshot(settings),
+            revision = settings.revision,
+            conflict = false,
+        )
+    }
+
+    private fun ProviderLogoutResult.withHostSnapshot(): ProviderLogoutResult {
+        if (!ok) return this
+        val application = VibeflyApplicationSettingsService.getInstance()
+        val settings = application.snapshot(refresh = true)
+        return copy(
+            snapshot = ProviderSettingsJson.snapshot(settings),
+            revision = settings.revision,
+            conflict = false,
+        )
     }
 
     companion object {
@@ -210,7 +198,7 @@ private class WebProviderLoginUi(
                 try {
                     BrowserUtil.browse(target)
                 } catch (e: Exception) {
-                    log.warn("BrowserUtil.browse fallback failed for $target", e)
+                    log.warn("BrowserUtil.browse fallback failed", e)
                 }
             }
             return

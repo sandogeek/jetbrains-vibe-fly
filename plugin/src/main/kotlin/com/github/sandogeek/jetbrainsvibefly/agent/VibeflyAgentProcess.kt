@@ -1,13 +1,14 @@
 package com.github.sandogeek.jetbrainsvibefly.agent
 
-import com.github.sandogeek.jetbrainsvibefly.settings.Agent2HostBridge
 import com.github.sandogeek.simplerpc.RpcSession
 import com.github.sandogeek.simplerpc.SimpleRpc
 import com.github.sandogeek.simplerpc.stdio.StdioRpcTransport
+import com.github.sandogeek.vibefly.jcef.rpc.Agent2Host
 import com.github.sandogeek.vibefly.jcef.rpc.Host2Agent
 import com.intellij.openapi.diagnostic.logger
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import java.nio.file.Path
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
@@ -61,7 +62,7 @@ object VibeflyAgentProcess {
     fun start(
         agentDir: String? = null,
         projectRoot: String? = null,
-        defaultModel: String? = null,
+        agent2Host: Agent2Host,
     ): Handle {
         val startedAt = System.nanoTime()
         fun elapsedMs(): Long = (System.nanoTime() - startedAt) / 1_000_000L
@@ -93,12 +94,8 @@ object VibeflyAgentProcess {
             env["PI_CODING_AGENT_DIR"] = dir
         }
         projectRoot?.trim()?.takeIf { it.isNotEmpty() }?.let {
-            env["VIBEFLY_PROJECT_ROOT"] = java.nio.file.Path.of(it).toAbsolutePath().normalize().toString()
+            env["VIBEFLY_PROJECT_ROOT"] = Path.of(it).toAbsolutePath().normalize().toString()
         }
-        defaultModel?.trim()?.takeIf { it.isNotEmpty() }?.let {
-            env["VIBEFLY_DEFAULT_MODEL"] = it
-        }
-
         val spawnStartedAt = System.nanoTime()
         val process = try {
             builder.start()
@@ -118,7 +115,7 @@ object VibeflyAgentProcess {
             onClosed = { log.info("Agent stdio closed") },
         )
         val session = SimpleRpc.open(transport, requestTimeout = CONTROL_REQUEST_TIMEOUT)
-        session.registerImplementation(Agent2HostBridge)
+        session.register(Agent2Host::class.java, agent2Host)
         val control = session.proxy(Host2Agent::class.java)
         val rpcMs = (System.nanoTime() - rpcStartedAt) / 1_000_000L
 

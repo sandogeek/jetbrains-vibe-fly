@@ -1,7 +1,7 @@
 import {useEffect, useMemo, useState} from "react"
 import {useAppTranslation} from "../i18n"
 
-import type {CredentialAction, IdeSettingsDto, ProviderPatch, Ui2Host, Ui2HostSettings,} from "../generated/rpc"
+import type {CredentialAction, ProviderPatch, Ui2Host, Ui2HostSettings,} from "../generated/rpc"
 import type {BundledCatalog} from "./catalog"
 import {catalogProviderIds} from "./catalog"
 import {
@@ -25,21 +25,24 @@ import {
 } from "./providerLogic"
 import {description, displayName} from "./providerLabels"
 import {PROVIDER_CONFIG_RPC_OPTIONS, PROVIDER_LOGIN_RPC_OPTIONS} from "./rpcOptions"
-import {withModelPreferences, withProviders} from "./settingsStore"
+import type {SettingsFormPatch} from "./hostSettings"
+import {type IdeSettings, withModelPreferences, withProviders} from "./settingsStore"
 import {mergeProvidersSnapshot, type ProviderSnapshot, type ProvidersSnapshot} from "./providerSnapshots"
 
 export type ProvidersPageProps = {
     ui2Host: Ui2Host | null;
     ui2HostSettings: Ui2HostSettings | null;
-    settings: IdeSettingsDto;
+    settings: IdeSettings;
     snapshot: ProvidersSnapshot | null;
+    applicationRevision: string;
     catalog: BundledCatalog;
     busy: boolean;
-    onSettings: (next: IdeSettingsDto) => void;
+    onSettings: (next: IdeSettings) => void;
     onSnapshot: (snap: ProvidersSnapshot | null) => void;
     onBusy: (busy: boolean) => void;
     onStatus: (msg: string | null) => void;
-    onSave: (settings: IdeSettingsDto) => Promise<void>;
+    onRevision: (revision: string) => Promise<boolean>;
+    onSave: (patch: SettingsFormPatch) => Promise<void>;
     registerLoginHandlers?: (handlers: {
         onOpenUrl: (url: string, launchUrl: string | null) => void;
         onProgress: (message: string) => void;
@@ -83,16 +86,19 @@ export function ProvidersPage(props: ProvidersPageProps) {
     const classified = useMemo(() => classifyProviders(providers), [providers])
     const builtIn = useMemo(() => filterBuiltInProviders(classified.popular, search), [classified.popular, search])
     const defaultSpec = modelSpec(props.settings.providers?.defaultProvider ?? "", props.settings.providers?.defaultModel ?? "")
-    const scheduleSave = (next: IdeSettingsDto) => {
+    const scheduleSave = (next: IdeSettings, patch: SettingsFormPatch) => {
         props.onSettings(next);
-        void props.onSave(next)
+        void props.onSave(patch)
     }
     const onDefaultModel = (spec: string, pinned: string[], recent: string[]) => {
         const {provider, model} = parseModelSpec(spec);
         scheduleSave(withModelPreferences(withProviders(props.settings, {
             defaultProvider: provider,
             defaultModel: model
-        }), {pinnedModelSpecs: pinned, recentModelSpecs: recent}))
+        }), {pinnedModelSpecs: pinned, recentModelSpecs: recent}), {
+            providers: {defaultProvider: provider, defaultModel: model},
+            modelPreferences: {pinnedModelSpecs: [...pinned], recentModelSpecs: [...recent]},
+        })
     }
 
     const reload = async () => {
@@ -102,7 +108,9 @@ export function ProvidersPage(props: ProvidersPageProps) {
         const startedAt = performance.now()
         try {
             const result = await props.ui2HostSettings.refreshProviders(PROVIDER_CONFIG_RPC_OPTIONS);
-            if (!result.ok) props.onStatus(result.error ?? t("settings:refreshFailed")); else props.onSnapshot(mergeProvidersSnapshot(result.snapshot, props.catalog));
+            const currentRevision = result.revision ? await props.onRevision(result.revision) : true
+            if (!result.ok) props.onStatus(result.error ?? t("settings:refreshFailed"));
+            else if (currentRevision) props.onSnapshot(mergeProvidersSnapshot(result.snapshot, props.catalog));
             console.log(`providers reload done in ${Math.round(performance.now() - startedAt)}ms`)
         } catch (error) {
             props.onStatus(error instanceof Error ? error.message : String(error))
@@ -115,11 +123,27 @@ export function ProvidersPage(props: ProvidersPageProps) {
         props.onBusy(true);
         props.onStatus(null)
         try {
-            const result = await props.ui2HostSettings.applyProvidersPatch({
-                providers: providersPatch,
-                credentials
-            }, PROVIDER_CONFIG_RPC_OPTIONS);
-            if (!result.ok) props.onStatus(result.error ?? t("providers:saveFailed")); else if (result.snapshot) props.onSnapshot(mergeProvidersSnapshot(result.snapshot, props.catalog))
+            let expectedRevision = props.applicationRevision
+            for (let attempt = 0; attempt < 4; attempt += 1) {
+                const result = await props.ui2HostSettings.applyProvidersPatch({
+                    providers: providersPatch,
+                    credentials
+                }, expectedRevision, PROVIDER_CONFIG_RPC_OPTIONS);
+                const currentRevision = result.revision ? await props.onRevision(result.revision) : true
+                if (result.ok) {
+                    if (currentRevision && result.snapshot) {
+                        props.onSnapshot(mergeProvidersSnapshot(result.snapshot, props.catalog))
+                    }
+                    return
+                }
+                if (result.conflict && result.revision && currentRevision) {
+                    expectedRevision = result.revision
+                    continue
+                }
+                props.onStatus(result.error ?? t("providers:saveFailed"))
+                return
+            }
+            props.onStatus(t("settings:changedExternally"))
         } catch (error) {
             props.onStatus(error instanceof Error ? error.message : String(error))
         } finally {
@@ -144,10 +168,13 @@ export function ProvidersPage(props: ProvidersPageProps) {
         props.onBusy(true)
         try {
             const result = await props.ui2HostSettings.loginProvider({providerId: loginId}, PROVIDER_LOGIN_RPC_OPTIONS);
-            if (result.ok) {
+            const currentRevision = result.revision ? await props.onRevision(result.revision) : true
+            if (result.ok && currentRevision) {
                 if (result.snapshot) props.onSnapshot(mergeProvidersSnapshot(result.snapshot, props.catalog));
                 const who = [result.email, result.orgName ?? result.orgId].filter(Boolean).join(" / ");
                 props.onStatus(who ? t("providers:loggedInAs", {who}) : t("providers:loginSuccess"))
+            } else if (result.ok) {
+                props.onStatus(t("settings:changedExternally"))
             } else {
                 const message = result.error ?? t("providers:loginFailed");
                 if (!/cancel|abort/i.test(message)) props.onStatus(message)
@@ -190,7 +217,9 @@ export function ProvidersPage(props: ProvidersPageProps) {
         props.onBusy(true);
         try {
             const result = await props.ui2HostSettings.logoutProvider({providerId: snap.id}, PROVIDER_CONFIG_RPC_OPTIONS);
-            if (!result.ok) props.onStatus(result.error ?? t("providers:logoutFailed")); else if (result.snapshot) props.onSnapshot(mergeProvidersSnapshot(result.snapshot, props.catalog))
+            const currentRevision = result.revision ? await props.onRevision(result.revision) : true
+            if (!result.ok) props.onStatus(result.error ?? t("providers:logoutFailed"));
+            else if (currentRevision && result.snapshot) props.onSnapshot(mergeProvidersSnapshot(result.snapshot, props.catalog))
         } catch (error) {
             props.onStatus(error instanceof Error ? error.message : String(error))
         } finally {

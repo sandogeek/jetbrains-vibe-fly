@@ -1,6 +1,6 @@
 /** pi provider login bridge for JetBrains Settings. */
-import { rpcOptions } from "@sandogeek/simple-rpc"
-import type { AuthEvent, AuthInteraction, AuthPrompt } from "@earendil-works/pi-ai"
+import {rpcOptions} from "@sandogeek/simple-rpc"
+import type {AuthEvent, AuthInteraction, AuthPrompt} from "@earendil-works/pi-ai"
 import type {
   Agent2Host,
   LoginProvidersList,
@@ -9,10 +9,10 @@ import type {
   ProviderLogoutRequest,
   ProviderLogoutResult,
 } from "./generated/controlRpc.js"
-import { log } from "./log.js"
-import { resolveLoginProviderId } from "./loginProviders.js"
-import { getPiRuntime } from "./piRuntime.js"
-import { getProvidersSnapshot, resolveAgentDir } from "./providerConfig.js"
+import {log} from "./log.js"
+import {resolveLoginProviderId} from "./loginProviders.js"
+import {getPiRuntime, type PiRuntime} from "./piRuntime.js"
+import {getProvidersSnapshot} from "./providerConfig.js"
 
 const loginUiOpts = rpcOptions({ timeoutMs: 0 })
 
@@ -42,10 +42,9 @@ function loginType(provider: {
 }
 
 export async function getLoginProviders(
-  agentDirInput?: string | null,
+    runtimeInput?: PiRuntime,
 ): Promise<LoginProvidersList> {
-  const agentDir = resolveAgentDir(agentDirInput)
-  const runtime = await getPiRuntime({ agentDir })
+    const runtime = runtimeInput ?? await getPiRuntime()
   const providers = []
   for (const provider of runtime.modelRuntime.getProviders()) {
     if (!supportsLogin(provider)) continue
@@ -123,12 +122,12 @@ async function promptForLogin(prompt: AuthPrompt, ui: LoginUi, abort: AbortContr
 export async function loginProvider(
   request: ProviderLoginRequest,
   ui: LoginUi,
+  runtimeInput?: PiRuntime,
 ): Promise<ProviderLoginResult> {
   const providerId = request.providerId.trim()
   if (!providerId) return { ok: false, error: "Provider id is required" }
   const loginId = resolveLoginProviderId(providerId) ?? providerId
-  const agentDir = resolveAgentDir()
-  const runtime = await getPiRuntime({ agentDir })
+    const runtime = runtimeInput ?? await getPiRuntime()
   const provider = runtime.modelRuntime.getProvider(loginId)
   if (!provider || !supportsLogin(provider)) {
     return { ok: false, error: `Unknown login provider: ${providerId}` }
@@ -148,7 +147,7 @@ export async function loginProvider(
       loginType(provider),
       interaction,
     )
-    const snapshot = await getProvidersSnapshot(agentDir)
+      const snapshot = await getProvidersSnapshot(runtime)
     log.info("loginProvider ok", { providerId: loginId, identityType: credential.type })
     if (credential.type === "api_key") {
       return { ok: true, identityType: "api_key", snapshot }
@@ -173,16 +172,16 @@ export async function loginProvider(
 
 export async function logoutProvider(
   request: ProviderLogoutRequest,
+  runtimeInput?: PiRuntime,
 ): Promise<ProviderLogoutResult> {
   const providerId = request.providerId.trim()
   if (!providerId) return { ok: false, error: "Provider id is required" }
-  const agentDir = resolveAgentDir()
-  const runtime = await getPiRuntime({ agentDir })
+    const runtime = runtimeInput ?? await getPiRuntime()
   const loginId = resolveLoginProviderId(providerId) ?? providerId
   try {
     await runtime.modelRuntime.logout(loginId)
     if (providerId !== loginId) await runtime.modelRuntime.logout(providerId)
-    const snapshot = await getProvidersSnapshot(agentDir)
+      const snapshot = await getProvidersSnapshot(runtime)
     log.info("logoutProvider ok", { providerId, loginId })
     return { ok: true, snapshot }
   } catch (error) {

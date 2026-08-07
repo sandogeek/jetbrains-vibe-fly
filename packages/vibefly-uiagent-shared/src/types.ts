@@ -188,6 +188,7 @@ export type ChatEvent =
       part: Extract<ChatPart, { kind: "tool" }>
     }
   | { kind: "queue"; turns: QueuedTurn[] }
+    | { kind: "modelCatalogChanged"; sessionId: string }
   | {
       kind: "turnComplete"
       sessionId: string

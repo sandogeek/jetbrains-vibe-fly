@@ -47,8 +47,10 @@ class VibeflySettingsConfigurable : SearchableConfigurable, Configurable.NoScrol
         uiDisposable = disposable
         lateinit var host: SettingsUi2Host
         host = SettingsUi2Host(
+            host2UiProvider = { browserPanel?.rpc?.host2Ui },
             host2UiSettingsProvider = { browserPanel?.rpc?.host2UiSettings },
         )
+        Disposer.register(disposable, host)
         val browser = VibeflyBrowserPanel(
             ui2Host = host,
             ui2HostSettings = host,

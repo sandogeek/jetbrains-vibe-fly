@@ -8,18 +8,13 @@
  * While the model is generating, optional [onProgress] keep-alives let the host
  * idle-timeout only when generation is truly silent (not mid-stream).
  */
-import {
-  type Api,
-  type Context,
-  type Model,
-  type SimpleStreamOptions,
-} from "@earendil-works/pi-ai"
+import {type Api, type Context, type Model, type SimpleStreamOptions,} from "@earendil-works/pi-ai"
 import type {
   CommitFileChange,
   GenerateCommitMessageRequest,
   GenerateCommitMessageResult,
 } from "./generated/controlRpc.js"
-import { log } from "./log.js"
+import {log} from "./log.js"
 
 /** Min gap between progress callbacks during streaming (ms). */
 export const COMMIT_PROGRESS_THROTTLE_MS = 2_000
@@ -699,7 +694,7 @@ export type ResolveCommitModelInput = {
  * 2. request.defaultModel
  * 3. error — no available commit model
  *
- * API key / base URL / API type come only from pi models.json + auth.json.
+ * Credentials and model metadata come only from the Host-backed pi runtime.
  * Commit-related env vars are ignored.
  */
 export async function resolveCommitModel(
@@ -736,7 +731,7 @@ export async function resolveCommitModel(
     const loadError = registry.getError()
     const loadHint = loadError ? ` Config load error: ${loadError}` : ""
     throw new Error(
-      `Model "${selected}" was not found in pi config (models.json).` +
+        `Model "${selected}" was not found in the Host-backed model registry.` +
         loadHint +
         ` Configure it in Settings > Vibe Fly > Providers.`,
     )

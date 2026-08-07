@@ -15,16 +15,13 @@ interface Ui2Host {
     @RpcFun(2)
     suspend fun logFromWeb(message: String)
 
-    /** Read IDE PersistentState snapshot (forms + pin/MRU). No catalog / display names. */
+    /** Read a WebView-safe raw settings snapshot. Project paths come from the bound panel. */
     @RpcFun(3)
-    suspend fun getIdeSettings(): IdeSettingsDto
+    suspend fun getSettingsSnapshot(scope: String): UiSettingsSnapshot
 
-    /**
-     * Write IDE settings DTO. Chat panels typically only persist model preferences;
-     * settings panels write the full form.
-     */
+    /** Save settings with optimistic concurrency against the target scope revision. */
     @RpcFun(4)
-    suspend fun saveIdeSettings(settings: IdeSettingsDto)
+    suspend fun saveSettings(request: SettingsSaveRequest): SettingsSaveResult
 
     @RpcFun(5)
     suspend fun openExternalUrl(url: String)

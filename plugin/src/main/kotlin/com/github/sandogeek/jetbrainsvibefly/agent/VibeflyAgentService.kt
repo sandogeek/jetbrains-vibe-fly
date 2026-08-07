@@ -1,8 +1,6 @@
 package com.github.sandogeek.jetbrainsvibefly.agent
 
-import com.github.sandogeek.jetbrainsvibefly.settings.Agent2HostBridge
-import com.github.sandogeek.jetbrainsvibefly.settings.CommitMessageProgressListener
-import com.github.sandogeek.jetbrainsvibefly.settings.VibeflyProviderSettingsState
+import com.github.sandogeek.jetbrainsvibefly.settings.*
 import com.github.sandogeek.simplerpc.RpcSession
 import com.github.sandogeek.simplerpc.stdio.StdioRpcTransport
 import com.github.sandogeek.vibefly.jcef.AgentOrigin
@@ -16,15 +14,9 @@ import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ProjectManager
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withTimeout
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration.Companion.milliseconds
@@ -41,6 +33,17 @@ class VibeflyAgentService(private val project: Project) : Disposable {
     private val transportRef = AtomicReference<StdioRpcTransport?>(null)
     private val sessionRef = AtomicReference<RpcSession?>(null)
     private val host2AgentRef = AtomicReference<Host2Agent?>(null)
+    private val settingsNotificationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val projectRoot = VibeflyProjectSettingsService.getInstance(project).projectRoot
+
+    init {
+        ApplicationManager.getApplication().messageBus
+            .connect(this)
+            .subscribe(
+                VIBEFLY_SETTINGS_TOPIC,
+                VibeflySettingsListener(::forwardSettingsChanged),
+            )
+    }
 
     @Volatile
     private var disposed = false
@@ -179,12 +182,6 @@ class VibeflyAgentService(private val project: Project) : Disposable {
         }
     }
 
-    suspend fun stopIfRunning() {
-        mutex.withLock {
-            stopLocked()
-        }
-    }
-
     /**
      * Ensure the project agent is running, then run [block] on its Host2Agent control plane.
      */
@@ -201,11 +198,10 @@ class VibeflyAgentService(private val project: Project) : Disposable {
     }
 
     private fun startLocked() {
-        val settings = VibeflyProviderSettingsState.getInstance()
         val handle = VibeflyAgentProcess.start(
             agentDir = VibeflyAgentDirectory.current(),
             projectRoot = project.basePath,
-            defaultModel = settings.defaultModelSpec(),
+            agent2Host = Agent2HostBridge.bind(project),
         )
         processRef.set(handle.process)
         transportRef.set(handle.transport)
@@ -244,9 +240,29 @@ class VibeflyAgentService(private val project: Project) : Disposable {
 
     override fun dispose() {
         disposed = true
+        settingsNotificationScope.cancel()
         runBlocking {
             mutex.withLock {
                 stopLocked()
+            }
+        }
+    }
+
+    private fun forwardSettingsChanged(event: VibeflySettingsChanged) {
+        if (disposed) return
+        val applies = event.scope == SETTINGS_SCOPE_APPLICATION ||
+                (event.scope == SETTINGS_SCOPE_PROJECT && event.projectRoot == projectRoot)
+        if (!applies) return
+
+        settingsNotificationScope.launch {
+            if (disposed) return@launch
+            val process = processRef.get()
+            val control = host2AgentRef.get()
+            if (process == null || !process.isAlive || control == null) return@launch
+            try {
+                control.settingsChanged(event.scope, event.projectRoot, event.revision)
+            } catch (error: Exception) {
+                if (!disposed) log.debug("settingsChanged notification failed", error)
             }
         }
     }
@@ -306,30 +322,5 @@ class VibeflyAgentService(private val project: Project) : Disposable {
             return ProjectManager.getInstance().openProjects.firstOrNull { !it.isDisposed }
         }
 
-        /**
-         * Stop agents in all open projects after Settings apply.
-         * Always runs off the EDT to avoid blocking the Settings Apply UI.
-         */
-        fun stopAllOpenProjects() {
-            val work = Runnable {
-                for (project in ProjectManager.getInstance().openProjects) {
-                    if (project.isDisposed) continue
-                    try {
-                        val service = project.getService(VibeflyAgentService::class.java) ?: continue
-                        runBlocking {
-                            service.stopIfRunning()
-                        }
-                    } catch (e: Exception) {
-                        log.debug("stop agent for project failed", e)
-                    }
-                }
-            }
-            val app = ApplicationManager.getApplication()
-            if (app.isDispatchThread) {
-                app.executeOnPooledThread(work)
-            } else {
-                work.run()
-            }
-        }
     }
 }

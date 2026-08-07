@@ -1,4 +1,5 @@
 export type * from "./types.js"
+export * from "./settings.js"
 export type { Agent2Ui, Ui2Agent } from "./contracts.js"
 export { rpcId, rpcService } from "./rpc-annotations.js"
 

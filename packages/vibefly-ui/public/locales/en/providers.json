@@ -1,5 +1,5 @@
 {
-  "subtitle": "API keys and OAuth tokens stay in pi auth.json (never IDE XML).",
+  "subtitle": "API keys and OAuth tokens stay in Vibe Fly's product auth.json (never IDE XML).",
   "reload": "Reload from disk",
   "defaultModel": "Default model",
   "connectedProviders": "Connected Providers",
@@ -9,7 +9,7 @@
   "searchPlaceholder": "Search by name or description…",
   "noMatch": "No built-in providers match the search",
   "noBuiltIn": "No built-in providers available",
-  "disconnectConfirm": "Disconnect {{name}}? This removes stored API keys and OAuth sessions from auth.json.",
+  "disconnectConfirm": "Disconnect {{name}}? This removes stored API keys and OAuth sessions from Vibe Fly's auth.json.",
   "deleteConfirm": "Delete custom provider \"{{id}}\"? This removes it from models.json and clears its API key.",
   "saveFailed": "Failed to save provider config",
   "logoutFailed": "Logout failed",

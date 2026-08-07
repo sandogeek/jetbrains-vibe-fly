@@ -6,7 +6,6 @@ import {useLocation, useNavigate} from "react-router-dom"
 import type {
     Host2UiService,
     Host2UiSettingsService,
-    IdeSettingsDto,
     LoginInputResponse,
     Ui2Host,
     Ui2HostSettings,
@@ -19,7 +18,19 @@ import {GeneralPage} from "./GeneralPage"
 import {ProvidersPage} from "./ProvidersPage"
 import {mergeProvidersSnapshot, type ProvidersSnapshot} from "./providerSnapshots"
 import {PROVIDER_CONFIG_RPC_OPTIONS} from "./rpcOptions"
-import {emptySettings, initialState, normalizeSettings, type SettingsState} from "./settingsStore"
+import {emptySettings, type IdeSettings, initialState, type SettingsState} from "./settingsStore"
+import {
+    applySettingsFormPatch,
+    createUiSettingsManager,
+    diffSettingsForms,
+    formFromEffective,
+    isEmptySettingsFormPatch,
+    mergeSettingsFormPatches,
+    prepareSettingsFormPatchSave,
+    settingsChanged as toSettingsChanged,
+    type SettingsFormPatch,
+    subtractSettingsFormPatch,
+} from "./hostSettings"
 import {
     Sidebar,
     SidebarContent,
@@ -51,17 +62,46 @@ export function SettingsShell() {
     const [ui2Host, setUi2Host] = useState<Ui2Host | null>(null)
     const [ui2HostSettings, setUi2HostSettings] = useState<Ui2HostSettings | null>(null)
     const loginHandlers = useRef<LoginHandlers | null>(null)
+    const settingsManager = useRef<ReturnType<typeof createUiSettingsManager> | null>(null)
+    const settingsSaveTail = useRef<Promise<void>>(Promise.resolve())
+    const pendingFormPatch = useRef<SettingsFormPatch>({})
+    const displayedSettings = useRef<IdeSettings>(state.settings)
 
     useEffect(() => {
         let cancelled = false
+        let settingsInitialized = false
         let peerClose: (() => void) | undefined
         let unbindConsole: (() => void) | undefined
+        let unsubscribeSettings: (() => void) | undefined
+        const pendingSettingsChanges = new Map<
+            "application" | "project",
+            NonNullable<ReturnType<typeof toSettingsChanged>>
+        >()
         const host2Ui: Host2UiService = {
             async setStatus(message) {
                 if (!cancelled) setState((current) => ({...current, status: message}))
             },
             async setTheme(mode) {
                 applyJbTheme(mode)
+            },
+            async settingsChanged(scope, projectRoot, revision) {
+                const change = toSettingsChanged(scope, projectRoot, revision)
+                const manager = settingsManager.current
+                if (!change || !manager) return
+                if (!settingsInitialized) {
+                    pendingSettingsChanges.set(change.scope, change)
+                    return
+                }
+                try {
+                    await manager.handleSettingsChanged(change)
+                } catch (error) {
+                    if (!cancelled) {
+                        setState((current) => ({
+                            ...current,
+                            loadError: error instanceof Error ? error.message : String(error),
+                        }))
+                    }
+                }
             },
         }
         const host2UiSettings: Host2UiSettingsService = {
@@ -94,15 +134,78 @@ export function SettingsShell() {
             const settingsHost = rpc?.ui2HostSettings ?? null
 
             if (host && settingsHost) {
+                const manager = createUiSettingsManager(host)
+                settingsManager.current = manager
+                const refreshProviders = async () => {
+                    const refresh = await settingsHost.refreshProviders(PROVIDER_CONFIG_RPC_OPTIONS)
+                    if (!refresh.ok) throw new Error(refresh.error ?? i18n.t("settings:refreshFailed"))
+                    let currentRevision = true
+                    if (refresh.revision) {
+                        const change = toSettingsChanged("application", null, refresh.revision)
+                        if (change) {
+                            await manager.handleSettingsChanged(change)
+                            currentRevision = manager.getSnapshot("application")?.revision === refresh.revision
+                        }
+                    }
+                    if (!currentRevision) return
+                    const safeSnapshot = mergeProvidersSnapshot(refresh.snapshot, state.catalog)
+                    if (!cancelled) setState((current) => ({...current, snapshot: safeSnapshot}))
+                }
+                unsubscribeSettings = manager.subscribe((change) => {
+                    if (cancelled) return
+                    const next = applySettingsFormPatch(
+                        formFromEffective(change.effective),
+                        pendingFormPatch.current,
+                    )
+                    displayedSettings.current = next
+                    applyUiLocale(next.ui.locale)
+                    const diagnostics = change.effective.diagnostics
+                        .map((item) => `${item.file}: ${item.message}`)
+                        .join("; ") || null
+                    setState((current) => ({...current, settings: next, loadError: diagnostics}))
+                    if (change.scope === "application") {
+                        void refreshProviders().catch((error) => {
+                            if (!cancelled) setState((current) => ({
+                                ...current,
+                                loadError: current.loadError ?? (error instanceof Error ? error.message : String(error)),
+                            }))
+                        })
+                    }
+                })
                 try {
-                    settings = normalizeSettings(await host.getIdeSettings())
-                    applyUiLocale(settings.ui?.locale)
+                    const initialEffective = await manager.initialize(false)
+                    while (pendingSettingsChanges.size > 0) {
+                        const changes = [...pendingSettingsChanges.values()]
+                        pendingSettingsChanges.clear()
+                        for (const change of changes) {
+                            await manager.handleSettingsChanged(change)
+                        }
+                    }
+                    settingsInitialized = true
+                    const effective = manager.getEffectiveSettings() ?? initialEffective
+                    settings = formFromEffective(effective)
+                    loadError = effective.diagnostics
+                        .map((item) => `${item.file}: ${item.message}`)
+                        .join("; ") || null
+                    applyUiLocale(settings.ui.locale)
                 } catch (error) {
                     loadError = error instanceof Error ? error.message : String(error)
                 }
                 try {
                     const refresh = await settingsHost.refreshProviders(PROVIDER_CONFIG_RPC_OPTIONS)
-                    if (refresh.ok) snapshot = mergeProvidersSnapshot(refresh.snapshot, state.catalog)
+                    if (refresh.ok) {
+                        let currentRevision = true
+                        if (refresh.revision) {
+                            const change = toSettingsChanged("application", null, refresh.revision)
+                            if (change) {
+                                await manager.handleSettingsChanged(change)
+                                currentRevision = manager.getSnapshot("application")?.revision === refresh.revision
+                            }
+                        }
+                        if (currentRevision) {
+                            snapshot = mergeProvidersSnapshot(refresh.snapshot, state.catalog)
+                        }
+                    }
                     else loadError = loadError ?? refresh.error ?? i18n.t("settings:refreshFailed")
                 } catch (error) {
                     loadError = loadError ?? (error instanceof Error ? error.message : String(error))
@@ -111,28 +214,105 @@ export function SettingsShell() {
                 loadError = i18n.t("settings:hostUnavailable")
             }
 
-            if (!cancelled) setState((current) => ({...current, settings, snapshot, loadError, busy: false}))
+            const effective = settingsManager.current?.getEffectiveSettings()
+            if (effective) {
+                settings = applySettingsFormPatch(
+                    formFromEffective(effective),
+                    pendingFormPatch.current,
+                )
+                loadError = effective.diagnostics
+                    .map((item) => `${item.file}: ${item.message}`)
+                    .join("; ") || null
+            }
+            displayedSettings.current = settings
+            if (!cancelled) setState((current) => ({
+                ...current,
+                settings,
+                snapshot: snapshot ?? current.snapshot,
+                loadError: loadError ?? current.loadError,
+                busy: false,
+            }))
         })()
 
         return () => {
             cancelled = true
             peerClose?.()
             unbindConsole?.()
+            unsubscribeSettings?.()
+            settingsManager.current = null
+            pendingFormPatch.current = {}
             setUi2Host(null)
             setUi2HostSettings(null)
         }
     }, [])
 
-    const saveSettings = async (settings: IdeSettingsDto) => {
+    const syncDisplayedSettings = () => {
+        const effective = settingsManager.current?.getEffectiveSettings()
+        if (!effective) return
+        const next = applySettingsFormPatch(
+            formFromEffective(effective),
+            pendingFormPatch.current,
+        )
+        displayedSettings.current = next
+        applyUiLocale(next.ui.locale)
+        setState((current) => ({...current, settings: next}))
+    }
+
+    const updateDraftSettings = (next: IdeSettings) => {
+        pendingFormPatch.current = mergeSettingsFormPatches(
+            pendingFormPatch.current,
+            diffSettingsForms(displayedSettings.current, next),
+        )
+        displayedSettings.current = next
+        setState((current) => ({...current, settings: next}))
+    }
+
+    const persistSettings = async (patch: SettingsFormPatch) => {
         const host = ui2Host
-        if (!host) return
-        try {
-            await host.saveIdeSettings(settings)
-            const fresh = normalizeSettings(await host.getIdeSettings())
-            setState((current) => ({...current, settings: fresh}))
-        } catch (error) {
-            setState((current) => ({...current, status: error instanceof Error ? error.message : String(error)}))
+        const manager = settingsManager.current
+        if (!host || !manager) return
+        for (let attempt = 0; attempt < 4; attempt += 1) {
+            try {
+                const prepared = prepareSettingsFormPatchSave(manager, patch)
+                const result = await host.saveSettings({
+                    scope: "application",
+                    ...prepared,
+                })
+                if (result.revision) {
+                    const change = toSettingsChanged("application", null, result.revision)
+                    if (change) await manager.handleSettingsChanged(change)
+                }
+                if (result.ok) {
+                    pendingFormPatch.current = subtractSettingsFormPatch(
+                        pendingFormPatch.current,
+                        patch,
+                    )
+                    syncDisplayedSettings()
+                    return
+                }
+                if (result.conflict) continue
+                setState((current) => ({
+                    ...current,
+                    status: result.error ?? t("settings:saveFailed"),
+                }))
+                return
+            } catch (error) {
+                setState((current) => ({...current, status: error instanceof Error ? error.message : String(error)}))
+                return
+            }
         }
+        setState((current) => ({...current, status: t("settings:changedExternally")}))
+    }
+
+    const saveSettings = (patch: SettingsFormPatch): Promise<void> => {
+        pendingFormPatch.current = mergeSettingsFormPatches(pendingFormPatch.current, patch)
+        const operation = settingsSaveTail.current.then(async () => {
+            const pending = mergeSettingsFormPatches({}, pendingFormPatch.current)
+            if (!isEmptySettingsFormPatch(pending)) await persistSettings(pending)
+        })
+        settingsSaveTail.current = operation.catch(() => {
+        })
+        return operation
     }
 
     const activePath = location.pathname
@@ -185,14 +365,14 @@ export function SettingsShell() {
                         snapshot={state.snapshot}
                         catalog={state.catalog}
                         busy={state.busy}
-                        onSettings={(settings) => setState((current) => ({...current, settings}))}
+                        onSettings={updateDraftSettings}
                         onSave={saveSettings}
                     />
                 ) : showingGeneral ? (
                     <GeneralPage
                         settings={state.settings}
                         busy={state.busy}
-                        onSettings={(settings) => setState((current) => ({...current, settings}))}
+                        onSettings={updateDraftSettings}
                         onSave={saveSettings}
                     />
                 ) : (
@@ -201,12 +381,20 @@ export function SettingsShell() {
                         ui2HostSettings={ui2HostSettings}
                         settings={state.settings}
                         snapshot={state.snapshot}
+                        applicationRevision={settingsManager.current?.getSnapshot("application")?.revision ?? ""}
                         catalog={state.catalog}
                         busy={state.busy}
-                        onSettings={(settings) => setState((current) => ({...current, settings}))}
+                        onSettings={updateDraftSettings}
                         onSnapshot={(snapshot) => setState((current) => ({...current, snapshot}))}
                         onBusy={(busy) => setState((current) => ({...current, busy}))}
                         onStatus={(status) => setState((current) => ({...current, status}))}
+                        onRevision={async (revision) => {
+                            const manager = settingsManager.current
+                            const change = toSettingsChanged("application", null, revision)
+                            if (!manager || !change) return false
+                            await manager.handleSettingsChanged(change)
+                            return manager.getSnapshot("application")?.revision === revision
+                        }}
                         onSave={saveSettings}
                         registerLoginHandlers={(handlers) => {
                             loginHandlers.current = handlers

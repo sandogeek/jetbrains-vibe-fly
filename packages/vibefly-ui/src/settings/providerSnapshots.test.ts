@@ -1,7 +1,7 @@
-import { describe, test } from "node:test"
-import { expect } from "expect"
-import type { BundledCatalog } from "./catalog"
-import { mergeProvidersSnapshot } from "./providerSnapshots"
+import {describe, test} from "node:test"
+import {expect} from "expect"
+import type {BundledCatalog} from "./catalog"
+import {mergeProvidersSnapshot} from "./providerSnapshots"
 
 const catalog: BundledCatalog = {
   providerOrder: ["anthropic", "openai"],
@@ -65,4 +65,29 @@ describe("mergeProvidersSnapshot", () => {
   test("preserves a missing RPC snapshot as null", () => {
     expect(mergeProvidersSnapshot(null, catalog)).toBeNull()
   })
+
+    test("allowlists runtime fields and strips credentials from provider URLs", () => {
+        const snapshot = mergeProvidersSnapshot(
+            {
+                agentDir: "/Users/private/.vibefly/agent",
+                modelsPath: "/Users/private/.vibefly/agent/models.json",
+                providers: [{
+                    id: "my-proxy",
+                    baseUrl: "https://user:password@example.com/v1?token=secret",
+                    credential: {hasApiKey: true},
+                    authJson: '{"my-proxy":{"key":"sentinel-secret"}}',
+                } as never],
+                authJson: "sentinel-secret",
+            } as never,
+            catalog,
+        )
+
+        const serialized = JSON.stringify(snapshot)
+        expect(serialized).not.toContain("sentinel-secret")
+        expect(serialized).not.toContain("password")
+        expect(serialized).not.toContain("agentDir")
+        expect(serialized).not.toContain("modelsPath")
+        expect(snapshot?.providers.find((provider) => provider.id === "my-proxy")?.baseUrl)
+            .toBe("https://example.com/v1")
+    })
 })

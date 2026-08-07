@@ -10,6 +10,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./agent": {
+      "types": "./dist/agent-settings.d.ts",
+      "import": "./dist/agent-settings.js"
     }
   },
   "files": [

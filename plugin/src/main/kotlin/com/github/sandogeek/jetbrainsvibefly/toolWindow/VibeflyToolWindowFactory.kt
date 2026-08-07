@@ -3,13 +3,13 @@ package com.github.sandogeek.jetbrainsvibefly.toolWindow
 import com.github.sandogeek.jetbrainsvibefly.agent.VibeflyAgentService
 import com.github.sandogeek.jetbrainsvibefly.chat.ChatContextDeliveryService
 import com.github.sandogeek.jetbrainsvibefly.chat.ChatWorkspaceState
-import com.github.sandogeek.jetbrainsvibefly.settings.VibeflyModelPreferencesState
+import com.github.sandogeek.jetbrainsvibefly.settings.ProjectUi2Host
 import com.github.sandogeek.jetbrainsvibefly.settings.VibeflySettingsConfigurable
-import com.github.sandogeek.jetbrainsvibefly.settings.VibeflyUiSettingsState
 import com.github.sandogeek.jetbrainsvibefly.util.Edt
 import com.github.sandogeek.vibefly.jcef.AgentOrigin
 import com.github.sandogeek.vibefly.jcef.VibeflyBrowserPanel
-import com.github.sandogeek.vibefly.jcef.rpc.*
+import com.github.sandogeek.vibefly.jcef.rpc.HostChatContextItem
+import com.github.sandogeek.vibefly.jcef.rpc.Ui2HostChatImpl
 import com.intellij.diff.DiffContentFactory
 import com.intellij.diff.DiffManager
 import com.intellij.diff.requests.SimpleDiffRequest
@@ -57,27 +57,9 @@ class VibeflyToolWindowFactory : ToolWindowFactory {
         val projectRoot = project.basePath.orEmpty()
         val workspaceState = ChatWorkspaceState.getInstance(project)
         val contextDelivery = ChatContextDeliveryService.getInstance(project)
-        val modelPreferences = VibeflyModelPreferencesState.getInstance()
-        val uiSettings = VibeflyUiSettingsState.getInstance()
         val expectedOrigin = AgentOrigin.currentPanel()
         var panel: VibeflyBrowserPanel? = null
-        val ui2Host = Ui2HostImpl(
-            modelPreferencesProvider = {
-                ModelPreferencesDto(
-                    recentModelSpecs = modelPreferences.recentModelSpecs.toList(),
-                    pinnedModelSpecs = modelPreferences.pinnedModelSpecs.toList(),
-                )
-            },
-            modelPreferencesSaver = { preferences ->
-                modelPreferences.replace(
-                    preferences.recentModelSpecs,
-                    preferences.pinnedModelSpecs,
-                )
-            },
-            uiSettingsProvider = {
-                UiFormDto(locale = uiSettings.locale)
-            },
-        )
+        val ui2Host = ProjectUi2Host(project) { panel?.rpc?.host2Ui }
         val ui2HostChat = Ui2HostChatImpl(
             agentConnectionProvider = {
                 try {
@@ -139,6 +121,7 @@ class VibeflyToolWindowFactory : ToolWindowFactory {
             },
         )
         val browserPanel = panel
+        Disposer.register(browserPanel, ui2Host)
         contextDelivery.bind { sessionId, contexts ->
             browserPanel.rpc.host2UiChat.addChatContexts(sessionId, contexts)
         }
