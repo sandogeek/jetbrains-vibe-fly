@@ -1,16 +1,5 @@
 import type {ChatSessionSummary, RecentChatSession} from "@vibefly/uiagent-shared"
-import {
-    AlertTriangle,
-    ChevronsUpDown,
-    Clock3,
-    History,
-    LoaderCircle,
-    MessageSquareText,
-    Plus,
-    Settings2,
-    ShieldCheck,
-    X,
-} from "lucide-react"
+import {ChevronsUpDown, History, MessageSquareText, Plus, Settings2, ShieldCheck, X,} from "lucide-react"
 import {type RefObject, useCallback, useEffect, useRef, useState} from "react"
 
 import {ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger,} from "@/components/ui/context-menu"
@@ -207,7 +196,7 @@ function ChatPageView({controller}: { controller: ChatController }) {
                             <ContextMenu key={tab.summary.sessionId}>
                                 <ContextMenuTrigger asChild>
                                     <button
-                                        className={`session-tab ${tab.summary.sessionId === controller.activeId ? "active" : ""}`}
+                                        className={`session-tab${tab.summary.sessionId === controller.activeId ? " active" : ""}${tab.summary.unread ? " unread" : ""}`}
                                         role="tab"
                                         data-session-id={tab.summary.sessionId}
                                         aria-selected={tab.summary.sessionId === controller.activeId}
@@ -229,7 +218,6 @@ function ChatPageView({controller}: { controller: ChatController }) {
                                             void actions.closeSession(tab.summary.sessionId)
                                         }}
                                     >
-                                        <StatusDot state={tab.summary.state} unread={tab.summary.unread}/>
                                         <TruncatedText className="session-title" text={tab.summary.title}/>
                                         {tab.summary.queuePosition ? (
                                             <span className="queue-badge">{tab.summary.queuePosition}</span>
@@ -434,7 +422,7 @@ function TabsListItem({
     closeLabel: string
 }) {
     return (
-        <div className={`tabs-list-item${active ? " active" : ""}`}>
+        <div className={`tabs-list-item${active ? " active" : ""}${tab.unread ? " unread" : ""}`}>
             <button
                 type="button"
                 className="tabs-list-item-main"
@@ -444,7 +432,6 @@ function TabsListItem({
                     onSelect(tab.sessionId)
                 }}
             >
-                <StatusDot state={tab.state} unread={tab.unread}/>
                 <TruncatedText className="tabs-list-item-title" text={tab.title}/>
             </button>
             <button
@@ -589,14 +576,4 @@ function TruncatedText({className, text}: { className?: string; text: string }) 
     )
 }
 
-function StatusDot(props: { state: ChatSessionSummary["state"]; unread: boolean }) {
-    return (
-        <span className={`status-dot ${props.state} ${props.unread ? "unread" : ""}`}>
-            {props.state === "running" ? <LoaderCircle size={12} className="spin"/> : null}
-            {props.state === "queued" ? <Clock3 size={11}/> : null}
-            {props.state === "waiting_permission" ? <ShieldCheck size={11}/> : null}
-            {props.state === "waiting_input" ? <MessageSquareText size={11}/> : null}
-            {props.state === "error" ? <AlertTriangle size={11}/> : null}
-        </span>
-    )
-}
+

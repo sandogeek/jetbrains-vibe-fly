@@ -105,6 +105,15 @@
     color: var(--vf-fg);
 }
 
+.session-tab.unread {
+    color: var(--vf-fg);
+}
+
+.session-tab.unread .session-title {
+    font-weight: 650;
+    color: var(--vf-fg);
+}
+
 .session-tab.active::after {
     background: var(--vf-accent);
     box-shadow: 0 0 8px color-mix(in srgb, var(--vf-accent) 40%, transparent);
@@ -142,53 +151,6 @@
     background: var(--vf-surface-raised);
     opacity: 1 !important;
     color: var(--vf-fg);
-}
-
-.status-dot {
-    width: 8px;
-    height: 8px;
-    display: grid;
-    place-items: center;
-    flex: none;
-    border-radius: 50%;
-    background: #62666d;
-    color: var(--vf-muted);
-}
-
-.status-dot.running,
-.status-dot.waiting_permission,
-.status-dot.waiting_input,
-.status-dot.queued,
-.status-dot.error {
-    width: 14px;
-    height: 14px;
-    background: transparent;
-}
-
-.status-dot.running {
-    color: var(--vf-accent);
-}
-
-.status-dot.queued {
-    color: var(--vf-warning);
-}
-
-.status-dot.waiting_permission,
-.status-dot.waiting_input {
-    color: var(--vf-blue);
-}
-
-.status-dot.error {
-    color: var(--vf-danger);
-}
-
-.status-dot.completed {
-    background: #596068;
-}
-
-.status-dot.unread {
-    background: var(--vf-accent);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--vf-accent) 18%, transparent);
 }
 
 .queue-badge {
@@ -330,6 +292,13 @@
     white-space: nowrap;
     font-size: 12.5px;
     font-weight: 550;
+    color: var(--vf-muted);
+}
+
+.tabs-list-item.unread .tabs-list-item-title,
+.tabs-list-item.active .tabs-list-item-title {
+    color: var(--vf-fg);
+    font-weight: 650;
 }
 
 .tabs-list-item-close {
