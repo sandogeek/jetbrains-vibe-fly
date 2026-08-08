@@ -2,27 +2,21 @@ package com.github.sandogeek.vibefly.jcef.rpc
 
 import kotlinx.serialization.Serializable
 
-@Serializable
-data class ProviderModelPatch(
-    val id: String,
-    val name: String? = null,
-    val api: String? = null,
-)
-
+/**
+ * Full-replacement provider patch.
+ *
+ * - [remove]=true deletes the entire provider entry from models.json.
+ * - Non-remove operations must provide [configJson]: a JSON object representing a single
+ *   `models.json.providers[id]` entry (not wrapped in an outer `providers` map). The entry
+ *   replaces the previous one wholesale; unknown fields are retained as supplied.
+ */
 @Serializable
 data class ProviderPatch(
     val id: String,
     /** Remove this provider entry from models.json (custom providers). */
     val remove: Boolean = false,
-    val baseUrl: String? = null,
-    val api: String? = null,
-    /**
-     * When non-null, replace the models list for this provider.
-     * null means leave models untouched.
-     */
-    val models: List<ProviderModelPatch>? = null,
-    val clearBaseUrl: Boolean = false,
-    val clearApi: Boolean = false,
+    /** Full provider entry JSON object. Required when [remove] is false. */
+    val configJson: String? = null,
 )
 
 @Serializable

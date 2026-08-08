@@ -31,7 +31,6 @@ describe("mergeProvidersSnapshot", () => {
   test("combines generated metadata with RPC state and keeps custom providers", () => {
     const snapshot = mergeProvidersSnapshot(
       {
-        agentDir: "/tmp/agent",
         providers: [
           {
             id: "anthropic",
@@ -39,8 +38,11 @@ describe("mergeProvidersSnapshot", () => {
           },
           {
             id: "my-proxy",
-            isConfigured: true,
-            models: [{ id: "demo" }],
+              configJson: JSON.stringify({
+                  baseUrl: "https://proxy.example/v1",
+                  api: "openai-completions",
+                  models: [{id: "demo", name: "Demo"}],
+              }),
           },
         ],
       },
@@ -60,34 +62,39 @@ describe("mergeProvidersSnapshot", () => {
     const custom = providers.find((provider) => provider.id === "my-proxy")
     expect(custom?.isCatalog).toBe(false)
     expect(custom?.models?.[0]?.id).toBe("demo")
+      expect(custom?.baseUrl).toBe("https://proxy.example/v1")
   })
 
   test("preserves a missing RPC snapshot as null", () => {
     expect(mergeProvidersSnapshot(null, catalog)).toBeNull()
   })
 
-    test("allowlists runtime fields and strips credentials from provider URLs", () => {
+    test("exposes full configJson including headers apiKey and URL query without auth.json secrets", () => {
+        const configJson = JSON.stringify({
+            baseUrl: "https://user:password@example.com/v1?token=secret",
+            api: "openai-completions",
+            apiKey: "provider-level-key",
+            headers: {"X-A": "1"},
+            models: [{id: "m", name: "M"}],
+        })
         const snapshot = mergeProvidersSnapshot(
             {
-                agentDir: "/Users/private/.vibefly/agent",
-                modelsPath: "/Users/private/.vibefly/agent/models.json",
                 providers: [{
                     id: "my-proxy",
-                    baseUrl: "https://user:password@example.com/v1?token=secret",
-                    credential: {hasApiKey: true},
-                    authJson: '{"my-proxy":{"key":"sentinel-secret"}}',
-                } as never],
-                authJson: "sentinel-secret",
-            } as never,
+                    configJson,
+                    credential: {hasApiKey: true, originKind: "api_key"},
+                }],
+            },
             catalog,
         )
 
+        const custom = snapshot?.providers.find((provider) => provider.id === "my-proxy")
+        expect(custom?.configJson).toContain("provider-level-key")
+        expect(custom?.configJson).toContain("token=secret")
+        expect(custom?.configJson).toContain("X-A")
+        expect(custom?.baseUrl).toBe("https://user:password@example.com/v1?token=secret")
+        // auth.json contents are never in the RPC snapshot
         const serialized = JSON.stringify(snapshot)
-        expect(serialized).not.toContain("sentinel-secret")
-        expect(serialized).not.toContain("password")
-        expect(serialized).not.toContain("agentDir")
-        expect(serialized).not.toContain("modelsPath")
-        expect(snapshot?.providers.find((provider) => provider.id === "my-proxy")?.baseUrl)
-            .toBe("https://example.com/v1")
+        expect(serialized).not.toContain("super-secret-from-auth")
     })
 })

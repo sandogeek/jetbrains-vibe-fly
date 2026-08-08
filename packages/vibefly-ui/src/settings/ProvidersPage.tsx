@@ -11,7 +11,6 @@ import {
     type CustomResult,
     LoginOverlay,
     type LoginOverlayState,
-    parseModelsText,
     providerUiLabels
 } from "./dialogs"
 import {ModelPicker} from "./ModelPicker"
@@ -196,20 +195,9 @@ export function ProvidersPage(props: ProvidersPageProps) {
     const onCustomResult = async (result: CustomResult) => {
         setDialog({kind: "none"});
         if (result.kind === "cancel") return;
-        const models = parseModelsText(result.modelsText).map((model) => ({
-            id: model.id,
-            name: model.name ?? null,
-            api: model.api ?? null
-        }));
-        const baseUrl = result.baseUrl || null;
-        const api = result.api || null;
         await applyPatch([{
             id: result.id,
-            baseUrl,
-            api,
-            models,
-            clearBaseUrl: !baseUrl,
-            clearApi: !api
+            configJson: result.configJson,
         }], result.apiKey ? [{provider: result.id, action: "set", apiKey: result.apiKey}] : [])
     }
     const disconnect = async (snap: ProviderSnapshot) => {

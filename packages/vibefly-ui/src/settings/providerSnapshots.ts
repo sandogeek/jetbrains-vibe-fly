@@ -1,17 +1,17 @@
 import type {
     ProviderCredentialStatus,
-    ProviderModelSnapshot,
     ProviderRuntimeSnapshot,
     ProvidersSnapshot as RpcProvidersSnapshot,
 } from "../generated/rpc"
 import type {BundledCatalog} from "./catalog"
+import {modelsFromConfigJson, type ParsedProviderModel, providerFieldFromConfigJson} from "./providerConfigDraft"
 
 export type ProviderSnapshot = {
     id: string
-    isConfigured?: boolean
+    configJson?: string | null
+    models?: ParsedProviderModel[]
     baseUrl?: string | null
     api?: string | null
-    models?: ProviderModelSnapshot[]
     credential?: ProviderCredentialStatus
     isCatalog: boolean
     supportsLogin: boolean
@@ -22,35 +22,17 @@ export type ProvidersSnapshot = {
     providers: ProviderSnapshot[]
 }
 
-function safeProviderUrl(raw: string | null | undefined): string | null | undefined {
-    if (raw == null || !raw.trim()) return raw
-    try {
-        const parsed = new URL(raw)
-        parsed.username = ""
-        parsed.password = ""
-        parsed.search = ""
-        parsed.hash = ""
-        return parsed.toString()
-    } catch {
-        return undefined
-    }
-}
-
-function safeRuntimeSnapshot(
+function runtimeSnapshot(
     raw: ProviderRuntimeSnapshot | undefined,
     id: string,
 ): Omit<ProviderSnapshot, "isCatalog" | "supportsLogin" | "loginProviderId"> {
+    const configJson = typeof raw?.configJson === "string" ? raw.configJson : null
     return {
         id,
-        isConfigured: Boolean(raw?.isConfigured),
-        baseUrl: safeProviderUrl(raw?.baseUrl),
-        api: typeof raw?.api === "string" ? raw.api : null,
-        models: (raw?.models ?? []).map((model) => ({
-            id: model.id,
-            name: typeof model.name === "string" ? model.name : null,
-            api: typeof model.api === "string" ? model.api : null,
-            isCustom: Boolean(model.isCustom),
-        })),
+        configJson,
+        models: modelsFromConfigJson(configJson),
+        baseUrl: providerFieldFromConfigJson(configJson, "baseUrl"),
+        api: providerFieldFromConfigJson(configJson, "api"),
         credential: {
             hasApiKey: Boolean(raw?.credential?.hasApiKey),
             hasOAuth: Boolean(raw?.credential?.hasOAuth),
@@ -77,7 +59,7 @@ export function mergeProvidersSnapshot(
         const runtime = runtimeById.get(provider.id)
         runtimeById.delete(provider.id)
         providers.push({
-            ...safeRuntimeSnapshot(runtime, provider.id),
+            ...runtimeSnapshot(runtime, provider.id),
             isCatalog: true,
             supportsLogin: Boolean(provider.supportsLogin),
             loginProviderId: provider.loginProviderId ?? null,
@@ -86,7 +68,7 @@ export function mergeProvidersSnapshot(
 
     for (const runtime of runtimeById.values()) {
         providers.push({
-            ...safeRuntimeSnapshot(runtime, runtime.id),
+            ...runtimeSnapshot(runtime, runtime.id),
             isCatalog: false,
             supportsLogin: false,
             loginProviderId: null,

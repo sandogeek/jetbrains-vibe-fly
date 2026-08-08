@@ -1,5 +1,5 @@
 {
-  "subtitle": "API 密钥与 OAuth 令牌保存在 Vibe Fly 的产品 auth.json 中（不会写入 IDE XML）。",
+  "subtitle": "auth.json 中的 API 密钥与 OAuth 仍仅保存在 Host 侧。自定义提供商的高级 JSON 可包含提供商配置中的 apiKey、headers 与未知字段。",
   "reload": "从磁盘重新加载",
   "defaultModel": "默认模型",
   "connectedProviders": "已连接提供商",

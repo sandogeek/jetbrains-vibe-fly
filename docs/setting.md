@@ -148,9 +148,10 @@ type SettingsSnapshot = ApplicationSettingsSnapshot | ProjectSettingsSnapshot
 project 的 effective revision 由 application revision 与 project revision 共同组成，仅存在于共享 `SettingsManager`
 的缓存中。任一层变化都使 effective cache 失效。
 
-上面的类型是 Host 内部和受信任 Agent 使用的完整模型。UI RPC 必须使用单独的安全投影：可以返回 `models.json` 的脱敏
-Provider / Model 视图和鉴权状态，但绝不能把 `authJson`、API Key、OAuth token 或其他 secret 注入 WebView。UI 与 Agent 投影共享同一
-scope revision，因此 UI 仍能在鉴权文件变化后收到失效通知并刷新脱敏状态。
+上面的类型是 Host 内部和受信任 Agent 使用的完整模型。Providers RPC 返回完整的单个 Provider entry（`configJson`，即
+`models.json.providers[id]` 对象，可包含 `apiKey`、headers、未知字段）；`auth.json`、OAuth token、credential store 仍不进入
+WebView，只返回脱敏后的鉴权状态（`ProviderCredentialStatus`）。UI 与 Agent 投影共享同一 scope revision，因此 UI
+仍能在鉴权文件变化后收到失效通知并刷新状态。
 
 ### 无效 JSON
 
@@ -207,9 +208,10 @@ type SettingsSaveRequest = {
 }
 ```
 
-`UiSettingsSnapshot` 和 `SettingsSaveRequest` 都不能包含原始 `modelsJson` 或 `authJson`。UI 通过现有 Providers RPC
-读取脱敏后的模型和鉴权状态；Provider / Model 编辑使用带 `expectedRevision` 的语义 patch，由 Host 在最新 application
-`models.json` 上应用并保留未知键。`UiSettingsSnapshot` 的 `settingsJson` / `vibeflyJson` 与磁盘原始文档一致（无字段投影）；
+`UiSettingsSnapshot` 和 `SettingsSaveRequest` 都不能包含原始 `modelsJson` 或 `authJson`。UI 通过 Providers RPC 读取完整
+Provider entry（`configJson`）与鉴权状态；Provider 编辑使用带 `expectedRevision` 的 patch，其中
+`ProviderPatch.configJson` 整条目替换 `models.json.providers[id]`（非字段合并），未知键按调用方提供的 JSON 原样保留。
+`UiSettingsSnapshot` 的 `settingsJson` / `vibeflyJson` 与磁盘原始文档一致（无字段投影）；
 `SettingsSaveRequest` 对提供的文档做整文件替换（省略的文件不变）。`AgentSettingsSnapshot` 在受信任的本机 stdio 控制面上传输完整
 application 四文件和 project 两文件。
 

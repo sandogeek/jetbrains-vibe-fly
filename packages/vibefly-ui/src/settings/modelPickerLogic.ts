@@ -1,6 +1,6 @@
-import type {ProviderModelSnapshot} from "../generated/rpc"
 import type {BundledCatalog, CatalogModel} from "./catalog"
 import {catalogModels, providerRank} from "./catalog"
+import type {ParsedProviderModel} from "./providerConfigDraft"
 import {classifyProviders} from "./providerLogic"
 import {displayName} from "./providerLabels"
 import type {ProviderSnapshot} from "./providerSnapshots"
@@ -203,7 +203,7 @@ function entryFromCustom(
     providerId: string,
     providerLabel: string,
     rank: number,
-    m: ProviderModelSnapshot,
+    m: ParsedProviderModel,
 ): ModelPickerEntry {
     const name = (m.name && m.name.trim()) || m.id
     const providerIdLower = providerId.toLowerCase()

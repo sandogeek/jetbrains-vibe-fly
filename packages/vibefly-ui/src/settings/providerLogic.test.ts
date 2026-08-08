@@ -1,17 +1,15 @@
-import { describe, test } from "node:test"
-import { expect } from "expect"
-import type { ProviderSnapshot } from "./providerSnapshots"
+import {describe, test} from "node:test"
+import {expect} from "expect"
+import type {ProviderSnapshot} from "./providerSnapshots"
 import {
   classifyProviders,
   filterBuiltInProviders,
-  formatModelsText,
   isConnected,
-  parseModelsText,
   parseModelSpec,
   primaryBadge,
   validateProviderId,
 } from "./providerLogic"
-import { description, displayName } from "./providerLabels"
+import {description, displayName} from "./providerLabels"
 
 const snaps: ProviderSnapshot[] = [
   {
@@ -33,7 +31,7 @@ const snaps: ProviderSnapshot[] = [
     isCatalog: false,
     supportsLogin: false,
     loginProviderId: null,
-    models: [{ id: "x" }],
+      models: [{id: "x", name: "x", api: null}],
   },
 ]
 
@@ -79,29 +77,5 @@ describe("providerLogic", () => {
     expect(validateProviderId("mine", catalog, customs, false)).toMatch(/already/)
     expect(validateProviderId("ok-id", catalog, customs, false)).toBeNull()
     expect(validateProviderId("openai", catalog, customs, true)).toBeNull()
-  })
-
-  test("parse and format models text", () => {
-    const text = `
-gpt-4o | GPT-4o | openai-completions
-o1
-# comment
-custom | | anthropic-messages
-`.trim()
-    const models = parseModelsText(text)
-    expect(models).toHaveLength(3)
-    expect(models[0]).toEqual({
-      id: "gpt-4o",
-      name: "GPT-4o",
-      api: "openai-completions",
-    })
-    expect(models[1]).toEqual({ id: "o1", name: undefined, api: undefined })
-    expect(models[2]?.api).toBe("anthropic-messages")
-    const formatted = formatModelsText([
-      { id: "gpt-4o", name: "GPT-4o", api: "openai-completions" },
-      { id: "o1" },
-    ])
-    expect(formatted).toContain("gpt-4o | GPT-4o | openai-completions")
-    expect(formatted).toContain("o1")
   })
 })

@@ -1,5 +1,5 @@
 {
-  "subtitle": "API keys and OAuth tokens stay in Vibe Fly's product auth.json (never IDE XML).",
+  "subtitle": "auth.json API keys and OAuth stay Host-side. Custom provider Advanced JSON can include provider-config apiKey, headers, and unknown fields.",
   "reload": "Reload from disk",
   "defaultModel": "Default model",
   "connectedProviders": "Connected Providers",

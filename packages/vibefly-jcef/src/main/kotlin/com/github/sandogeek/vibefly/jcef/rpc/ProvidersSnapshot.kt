@@ -10,28 +10,21 @@ data class ProviderCredentialStatus(
     val originKind: String = "none",
 )
 
-@Serializable
-data class ProviderModelSnapshot(
-    val id: String,
-    val name: String? = null,
-    val api: String? = null,
-    val isCustom: Boolean = false,
-)
-
-/** Mutable provider state only; immutable catalog metadata is generated directly for TypeScript. */
+/**
+ * Mutable provider state only; immutable catalog metadata is generated directly for TypeScript.
+ *
+ * [configJson] is the full `models.json.providers[id]` entry (object JSON string), including
+ * models, headers, apiKey, unknown fields, etc. Null when the provider exists only in auth.json.
+ * auth.json secrets are never included — only [credential] status is projected.
+ */
 @Serializable
 data class ProviderRuntimeSnapshot(
     val id: String,
-    val isConfigured: Boolean = false,
-    val baseUrl: String? = null,
-    val api: String? = null,
-    val models: List<ProviderModelSnapshot> = emptyList(),
+    val configJson: String? = null,
     val credential: ProviderCredentialStatus = ProviderCredentialStatus(),
 )
 
 @Serializable
 data class ProvidersSnapshot(
-    val agentDir: String,
     val providers: List<ProviderRuntimeSnapshot> = emptyList(),
-    val modelsPath: String? = null,
 )

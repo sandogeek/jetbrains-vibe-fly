@@ -2,7 +2,6 @@ package com.github.sandogeek.jetbrainsvibefly.settings
 
 import com.github.sandogeek.vibefly.jcef.rpc.*
 import kotlinx.serialization.json.*
-import java.net.URI
 
 internal data class PatchedProviderDocuments(
     val modelsJson: String,
@@ -11,9 +10,18 @@ internal data class PatchedProviderDocuments(
     val authChanged: Boolean,
 )
 
-/** Generic JSON projection/update helpers. Unknown keys are retained verbatim. */
+/**
+ * Full Provider entry JSON helpers.
+ * [ProviderRuntimeSnapshot.configJson] is the complete `models.json.providers[id]` object;
+ * [applyPatch] replaces that entry wholesale. Unknown keys are retained verbatim.
+ * auth.json is never projected into the WebView — only [ProviderCredentialStatus].
+ */
 internal object ProviderSettingsJson {
     private val prettyJson = Json { prettyPrint = true }
+    private val compactJson = Json
+
+    private const val DEFAULT_CONTEXT_WINDOW = 128000
+    private const val DEFAULT_MAX_TOKENS = 16384
 
     fun snapshot(settings: SettingsScopeSnapshot): ProvidersSnapshot {
         val modelsRoot = parseObject(settings.content(SettingsDocument.MODELS), SettingsDocument.MODELS.fileName)
@@ -22,22 +30,13 @@ internal object ProviderSettingsJson {
         val providerIds = (configured.keys + authRoot.keys).toSortedSet()
         val providers = providerIds.map { providerId ->
             val entry = configured[providerId] as? JsonObject
-            val credential = credentialStatus(authRoot[providerId])
             ProviderRuntimeSnapshot(
                 id = providerId,
-                isConfigured = entry != null,
-                baseUrl = safeProviderUrl(entry?.string("baseUrl")),
-                api = entry?.string("api"),
-                models = entry?.models().orEmpty(),
-                credential = credential,
+                configJson = entry?.let { compactJson.encodeToString(JsonElement.serializer(), it) },
+                credential = credentialStatus(authRoot[providerId]),
             )
         }
-        return ProvidersSnapshot(
-            // Filesystem paths are deliberately not projected into the WebView.
-            agentDir = "",
-            providers = providers,
-            modelsPath = null,
-        )
+        return ProvidersSnapshot(providers = providers)
     }
 
     fun applyPatch(
@@ -48,10 +47,8 @@ internal object ProviderSettingsJson {
             parseObject(settings.content(SettingsDocument.MODELS), SettingsDocument.MODELS.fileName)
         val originalAuthRoot =
             parseObject(settings.content(SettingsDocument.AUTH), SettingsDocument.AUTH.fileName)
-        val modelsRoot = originalModelsRoot
-            .toMutableMap()
-        val authRoot = originalAuthRoot
-            .toMutableMap()
+        val modelsRoot = originalModelsRoot.toMutableMap()
+        val authRoot = originalAuthRoot.toMutableMap()
         val providers = ((modelsRoot["providers"] as? JsonObject)?.toMutableMap() ?: mutableMapOf())
 
         for (patch in request.providers) applyProviderPatch(providers, patch)
@@ -86,71 +83,163 @@ internal object ProviderSettingsJson {
             return
         }
 
-        val entry = ((providers[providerId] as? JsonObject)?.toMutableMap() ?: mutableMapOf())
-        when {
-            patch.clearBaseUrl -> entry.remove("baseUrl")
-            patch.baseUrl != null -> patch.baseUrl?.let { setTrimmed(entry, "baseUrl", it) }
-        }
-        when {
-            patch.clearApi -> entry.remove("api")
-            patch.api != null -> patch.api?.let { setTrimmed(entry, "api", it) }
+        val rawConfig = patch.configJson?.trim().orEmpty()
+        require(rawConfig.isNotEmpty()) { "Provider $providerId: configJson is required" }
+        val parsed = Json.parseToJsonElement(rawConfig)
+        require(parsed is JsonObject) { "Provider $providerId: configJson must be a JSON object" }
+        require(parsed["providers"] == null) {
+            "Provider $providerId: configJson must be a single provider entry, not a providers map"
         }
 
-        // These fields belonged to an obsolete combined models/auth format.
-        entry.remove("auth")
-        entry.remove("apiKey")
-
-        patch.models?.let { models ->
-            val existingModels = (entry["models"] as? JsonArray)
-                ?.mapNotNull { it as? JsonObject }
-                ?.associateBy { it.string("id").orEmpty() }
-                .orEmpty()
-            val replacement = models.map { model ->
-                providerModel(providerId, model, existingModels[model.id.trim()])
-            }
-            if (replacement.isNotEmpty()) {
-                require(entry.string("baseUrl") != null) {
-                    "Provider $providerId: baseUrl is required when defining custom models"
-                }
-                require(entry.string("api") != null || replacement.all { it.string("api") != null }) {
-                    "Provider $providerId: api is required at provider or model level for custom models"
-                }
-            }
-            entry["models"] = JsonArray(replacement)
-        }
-
-        if (entry.isEmpty()) providers.remove(providerId)
-        else providers[providerId] = JsonObject(entry)
+        val validated = validateProviderEntry(providerId, parsed)
+        providers[providerId] = validated
     }
 
-    private fun providerModel(
-        providerId: String,
-        patch: ProviderModelPatch,
-        existing: JsonObject?,
-    ): JsonObject {
-        val modelId = patch.id.trim()
-        require(modelId.isNotEmpty()) { "Provider $providerId: model id is required" }
-        val values = existing?.toMutableMap() ?: linkedMapOf()
-        values["id"] = JsonPrimitive(modelId)
-        values["name"] = JsonPrimitive(patch.name?.trim().orEmpty().ifEmpty { modelId })
-        values.putIfAbsent("reasoning", JsonPrimitive(false))
-        values.putIfAbsent("input", JsonArray(listOf(JsonPrimitive("text"))))
-        values.putIfAbsent(
-            "cost",
-            JsonObject(
-                linkedMapOf(
-                    "input" to JsonPrimitive(0),
-                    "output" to JsonPrimitive(0),
-                    "cacheRead" to JsonPrimitive(0),
-                    "cacheWrite" to JsonPrimitive(0),
-                ),
-            ),
-        )
-        values.putIfAbsent("contextWindow", JsonPrimitive(128000))
-        values.putIfAbsent("maxTokens", JsonPrimitive(4096))
-        val api = patch.api?.trim()?.takeIf(String::isNotEmpty)
-        if (api == null) values.remove("api") else values["api"] = JsonPrimitive(api)
+    private fun validateProviderEntry(providerId: String, entry: JsonObject): JsonObject {
+        val values = entry.toMutableMap()
+        val modelsElement = values["models"]
+        if (modelsElement != null) {
+            require(modelsElement is JsonArray) { "Provider $providerId: models must be an array" }
+            val seenIds = linkedSetOf<String>()
+            val validatedModels = modelsElement.mapIndexed { index, raw ->
+                require(raw is JsonObject) { "Provider $providerId: models[$index] must be an object" }
+                validateModel(providerId, index, raw, seenIds)
+            }
+            values["models"] = JsonArray(validatedModels)
+        }
+
+        validateOptionalString(values, "baseUrl", providerId)
+        validateOptionalString(values, "api", providerId)
+        validateOptionalString(values, "name", providerId)
+        validateOptionalString(values, "apiKey", providerId)
+        validateOptionalBoolean(values, "authHeader", providerId)
+        validateOptionalObject(values, "headers", providerId)
+        validateOptionalObject(values, "compat", providerId)
+        validateOptionalObject(values, "modelOverrides", providerId)
+
+        val models = values["models"] as? JsonArray
+        if (models != null && models.isNotEmpty()) {
+            val providerBaseUrl = values.string("baseUrl")
+            val providerApi = values.string("api")
+            val allModelsHaveBaseUrl = models.all { (it as? JsonObject)?.string("baseUrl") != null }
+            val allModelsHaveApi = models.all { (it as? JsonObject)?.string("api") != null }
+            require(providerBaseUrl != null || allModelsHaveBaseUrl) {
+                "Provider $providerId: baseUrl is required when defining custom models"
+            }
+            require(providerApi != null || allModelsHaveApi) {
+                "Provider $providerId: api is required at provider or model level for custom models"
+            }
+        }
+
         return JsonObject(values)
+    }
+
+    private fun validateModel(
+        providerId: String,
+        index: Int,
+        model: JsonObject,
+        seenIds: MutableSet<String>,
+    ): JsonObject {
+        val values = model.toMutableMap()
+        val modelId = values.string("id")
+        require(modelId != null) { "Provider $providerId: models[$index].id is required" }
+        require(seenIds.add(modelId)) { "Provider $providerId: duplicate model id \"$modelId\"" }
+
+        if (values["name"] == null) {
+            values["name"] = JsonPrimitive(modelId)
+        } else {
+            validateOptionalString(values, "name", "$providerId models[$index]")
+        }
+        validateOptionalString(values, "api", "$providerId models[$index]")
+        validateOptionalString(values, "baseUrl", "$providerId models[$index]")
+        validateOptionalBoolean(values, "reasoning", "$providerId models[$index]")
+        validateOptionalObject(values, "headers", "$providerId models[$index]")
+        validateOptionalObject(values, "compat", "$providerId models[$index]")
+        validateOptionalObject(values, "thinkingLevelMap", "$providerId models[$index]")
+
+        when (val input = values["input"]) {
+            null -> values["input"] = JsonArray(listOf(JsonPrimitive("text")))
+            is JsonArray -> {
+                require(input.all { it is JsonPrimitive && it.isString }) {
+                    "Provider $providerId: models[$index].input must be an array of strings"
+                }
+            }
+
+            else -> error("Provider $providerId: models[$index].input must be an array of strings")
+        }
+
+        when (val cost = values["cost"]) {
+            null -> values["cost"] = defaultCost()
+            is JsonObject -> validateCost(providerId, index, cost)
+            else -> error("Provider $providerId: models[$index].cost must be an object")
+        }
+
+        when (val ctx = values["contextWindow"]) {
+            null -> values["contextWindow"] = JsonPrimitive(DEFAULT_CONTEXT_WINDOW)
+            is JsonPrimitive -> require(ctx.longOrNull != null || ctx.doubleOrNull != null) {
+                "Provider $providerId: models[$index].contextWindow must be a number"
+            }
+
+            else -> error("Provider $providerId: models[$index].contextWindow must be a number")
+        }
+
+        when (val max = values["maxTokens"]) {
+            null -> values["maxTokens"] = JsonPrimitive(DEFAULT_MAX_TOKENS)
+            is JsonPrimitive -> require(max.longOrNull != null || max.doubleOrNull != null) {
+                "Provider $providerId: models[$index].maxTokens must be a number"
+            }
+
+            else -> error("Provider $providerId: models[$index].maxTokens must be a number")
+        }
+
+        return JsonObject(values)
+    }
+
+    private fun validateCost(providerId: String, index: Int, cost: JsonObject) {
+        for (key in listOf("input", "output", "cacheRead", "cacheWrite")) {
+            val value = cost[key] ?: continue
+            require(value is JsonPrimitive && (value.longOrNull != null || value.doubleOrNull != null)) {
+                "Provider $providerId: models[$index].cost.$key must be a number"
+            }
+        }
+        when (val tiers = cost["tiers"]) {
+            null -> Unit
+            is JsonArray -> Unit
+            else -> error("Provider $providerId: models[$index].cost.tiers must be an array")
+        }
+    }
+
+    private fun defaultCost(): JsonObject = JsonObject(
+        linkedMapOf(
+            "input" to JsonPrimitive(0),
+            "output" to JsonPrimitive(0),
+            "cacheRead" to JsonPrimitive(0),
+            "cacheWrite" to JsonPrimitive(0),
+        ),
+    )
+
+    private fun validateOptionalString(values: MutableMap<String, JsonElement>, key: String, context: String) {
+        when (val value = values[key]) {
+            null -> Unit
+            is JsonPrimitive -> require(value.isString) { "$context: $key must be a string" }
+            else -> error("$context: $key must be a string")
+        }
+    }
+
+    private fun validateOptionalBoolean(values: MutableMap<String, JsonElement>, key: String, context: String) {
+        when (val value = values[key]) {
+            null -> Unit
+            is JsonPrimitive -> require(value.booleanOrNull != null) { "$context: $key must be a boolean" }
+            else -> error("$context: $key must be a boolean")
+        }
+    }
+
+    private fun validateOptionalObject(values: MutableMap<String, JsonElement>, key: String, context: String) {
+        when (val value = values[key]) {
+            null -> Unit
+            is JsonObject -> Unit
+            else -> error("$context: $key must be an object")
+        }
     }
 
     private fun applyCredentialAction(
@@ -200,39 +289,6 @@ internal object ProviderSettingsJson {
         )
     }
 
-    private fun safeProviderUrl(raw: String?): String? {
-        val value = raw?.trim()?.takeIf(String::isNotEmpty) ?: return null
-        return try {
-            val parsed = URI(value)
-            if (parsed.scheme == null || parsed.host == null) return null
-            URI(
-                parsed.scheme,
-                null,
-                parsed.host,
-                parsed.port,
-                parsed.path,
-                null,
-                null,
-            ).toString()
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    private fun JsonObject.models(): List<ProviderModelSnapshot> {
-        val values = this["models"] as? JsonArray ?: return emptyList()
-        return values.mapNotNull { raw ->
-            val model = raw as? JsonObject ?: return@mapNotNull null
-            val id = model.string("id") ?: return@mapNotNull null
-            ProviderModelSnapshot(
-                id = id,
-                name = model.string("name") ?: id,
-                api = model.string("api"),
-                isCustom = true,
-            )
-        }
-    }
-
     private fun JsonObject.string(key: String): String? =
         (this[key] as? JsonPrimitive)
             ?.takeIf(JsonPrimitive::isString)
@@ -246,11 +302,6 @@ internal object ProviderSettingsJson {
             ?.contentOrNull
             ?.trim()
             ?.takeIf(String::isNotEmpty)
-
-    private fun setTrimmed(values: MutableMap<String, JsonElement>, key: String, raw: String) {
-        val value = raw.trim()
-        if (value.isEmpty()) values.remove(key) else values[key] = JsonPrimitive(value)
-    }
 
     private fun parseObject(raw: String, fileName: String): JsonObject {
         val parsed = Json.parseToJsonElement(raw)

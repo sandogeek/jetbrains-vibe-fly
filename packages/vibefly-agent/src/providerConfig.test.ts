@@ -10,7 +10,7 @@ import {getProvidersSnapshot, rejectAgentProviderPatch} from "./providerConfig.j
 afterEach(() => clearPiRuntimeCache())
 
 describe("Host-backed provider snapshots", () => {
-    test("reports in-memory model and credential state without config paths", async () => {
+    test("reports full configJson and credential state", async () => {
         const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "vibefly-provider-"))
         const credentials = new InMemoryCredentialStore()
         const runtime = await getPiRuntime({agentDir, credentials, forceNew: true})
@@ -35,10 +35,15 @@ describe("Host-backed provider snapshots", () => {
 
         const snapshot = await getProvidersSnapshot(runtime)
         const provider = snapshot.providers?.find((entry) => entry.id === "local-proxy")
-        expect(snapshot.agentDir).toBe(agentDir)
-        expect(snapshot.modelsPath).toBeNull()
-        expect(provider?.baseUrl).toBe("https://proxy.example/v1")
-        expect(provider?.models?.[0]?.id).toBe("demo")
+        expect(provider?.configJson).toBeTruthy()
+        const config = JSON.parse(provider!.configJson!) as {
+            baseUrl?: string
+            api?: string
+            models?: Array<{ id: string }>
+        }
+        expect(config.baseUrl).toBe("https://proxy.example/v1")
+        expect(config.api).toBe("openai-responses")
+        expect(config.models?.[0]?.id).toBe("demo")
         expect(provider?.credential?.hasApiKey).toBe(true)
         expect(fs.readdirSync(agentDir)).toEqual([])
     })
@@ -67,6 +72,6 @@ describe("pi runtime cache", () => {
         } finally {
             if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR
             else process.env.PI_CODING_AGENT_DIR = previousAgentDir
-    }
-  })
+        }
+    })
 })

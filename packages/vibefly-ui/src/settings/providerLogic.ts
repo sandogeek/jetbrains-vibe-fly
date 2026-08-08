@@ -145,39 +145,3 @@ export function validateProviderId(
     }
     return null
 }
-
-export type ParsedModelLine = { id: string; name?: string; api?: string }
-
-export function parseModelsText(text: string): ParsedModelLine[] {
-    const out: ParsedModelLine[] = []
-    for (const rawLine of text.split("\n")) {
-        const line = rawLine.trim()
-        if (!line || line.startsWith("#")) continue
-        const parts = line.split("|").map((p) => p.trim())
-        const id = parts[0] ?? ""
-        if (!id) continue
-        const name = parts[1] || undefined
-        const api = parts[2] || undefined
-        out.push({
-            id,
-            name: name && name !== id ? name : undefined,
-            api: api || undefined,
-        })
-    }
-    return out
-}
-
-export function formatModelsText(
-    models: Array<{ id: string; name?: string | null; api?: string | null }>,
-): string {
-    return models
-        .map((m) => {
-            const name = m.name?.trim() && m.name !== m.id ? m.name.trim() : ""
-            const api = m.api?.trim() ?? ""
-            if (name && api) return `${m.id} | ${name} | ${api}`
-            if (name) return `${m.id} | ${name}`
-            if (api) return `${m.id} | | ${api}`
-            return m.id
-        })
-        .join("\n")
-}

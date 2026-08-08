@@ -34,13 +34,6 @@ export interface GenerateCommitMessageResult {
   message: string;
 }
 
-export interface ProviderModelSnapshot {
-  id: string;
-  name?: string | null;
-  api?: string | null;
-  isCustom?: boolean;
-}
-
 export interface ProviderCredentialStatus {
   hasApiKey?: boolean;
   hasOAuth?: boolean;
@@ -49,33 +42,18 @@ export interface ProviderCredentialStatus {
 
 export interface ProviderRuntimeSnapshot {
   id: string;
-  isConfigured?: boolean;
-  baseUrl?: string | null;
-  api?: string | null;
-  models?: Array<ProviderModelSnapshot>;
+  configJson?: string | null;
   credential?: ProviderCredentialStatus;
 }
 
 export interface ProvidersSnapshot {
-  agentDir: string;
   providers?: Array<ProviderRuntimeSnapshot>;
-  modelsPath?: string | null;
-}
-
-export interface ProviderModelPatch {
-  id: string;
-  name?: string | null;
-  api?: string | null;
 }
 
 export interface ProviderPatch {
   id: string;
   remove?: boolean;
-  baseUrl?: string | null;
-  api?: string | null;
-  models?: Array<ProviderModelPatch> | null;
-  clearBaseUrl?: boolean;
-  clearApi?: boolean;
+  configJson?: string | null;
 }
 
 export interface CredentialAction {

@@ -1,20 +1,20 @@
-import { describe, test } from "node:test"
-import { expect } from "expect"
-import { emptyCatalog, type BundledCatalog } from "./catalog"
+import {describe, test} from "node:test"
+import {expect} from "expect"
+import {type BundledCatalog, emptyCatalog} from "./catalog"
 import {
   buildBadges,
   buildEntries,
   buildOptionEntries,
-  formatCostBadge,
   formatContextBadge,
+  formatCostBadge,
   listProviders,
   rank,
   recordUsed,
   scoreEntry,
-  tokenizeQuery,
   togglePinned,
+  tokenizeQuery,
 } from "./modelPickerLogic"
-import type { ProviderSnapshot } from "./providerSnapshots"
+import type {ProviderSnapshot} from "./providerSnapshots"
 
 function catalogFixture(): BundledCatalog {
   return {
@@ -86,7 +86,12 @@ function connectedSnaps(): ProviderSnapshot[] {
       isCatalog: false,
       supportsLogin: false,
       loginProviderId: null,
-      models: [{ id: "demo", name: "Demo" }],
+        configJson: JSON.stringify({
+            baseUrl: "https://proxy.example/v1",
+            api: "openai-completions",
+            models: [{id: "demo", name: "Demo"}],
+        }),
+        models: [{id: "demo", name: "Demo", api: null}],
     },
   ]
 }
