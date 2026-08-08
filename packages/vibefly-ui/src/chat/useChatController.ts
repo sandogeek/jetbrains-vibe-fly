@@ -17,9 +17,10 @@ import {createChatUiRpc} from "../rpc/client"
 import {bindConsoleToHost} from "../rpc/console"
 import type {ModelPickerOption} from "../settings/ModelPicker"
 import {
+    applicationSnapshot,
     createUiSettingsManager,
-    modelPreferencesFromEffective,
-    prepareSettingsFormPatchSave,
+    modelPreferencesFromApplication,
+    prepareApplicationModelPreferencesSave,
     settingsChanged as toSettingsChanged,
 } from "../settings/hostSettings"
 import type {ModelPreferences} from "../settings/settingsStore"
@@ -267,14 +268,19 @@ export function useChatController(): ChatController {
             settingsReadyRef.current = false
             pendingSettingsChangesRef.current.clear()
             settingsManagerRef.current = manager
-            const applyEffective = (effective: Awaited<ReturnType<typeof manager.initialize>>) => {
+            const applySettings = () => {
                 const pending = pendingModelPreferencesRef.current
-                setModelPreferences(pending?.value ?? modelPreferencesFromEffective(effective))
-                applyUiLocale(effective.vibefly.ui?.locale)
+                const application = manager.getSnapshot("application")
+                if (application) {
+                    setModelPreferences(pending?.value ?? modelPreferencesFromApplication(application))
+                }
+                const effective = manager.getEffectiveSettings()
+                if (effective) applyUiLocale(effective.vibefly.ui?.locale)
             }
             stopSettingsRef.current?.()
-            stopSettingsRef.current = manager.subscribe(({effective}) => applyEffective(effective))
-            const initialEffective = await manager.initialize(true)
+            stopSettingsRef.current = manager.subscribe(() => applySettings())
+            // Pin/MRU are application-scoped; still load project so locale can merge.
+            await manager.initialize(true)
             while (pendingSettingsChangesRef.current.size > 0) {
                 const changes = [...pendingSettingsChangesRef.current.values()]
                 pendingSettingsChangesRef.current.clear()
@@ -283,7 +289,7 @@ export function useChatController(): ChatController {
                 }
             }
             settingsReadyRef.current = true
-            applyEffective(manager.getEffectiveSettings() ?? initialEffective)
+            applySettings()
         } catch (preferencesError) {
             log.warn("model preferences unavailable", preferencesError)
         }
@@ -774,31 +780,22 @@ export function useChatController(): ChatController {
         }
         pendingModelPreferencesRef.current = {generation, value: savedPreferences}
         modelPreferencesSaveRef.current = modelPreferencesSaveRef.current.then(async () => {
-            const scope = manager.getSnapshot("project") ? "project" : "application"
             for (let attempt = 0; attempt < 4; attempt += 1) {
                 try {
-                    const prepared = prepareSettingsFormPatchSave(
-                        manager,
-                        {modelPreferences: savedPreferences},
-                        scope,
-                    )
-                    const result = await chatHost.saveSettings({scope, ...prepared})
+                    const prepared = prepareApplicationModelPreferencesSave(manager, savedPreferences)
+                    const result = await chatHost.saveSettings({scope: "application", ...prepared})
                     if (result.revision) {
-                        const projectRoot = scope === "project"
-                            ? manager.getSnapshot("project")?.projectRoot ?? null
-                            : null
-                        const change = toSettingsChanged(scope, projectRoot, result.revision)
+                        const change = toSettingsChanged("application", null, result.revision)
                         if (change) await manager.handleSettingsChanged(change)
                     }
                     if (result.ok) {
                         if (pendingModelPreferencesRef.current?.generation === generation) {
                             pendingModelPreferencesRef.current = null
                         }
-                        const effective = manager.getEffectiveSettings()
                         const pending = pendingModelPreferencesRef.current
-                        if (effective) {
-                            setModelPreferences(pending?.value ?? modelPreferencesFromEffective(effective))
-                        }
+                        setModelPreferences(
+                            pending?.value ?? modelPreferencesFromApplication(applicationSnapshot(manager)),
+                        )
                         return
                     }
                     if (result.conflict) continue
