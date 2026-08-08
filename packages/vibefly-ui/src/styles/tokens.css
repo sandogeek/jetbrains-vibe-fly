@@ -82,6 +82,12 @@ html[data-jb-theme="dark"] {
     --color-popover-foreground: var(--vf-fg);
     --color-sidebar: var(--vf-surface);
     --color-sidebar-foreground: var(--vf-fg);
+    --color-sidebar-primary: var(--vf-accent);
+    --color-sidebar-primary-foreground: var(--vf-bg);
+    --color-sidebar-accent: var(--vf-surface-raised);
+    --color-sidebar-accent-foreground: var(--vf-fg);
+    --color-sidebar-border: var(--vf-border);
+    --color-sidebar-ring: var(--vf-ring);
 
     --radius-lg: var(--vf-radius-lg);
     --radius-md: var(--vf-radius);

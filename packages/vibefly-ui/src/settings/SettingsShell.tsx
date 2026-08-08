@@ -322,9 +322,11 @@ export function SettingsShell() {
 
     return (
         <SidebarProvider className="h-full min-h-0 overflow-hidden">
-            <Sidebar>
+            <Sidebar collapsible="icon">
                 <SidebarHeader>
-                    <div className="flex justify-end px-1"><SidebarTrigger label={t("settings:title")}/></div>
+                    <div className="flex justify-end px-1">
+                        <SidebarTrigger aria-label={t("settings:title")} title={t("settings:title")}/>
+                    </div>
                     <SidebarSearch value={search} placeholder={t("sidebar:search")}
                                    shortcut={t("sidebar:searchShortcut")} onInput={setSearch}/>
                 </SidebarHeader>
@@ -353,10 +355,14 @@ export function SettingsShell() {
                 </SidebarContent>
                 <SidebarFooter>
                     {state.status &&
-                        <div className="truncate px-2 text-[11px] text-muted" title={state.status}>{state.status}</div>}
+                        <div className="truncate px-2 text-[11px] text-muted group-data-[collapsible=icon]:hidden"
+                             title={state.status}>{state.status}</div>}
                 </SidebarFooter>
             </Sidebar>
             <SidebarInset className="flex h-full min-h-0 flex-col overflow-hidden">
+                <div className="flex items-center gap-2 border-b border-border px-2 py-1.5 md:hidden">
+                    <SidebarTrigger aria-label={t("settings:title")} title={t("settings:title")}/>
+                </div>
                 {state.loadError && <div
                     className="border-b border-border bg-surface px-4 py-2 text-xs text-muted">{state.loadError}</div>}
                 {showingCommit ? (
@@ -413,8 +419,14 @@ function SettingsNavItem({label, icon, active, disabled, onSelect}: {
     disabled?: boolean;
     onSelect?: () => void
 }) {
-    return <SidebarMenuItem><SidebarMenuButton title={label} active={active} disabled={disabled}
-                                               onClick={onSelect}>{icon}</SidebarMenuButton></SidebarMenuItem>
+    return (
+        <SidebarMenuItem>
+            <SidebarMenuButton isActive={active} disabled={disabled} tooltip={label} onClick={onSelect}>
+                {icon}
+                <span>{label}</span>
+            </SidebarMenuButton>
+        </SidebarMenuItem>
+    )
 }
 
 function SidebarSearch({value, placeholder, shortcut, onInput}: {
@@ -438,20 +450,31 @@ function SidebarSearch({value, placeholder, shortcut, onInput}: {
     }, [sidebar])
 
     if (!sidebar.open) {
-        return <button type="button"
-                       className="mx-auto mt-2 grid size-9 place-items-center rounded-md text-muted hover:bg-surface-raised hover:text-fg"
-                       title={placeholder} aria-label={placeholder} onClick={sidebar.toggle}><Search
-            className="size-4"/></button>
+        return (
+            <button
+                type="button"
+                className="mx-auto grid size-8 place-items-center rounded-md text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                title={placeholder}
+                aria-label={placeholder}
+                onClick={sidebar.toggleSidebar}
+            >
+                <Search className="size-4"/>
+            </button>
+        )
     }
     return (
-        <label className="relative mt-2 block">
+        <label className="relative block">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted"/>
-            <input ref={inputRef}
-                   className="h-9 w-full rounded-md border border-border bg-surface/70 pl-8 pr-12 text-xs text-fg outline-none placeholder:text-muted focus-visible:ring-2 focus-visible:ring-ring"
-                   value={value} onChange={(event) => onInput(event.currentTarget.value)} placeholder={placeholder}
-                   aria-label={placeholder}/>
+            <input
+                ref={inputRef}
+                className="h-8 w-full rounded-md border border-sidebar-border bg-background pl-8 pr-12 text-xs text-sidebar-foreground outline-none placeholder:text-muted focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+                value={value}
+                onChange={(event) => onInput(event.currentTarget.value)}
+                placeholder={placeholder}
+                aria-label={placeholder}
+            />
             <kbd
-                className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded border border-border bg-surface-raised px-1.5 py-0.5 text-[10px] text-muted">{shortcut}</kbd>
+                className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded border border-sidebar-border bg-sidebar-accent px-1.5 py-0.5 text-[10px] text-muted">{shortcut}</kbd>
         </label>
     )
 }
