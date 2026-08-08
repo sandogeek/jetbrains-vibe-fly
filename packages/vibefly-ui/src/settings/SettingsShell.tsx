@@ -360,9 +360,6 @@ export function SettingsShell() {
                 </SidebarFooter>
             </Sidebar>
             <SidebarInset className="flex h-full min-h-0 flex-col overflow-hidden">
-                <div className="flex items-center gap-2 border-b border-border px-2 py-1.5 md:hidden">
-                    <SidebarTrigger aria-label={t("settings:title")} title={t("settings:title")}/>
-                </div>
                 {state.loadError && <div
                     className="border-b border-border bg-surface px-4 py-2 text-xs text-muted">{state.loadError}</div>}
                 {showingCommit ? (
