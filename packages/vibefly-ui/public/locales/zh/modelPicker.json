@@ -12,6 +12,7 @@
   "clearSearch": "清除搜索",
   "clearFilters": "清除搜索和筛选",
   "noProviders": "尚无可用模型",
+  "loadingModels": "正在加载模型…",
   "noProvidersHint": "连接提供商后即可选择其模型。",
   "configureProviders": "配置提供商",
   "unavailable": "模型不可用",

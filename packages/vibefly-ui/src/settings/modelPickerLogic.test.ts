@@ -20,49 +20,39 @@ function catalogFixture(): BundledCatalog {
   return {
     providerOrder: ["anthropic", "openai"],
     providers: [
-      {
-        id: "anthropic",
-        models: [
-          {
-            id: "claude-sonnet",
-            name: "Claude Sonnet",
-            priority: 1,
-            contextWindow: 200_000,
-            inputCostPerMTok: 3,
-            outputCostPerMTok: 15,
-            reasoning: true,
-          },
-          { id: "claude-haiku", name: "Claude Haiku", priority: 2 },
-        ],
-      },
-      {
-        id: "openai",
-        models: [{ id: "gpt-4o", name: "GPT-4o", priority: 1, vision: true }],
-      },
+        {id: "anthropic"},
+        {id: "openai"},
     ],
     providerRank: new Map([
       ["anthropic", 0],
       ["openai", 1],
     ]),
-    modelsByProvider: new Map([
-      [
-        "anthropic",
-        [
-          {
-            id: "claude-sonnet",
-            name: "Claude Sonnet",
-            priority: 1,
-            contextWindow: 200_000,
-            inputCostPerMTok: 3,
-            outputCostPerMTok: 15,
-            reasoning: true,
-          },
-          { id: "claude-haiku", name: "Claude Haiku", priority: 2 },
-        ],
-      ],
-      ["openai", [{ id: "gpt-4o", name: "GPT-4o", priority: 1, vision: true }]],
-    ]),
   }
+}
+
+function modelsFixture(): Map<string, import("./catalog").CatalogModel[]> {
+    return new Map([
+        [
+            "anthropic",
+            [
+                {
+                    id: "claude-sonnet",
+                    name: "Claude Sonnet",
+                    priority: 1,
+                    contextWindow: 200_000,
+                    inputCostPerMTok: 3,
+                    outputCostPerMTok: 15,
+                    reasoning: true,
+                },
+                {id: "claude-haiku", name: "Claude Haiku", priority: 2},
+            ],
+        ],
+        ["openai", [{id: "gpt-4o", name: "GPT-4o", priority: 1, vision: true}]],
+    ])
+}
+
+function entriesFromFixture() {
+    return buildEntries(connectedSnaps(), catalogFixture(), modelsFixture())
 }
 
 function connectedSnaps(): ProviderSnapshot[] {
@@ -98,7 +88,7 @@ function connectedSnaps(): ProviderSnapshot[] {
 
 describe("modelPickerLogic", () => {
   test("buildEntries merges catalog + custom connected", () => {
-    const entries = buildEntries(connectedSnaps(), catalogFixture())
+      const entries = entriesFromFixture()
     const specs = entries.map((e) => e.spec)
     expect(specs).toContain("anthropic/claude-sonnet")
     expect(specs).toContain("openai/gpt-4o")
@@ -122,7 +112,7 @@ describe("modelPickerLogic", () => {
   })
 
   test("tokenize AND and slash query", () => {
-    const entries = buildEntries(connectedSnaps(), catalogFixture())
+      const entries = entriesFromFixture()
     const andRows = rank(entries, "claude 4", [], [], false)
     expect(andRows).toEqual([])
 
@@ -131,7 +121,7 @@ describe("modelPickerLogic", () => {
   })
 
   test("search uses a single relevance-ranked result tier", () => {
-    const entries = buildEntries(connectedSnaps(), catalogFixture())
+      const entries = entriesFromFixture()
     const rows = rank(
       entries,
       "claude",
@@ -147,7 +137,7 @@ describe("modelPickerLogic", () => {
   })
 
   test("capabilities and localized default actions are searchable", () => {
-    const entries = buildEntries(connectedSnaps(), catalogFixture())
+      const entries = entriesFromFixture()
     expect(rank(entries, "reasoning", [], [], false).map((row) => row.entry.spec)).toEqual([
       "anthropic/claude-sonnet",
     ])
@@ -159,7 +149,7 @@ describe("modelPickerLogic", () => {
   })
 
   test("pin and recent tiers preserve order", () => {
-    const entries = buildEntries(connectedSnaps(), catalogFixture())
+      const entries = entriesFromFixture()
     const rows = rank(
       entries,
       "",
@@ -175,7 +165,7 @@ describe("modelPickerLogic", () => {
   })
 
   test("provider scope and listProviders", () => {
-    const entries = buildEntries(connectedSnaps(), catalogFixture())
+      const entries = entriesFromFixture()
     const openaiOnly = rank(entries, "", ["openai/gpt-4o", "anthropic/claude-haiku"], [], false, "openai")
     expect(openaiOnly.every((r) => !r.entry.spec || r.entry.providerId === "openai")).toBe(true)
     const providers = listProviders(entries).map((p) => p.id)
@@ -194,7 +184,7 @@ describe("modelPickerLogic", () => {
     expect(tokenizeQuery("openai/gpt")).toEqual([
       { raw: "openai/gpt", providerPart: "openai", modelPart: "gpt" },
     ])
-    const entry = buildEntries(connectedSnaps(), catalogFixture()).find(
+      const entry = entriesFromFixture().find(
       (e) => e.spec === "openai/gpt-4o",
     )!
     expect(scoreEntry(entry, tokenizeQuery("openai/gpt"))).not.toBeNull()

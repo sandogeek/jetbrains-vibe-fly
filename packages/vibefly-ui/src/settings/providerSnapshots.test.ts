@@ -9,21 +9,15 @@ const catalog: BundledCatalog = {
     {
       id: "anthropic",
       supportsLogin: true,
-      models: [],
     },
     {
       id: "openai",
       loginProviderId: "openai-codex-device",
-      models: [],
     },
   ],
   providerRank: new Map([
     ["anthropic", 0],
     ["openai", 1],
-  ]),
-  modelsByProvider: new Map([
-    ["anthropic", []],
-    ["openai", []],
   ]),
 }
 

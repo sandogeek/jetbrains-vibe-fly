@@ -3,10 +3,11 @@ import {useEffect, useLayoutEffect, useMemo, useRef, useState} from "react"
 
 import type {ProviderSnapshot} from "./providerSnapshots"
 import {type Translator, useAppTranslation} from "../i18n"
-import type {BundledCatalog} from "./catalog"
+import {type BundledCatalog, type CatalogModel, loadCatalogModelsForProviders,} from "./catalog"
 import {
     buildEntries,
     buildOptionEntries,
+    connectedCatalogProviderIds,
     listProviders,
     type ModelBadge,
     type ModelPickerOption,
@@ -37,6 +38,10 @@ export type {ModelPickerOption}
 
 let pickerSequence = 0
 
+function catalogSourceKey(providers: ProviderSnapshot[]): string {
+    return connectedCatalogProviderIds(providers).join("\0")
+}
+
 export function ModelPicker(props: ModelPickerProps) {
     const {t} = useAppTranslation("modelPicker")
     const pickerId = `model-picker-${++pickerSequence}`
@@ -47,16 +52,58 @@ export function ModelPicker(props: ModelPickerProps) {
     const [openPinned, setOpenPinned] = useState<string[]>(props.pinnedSpecs)
     const [openRecent, setOpenRecent] = useState<string[]>(props.recentSpecs)
     const [activeIndex, setActiveIndex] = useState(-1)
+    const [modelsByProvider, setModelsByProvider] = useState<Map<string, CatalogModel[]>>(() => new Map())
+    const [modelsLoading, setModelsLoading] = useState(false)
     const triggerRef = useRef<HTMLButtonElement>(null)
     const labelRef = useRef<HTMLSpanElement>(null)
     const measureRef = useRef<HTMLSpanElement>(null)
     const searchRef = useRef<HTMLInputElement>(null)
     const compact = props.variant === "compact"
-    const entries = useMemo(() => "options" in props && props.options ? buildOptionEntries(props.options) : buildEntries(props.providers, props.catalog), [props])
+    const usesCatalog = !("options" in props && props.options)
+    const catalogProvidersKey = usesCatalog && "providers" in props
+        ? catalogSourceKey(props.providers)
+        : ""
+
+    useEffect(() => {
+        if (!usesCatalog || !("providers" in props)) {
+            setModelsByProvider(new Map())
+            setModelsLoading(false)
+            return
+        }
+        const ids = connectedCatalogProviderIds(props.providers)
+        if (ids.length === 0) {
+            setModelsByProvider(new Map())
+            setModelsLoading(false)
+            return
+        }
+        let cancelled = false
+        setModelsLoading(true)
+        void loadCatalogModelsForProviders(ids)
+            .then((map) => {
+                if (!cancelled) {
+                    setModelsByProvider(map)
+                    setModelsLoading(false)
+                }
+            })
+            .catch(() => {
+                if (!cancelled) {
+                    setModelsByProvider(new Map())
+                    setModelsLoading(false)
+                }
+            })
+        return () => {
+            cancelled = true
+        }
+    }, [usesCatalog, catalogProvidersKey])
+
+    const entries = useMemo(() => {
+        if ("options" in props && props.options) return buildOptionEntries(props.options)
+        return buildEntries(props.providers, props.catalog, modelsByProvider)
+    }, [props, modelsByProvider])
     const providerOptions = useMemo(() => listProviders(entries), [entries])
     const rows = useMemo(() => open ? rank(entries, query, openPinned, openRecent, Boolean(props.allowFollowDefault), providerFilter || null, Boolean(props.allowClear)) : [], [entries, open, openPinned, openRecent, props.allowClear, props.allowFollowDefault, providerFilter, query])
     const selectedEntry = entries.find((entry) => entry.spec === props.value)
-    const selectedUnavailable = Boolean(props.value && !selectedEntry)
+    const selectedUnavailable = Boolean(props.value && !selectedEntry && !modelsLoading)
     const followDefaultEntry = entries.find((entry) => entry.spec === props.followDefaultSpec?.trim())
     const resultCount = rows.filter((row) => row.tier !== "follow_default" && row.tier !== "clear").length
     const [showProvider, setShowProvider] = useState(true)
@@ -203,7 +250,7 @@ export function ModelPicker(props: ModelPickerProps) {
                                                                                className="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-sm text-accent hover:bg-surface-raised"
                                                                                onClick={props.onConfigureProviders}>{t("modelPicker:configureProviders")}</button>}
                 {rows.length === 0 ? <div
-                    className="p-3 text-center text-xs text-muted">{query || providerFilter ? (query ? t("modelPicker:noMatchFor", {query: query.trim()}) : t("modelPicker:noMatch")) : t("modelPicker:noProviders")}</div> : rows.map((row, index) =>
+                    className="p-3 text-center text-xs text-muted">{modelsLoading ? t("modelPicker:loadingModels") : query || providerFilter ? (query ? t("modelPicker:noMatchFor", {query: query.trim()}) : t("modelPicker:noMatch")) : t("modelPicker:noProviders")}</div> : rows.map((row, index) =>
                     <ModelRow key={`${row.tier}:${row.entry.spec}:${index}`} row={row} index={index}
                               active={index === activeIndex} selected={row.entry.spec === props.value}
                               pinned={openPinned.includes(row.entry.spec)} onSelect={() => select(row.entry.spec)}

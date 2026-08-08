@@ -12,6 +12,7 @@
   "clearSearch": "Clear search",
   "clearFilters": "Clear search and filters",
   "noProviders": "No models available",
+  "loadingModels": "Loading models…",
   "noProvidersHint": "Connect a provider to choose one of its models.",
   "configureProviders": "Configure providers",
   "unavailable": "Model unavailable",

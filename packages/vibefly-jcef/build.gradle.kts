@@ -53,9 +53,13 @@ val generateVibeflyAgentControlRpc by tasks.registering(JavaExec::class) {
 }
 
 // Build-time provider data for UI + Agent (committed generated TS; re-export when upgrading).
+// UI: metadata eager + per-provider model chunks (dynamic import for connected providers only).
 val agentRoot = rootProject.layout.projectDirectory.dir("packages/vibefly-agent")
-val uiProviderCatalog =
-    rootProject.layout.projectDirectory.file("packages/vibefly-ui/src/generated/bundledCatalog.ts")
+val uiGenerated = rootProject.layout.projectDirectory.dir("packages/vibefly-ui/src/generated")
+val uiProviderCatalog = uiGenerated.file("bundledCatalog.ts")
+val uiCatalogModelLoaders = uiGenerated.file("catalogModelLoaders.ts")
+val uiCatalogModelTypes = uiGenerated.file("catalogModelTypes.ts")
+val uiCatalogModelsDir = uiGenerated.dir("catalogModels")
 val agentProviderCatalog =
     rootProject.layout.projectDirectory.file("packages/vibefly-agent/src/generated/providerCatalog.ts")
 
@@ -72,6 +76,9 @@ val exportBundledCatalog by tasks.registering(ExportBundledCatalogTask::class) {
         agentRoot.file("node_modules/@earendil-works/pi-ai/package.json"),
     )
     uiOutputFile.set(uiProviderCatalog)
+    uiModelLoadersFile.set(uiCatalogModelLoaders)
+    uiModelTypesFile.set(uiCatalogModelTypes)
+    uiModelsDirectory.set(uiCatalogModelsDir)
     agentOutputFile.set(agentProviderCatalog)
 }
 

@@ -1,5 +1,5 @@
 import type {BundledCatalog, CatalogModel} from "./catalog"
-import {catalogModels, providerRank} from "./catalog"
+import {providerRank} from "./catalog"
 import type {ParsedProviderModel} from "./providerConfigDraft"
 import {classifyProviders} from "./providerLogic"
 import {displayName} from "./providerLabels"
@@ -230,6 +230,7 @@ function entryFromCustom(
 export function buildEntries(
     connectedSnapshots: ProviderSnapshot[],
     catalog: BundledCatalog,
+    modelsByProvider: ReadonlyMap<string, CatalogModel[]> = new Map(),
 ): ModelPickerEntry[] {
     const connected = classifyProviders(connectedSnapshots).connected
     const out: ModelPickerEntry[] = []
@@ -238,7 +239,7 @@ export function buildEntries(
         const providerLabel = displayName(providerId)
         const rank = providerRank(catalog, providerId)
         if (snap.isCatalog) {
-            for (const m of catalogModels(catalog, providerId)) {
+            for (const m of modelsByProvider.get(providerId) ?? []) {
                 out.push(entryFromBundled(providerId, providerLabel, rank, m))
             }
         } else {
@@ -249,6 +250,13 @@ export function buildEntries(
     }
     out.sort(normalCompare)
     return out
+}
+
+/** Connected catalog provider ids that need a dynamic model chunk. */
+export function connectedCatalogProviderIds(providers: ProviderSnapshot[]): string[] {
+    return classifyProviders(providers)
+        .connected.filter((snap) => snap.isCatalog)
+        .map((snap) => snap.id)
 }
 
 export function buildOptionEntries(options: ModelPickerOption[]): ModelPickerEntry[] {
