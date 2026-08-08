@@ -211,7 +211,7 @@ type ToolArtifact = {
 - **无** 编辑、分支、重新生成、客户端 tool invocation。
 - 工具全部在 pi 内执行；assistant-ui 原生 `approval` / `onRespondToToolApproval` **未使用**。
 - `isRunning` 来自会话 summary（`busy` / `queued`），不是单条 message.status。
-- 每 tab `key={sessionId}` 独立 runtime；打开上限见 `MAX_OPEN_TABS`。
+- 每 tab `key={sessionId}` 独立 runtime；打开数量不设上限。
 
 ## 6. 旁路交互（非 message parts）
 

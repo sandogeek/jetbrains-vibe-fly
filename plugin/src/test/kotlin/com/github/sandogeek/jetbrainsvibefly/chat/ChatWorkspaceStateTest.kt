@@ -6,7 +6,7 @@ import org.junit.Test
 
 class ChatWorkspaceStateTest {
     @Test
-    fun `replace normalizes order limit and active session`() {
+    fun `replace normalizes trim distinct and active session`() {
         val state = ChatWorkspaceState()
         state.replace(
             ChatWorkspaceStateDto(
@@ -15,7 +15,7 @@ class ChatWorkspaceStateTest {
             ),
         )
 
-        assertEquals(listOf("a", "b", "c", "d", "e", "f", "g", "h"), state.snapshot().sessionIds)
+        assertEquals(listOf("a", "b", "c", "d", "e", "f", "g", "h", "i"), state.snapshot().sessionIds)
         assertEquals("b", state.snapshot().activeSessionId)
     }
 

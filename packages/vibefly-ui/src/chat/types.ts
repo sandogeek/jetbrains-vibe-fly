@@ -25,5 +25,3 @@ export type ThinkingOption = {
 }
 
 export type ChatContexts = Record<string, ChatContextItem[]>
-
-export const MAX_OPEN_TABS = 8

@@ -133,9 +133,11 @@ export function ModelPicker(props: ModelPickerProps) {
         setProviderFilter("")
     }
     const togglePin = (spec: string, event: React.MouseEvent) => {
-        event.stopPropagation();
+        event.stopPropagation()
         event.preventDefault()
-        setOpenPinned((current) => togglePinned(current, spec))
+        const nextPinned = togglePinned(openPinned, spec)
+        setOpenPinned(nextPinned)
+        props.onChange(props.value, nextPinned, openRecent)
     }
     const onKeyDown = (event: React.KeyboardEvent) => {
         if (event.key === "Escape") {
@@ -287,6 +289,10 @@ function ModelRow({row, index, active, selected, pinned, onSelect, onTogglePin, 
             <button type="button" className={`shrink-0 p-1 ${pinned ? "text-accent" : "text-muted"}`}
                     title={pinned ? t("modelPicker:unpin") : t("modelPicker:pin")}
                     aria-label={pinned ? t("modelPicker:unpin") : t("modelPicker:pin")} aria-pressed={pinned}
+                    onMouseDown={(event) => {
+                        event.stopPropagation()
+                        event.preventDefault()
+                    }}
                     onClick={onTogglePin}><Star className="size-3.5" fill={pinned ? "currentColor" : "none"}/></button>}
         </div>
     </>

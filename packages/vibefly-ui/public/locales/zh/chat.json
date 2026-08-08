@@ -1,12 +1,11 @@
 {
   "defaultModel": "默认模型",
   "agentTimeout": "Agent 连接超时",
-  "maxSessions": "最多同时打开 8 个会话，请先关闭一个。",
   "newSession": "新会话",
   "closeRunning": "该会话仍在运行。终止并关闭？",
-  "closeSessionFirst": "请先关闭一个会话。",
   "closeSession": "关闭会话",
   "closeOtherSessions": "关闭其它页签",
+  "showTabsList": "显示隐藏的页签",
   "closeOtherRunning": "其它会话仍在运行。终止并关闭？",
   "recentSessions": "最近会话",
   "noRecent": "暂无历史",

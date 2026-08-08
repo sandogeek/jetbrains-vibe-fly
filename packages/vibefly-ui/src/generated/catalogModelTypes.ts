@@ -3,10 +3,10 @@
 
 /** Packed model row v1 — expand in settings/catalog.ts */
 export type PackedModel = [
-    id: string,
-    name: string | 0,
-    flags: number,
-    contextWindow: number,
-    inputCost: number,
-    outputCost: number,
+  id: string,
+  name: string | 0,
+  flags: number,
+  contextWindow: number,
+  inputCost: number,
+  outputCost: number,
 ]

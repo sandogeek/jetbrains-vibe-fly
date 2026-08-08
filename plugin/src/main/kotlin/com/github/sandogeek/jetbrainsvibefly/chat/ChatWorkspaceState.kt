@@ -1,12 +1,7 @@
 package com.github.sandogeek.jetbrainsvibefly.chat
 
 import com.github.sandogeek.vibefly.jcef.rpc.ChatWorkspaceStateDto
-import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.components.PersistentStateComponent
-import com.intellij.openapi.components.Service
-import com.intellij.openapi.components.State
-import com.intellij.openapi.components.Storage
-import com.intellij.openapi.components.StoragePathMacros
+import com.intellij.openapi.components.*
 import com.intellij.openapi.project.Project
 import com.intellij.util.xmlb.annotations.XCollection
 
@@ -25,14 +20,14 @@ class ChatWorkspaceState : PersistentStateComponent<ChatWorkspaceState> {
     override fun getState(): ChatWorkspaceState = this
 
     override fun loadState(state: ChatWorkspaceState) {
-        sessionIds = state.sessionIds.map(String::trim).filter(String::isNotEmpty).distinct().take(8).toMutableList()
+        sessionIds = state.sessionIds.map(String::trim).filter(String::isNotEmpty).distinct().toMutableList()
         activeSessionId = state.activeSessionId.trim().takeIf { it in sessionIds } ?: sessionIds.firstOrNull().orEmpty()
     }
 
     fun snapshot(): ChatWorkspaceStateDto = ChatWorkspaceStateDto(sessionIds.toList(), activeSessionId)
 
     fun replace(state: ChatWorkspaceStateDto) {
-        sessionIds = state.sessionIds.map(String::trim).filter(String::isNotEmpty).distinct().take(8).toMutableList()
+        sessionIds = state.sessionIds.map(String::trim).filter(String::isNotEmpty).distinct().toMutableList()
         activeSessionId = state.activeSessionId.trim().takeIf { it in sessionIds } ?: sessionIds.firstOrNull().orEmpty()
     }
 

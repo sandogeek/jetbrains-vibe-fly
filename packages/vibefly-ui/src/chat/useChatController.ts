@@ -26,14 +26,7 @@ import type {ModelPreferences} from "../settings/settingsStore"
 import {applyJbTheme} from "../theme"
 import {applyChatEvent} from "./chatEventState"
 import {createDemoTab} from "./demoSession"
-import {
-    type ChatContexts,
-    type ChatTab,
-    MAX_OPEN_TABS,
-    type PendingInput,
-    type PendingPermission,
-    type ThinkingOption,
-} from "./types"
+import {type ChatContexts, type ChatTab, type PendingInput, type PendingPermission, type ThinkingOption,} from "./types"
 
 type StateUpdater<T> = T | ((current: T) => T)
 
@@ -301,9 +294,7 @@ export function useChatController(): ChatController {
         if (!chatHost || offlineRef.current) return
         try {
             await chatHost.saveChatWorkspaceState({
-                sessionIds: tabsRef.current
-                    .map((tab) => tab.summary.sessionId)
-                    .slice(0, MAX_OPEN_TABS),
+                sessionIds: tabsRef.current.map((tab) => tab.summary.sessionId),
                 activeSessionId: activeIdRef.current,
             })
         } catch (persistError) {
@@ -357,7 +348,7 @@ export function useChatController(): ChatController {
                 if (!agentRef.current) throw new Error(i18n.t("chat:agentTimeout"))
 
                 const restored: ChatTab[] = []
-                for (const sessionId of (workspace.sessionIds ?? []).slice(0, MAX_OPEN_TABS)) {
+                for (const sessionId of workspace.sessionIds ?? []) {
                     try {
                         restored.push(
                             await agentRef.current.openChatSession({
@@ -545,10 +536,6 @@ export function useChatController(): ChatController {
 
     const newSession = async () => {
         setRecentOpen(false)
-        if (tabsRef.current.length >= MAX_OPEN_TABS) {
-            setError(t("chat:maxSessions"))
-            return
-        }
         if (offlineRef.current) {
             const id = `demo-${Date.now()}`
             const tab: ChatTab = {
@@ -666,10 +653,7 @@ export function useChatController(): ChatController {
             await activate(existing.summary.sessionId)
             return
         }
-        if (tabsRef.current.length >= MAX_OPEN_TABS || !agentRef.current) {
-            setError(t("chat:closeSessionFirst"))
-            return
-        }
+        if (!agentRef.current) return
         try {
             const snapshot = await agentRef.current.openChatSession({
                 projectRoot: projectRootRef.current,
