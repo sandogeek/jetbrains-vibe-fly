@@ -112,7 +112,7 @@ Kotlin 包根：`com.github.sandogeek.jetbrainsvibefly`。
 4. Kotlin / 插件：在可行时跑 `./gradlew :plugin:test` 或针对性编译。
 
 ## 不要做的事
-
+- 当前仍处于 beta 版本，不要考虑兼容性以及数据迁移。
 - 不要把 `设想.md` 或 `docs/*.md` 当成运行时真相而不对照代码。
 - 不要在 SimpleRpc 之外再加第二套 RPC 栈。
 - 不要把 UI↔Agent 契约写进 Kotlin。
