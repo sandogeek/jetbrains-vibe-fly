@@ -7,8 +7,8 @@ export type CatalogModelsModule = { models: PackedModel[] }
 
 /** Vite code-splits each import(); call only for connected providers. */
 export const catalogModelLoaders: Record<
-    string,
-    () => Promise<CatalogModelsModule>
+  string,
+  () => Promise<CatalogModelsModule>
 > = {
   "amazon-bedrock": () => import("./catalogModels/amazon-bedrock.js"),
   "ant-ling": () => import("./catalogModels/ant-ling.js"),

@@ -3,4 +3,4 @@
 
 import type {PackedModel} from "../catalogModelTypes"
 
-export const models: PackedModel[] = [["Ling-2.6-1T", "Ling 2.6 1T", 0, 262144, 0.06, 0.25], ["Ling-2.6-flash", "Ling 2.6 Flash", 0, 262144, 0.01, 0.02], ["Ring-2.6-1T", "Ring 2.6 1T", 2, 262144, 0.06, 0.25]]
+export const models: PackedModel[] = [["Ling-2.6-1T","Ling 2.6 1T",0,262144,0.06,0.25],["Ling-2.6-flash","Ling 2.6 Flash",0,262144,0.01,0.02],["Ring-2.6-1T","Ring 2.6 1T",2,262144,0.06,0.25]]

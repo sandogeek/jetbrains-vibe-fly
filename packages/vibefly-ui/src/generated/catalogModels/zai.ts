@@ -3,4 +3,4 @@
 
 import type {PackedModel} from "../catalogModelTypes"
 
-export const models: PackedModel[] = [["glm-4.5-air", "GLM-4.5-Air", 2, 131072, 0, 0], ["glm-4.7", "GLM-4.7", 2, 204800, 0, 0], ["glm-5-turbo", "GLM-5-Turbo", 2, 200000, 0, 0], ["glm-5.1", "GLM-5.1", 2, 200000, 0, 0], ["glm-5.2", "GLM-5.2", 2, 1000000, 0, 0], ["glm-5v-turbo", "GLM-5V-Turbo", 3, 200000, 0, 0]]
+export const models: PackedModel[] = [["glm-4.5-air","GLM-4.5-Air",2,131072,0,0],["glm-4.7","GLM-4.7",2,204800,0,0],["glm-5-turbo","GLM-5-Turbo",2,200000,0,0],["glm-5.1","GLM-5.1",2,200000,0,0],["glm-5.2","GLM-5.2",2,1000000,0,0],["glm-5v-turbo","GLM-5V-Turbo",3,200000,0,0]]

@@ -3,4 +3,4 @@
 
 import type {PackedModel} from "../catalogModelTypes"
 
-export const models: PackedModel[] = [["gemma-4-31b", "Gemma 4 31B IT", 3, 131072, 0.99, 1.49], ["gpt-oss-120b", "GPT OSS 120B", 2, 131072, 0.35, 0.75], ["zai-glm-4.7", "Z.AI GLM-4.7", 2, 131072, 2.25, 2.75]]
+export const models: PackedModel[] = [["gemma-4-31b","Gemma 4 31B IT",3,131072,0.99,1.49],["gpt-oss-120b","GPT OSS 120B",2,131072,0.35,0.75],["zai-glm-4.7","Z.AI GLM-4.7",2,131072,2.25,2.75]]

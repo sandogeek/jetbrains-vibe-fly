@@ -3,4 +3,4 @@
 
 import type {PackedModel} from "../catalogModelTypes"
 
-export const models: PackedModel[] = [["grok-4.3", "Grok 4.3", 3, 1000000, 1.25, 2.5], ["grok-build-0.1", "Grok Build 0.1", 3, 256000, 1, 2], ["grok-4.5", "Grok 4.5", 3, 500000, 2, 6]]
+export const models: PackedModel[] = [["grok-4.3","Grok 4.3",3,1000000,1.25,2.5],["grok-build-0.1","Grok Build 0.1",3,256000,1,2],["grok-4.5","Grok 4.5",3,500000,2,6]]

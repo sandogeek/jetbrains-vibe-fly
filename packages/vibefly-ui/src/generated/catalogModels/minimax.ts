@@ -3,4 +3,4 @@
 
 import type {PackedModel} from "../catalogModelTypes"
 
-export const models: PackedModel[] = [["MiniMax-M2.7", 0, 2, 204800, 0.3, 1.2], ["MiniMax-M2.7-highspeed", 0, 2, 204800, 0.6, 2.4], ["MiniMax-M3", 0, 3, 1000000, 0.3, 1.2]]
+export const models: PackedModel[] = [["MiniMax-M2.7",0,2,204800,0.3,1.2],["MiniMax-M2.7-highspeed",0,2,204800,0.6,2.4],["MiniMax-M3",0,3,1000000,0.3,1.2]]

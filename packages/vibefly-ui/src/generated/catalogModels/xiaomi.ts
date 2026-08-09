@@ -3,4 +3,4 @@
 
 import type {PackedModel} from "../catalogModelTypes"
 
-export const models: PackedModel[] = [["mimo-v2-flash", "MiMo-V2-Flash", 2, 262144, 0.14, 0.28], ["mimo-v2-omni", "MiMo-V2-Omni", 3, 262144, 0.14, 0.28], ["mimo-v2-pro", "MiMo-V2-Pro", 2, 1048576, 0.435, 0.87], ["mimo-v2.5", "MiMo-V2.5", 3, 1048576, 0.14, 0.28], ["mimo-v2.5-pro", "MiMo-V2.5-Pro", 2, 1048576, 0.435, 0.87], ["mimo-v2.5-pro-ultraspeed", "MiMo-V2.5-Pro-UltraSpeed", 2, 1048576, 1.305, 2.61]]
+export const models: PackedModel[] = [["mimo-v2-flash","MiMo-V2-Flash",2,262144,0.14,0.28],["mimo-v2-omni","MiMo-V2-Omni",3,262144,0.14,0.28],["mimo-v2-pro","MiMo-V2-Pro",2,1048576,0.435,0.87],["mimo-v2.5","MiMo-V2.5",3,1048576,0.14,0.28],["mimo-v2.5-pro","MiMo-V2.5-Pro",2,1048576,0.435,0.87],["mimo-v2.5-pro-ultraspeed","MiMo-V2.5-Pro-UltraSpeed",2,1048576,1.305,2.61]]
