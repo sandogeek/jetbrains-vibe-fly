@@ -89,7 +89,7 @@
 
 .composer-toolbar {
     min-height: 34px;
-    padding: 4px 8px 8px;
+    padding: 4px 5px;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -144,7 +144,6 @@
 
 .composer-select-trigger > span {
     min-width: 0;
-    overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }

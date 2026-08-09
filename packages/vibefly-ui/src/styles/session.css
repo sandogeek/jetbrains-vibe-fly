@@ -13,7 +13,8 @@
 .session-bar {
     position: relative;
     z-index: 20;
-    min-height: 44px;
+    height: 35px;
+    min-height: 35px;
     display: flex;
     align-items: stretch;
     border-bottom: 1px solid var(--vf-border-soft);
@@ -67,7 +68,7 @@
     position: relative;
     min-width: 96px;
     max-width: 180px;
-    height: 44px;
+    height: 100%;
     padding: 0 8px 0 12px;
     display: flex;
     align-items: center;
@@ -339,10 +340,10 @@
 
 .recent-item {
     width: 100%;
-    padding: 10px;
+    padding: 5px;
     display: flex;
     align-items: flex-start;
-    gap: 10px;
+    gap: 6px;
     border: 0;
     border-radius: 8px;
     background: transparent;
