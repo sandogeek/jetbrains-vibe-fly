@@ -1,3 +1,6 @@
+import Type, {type Static, type TObject, type TProperties, type TSchema} from "typebox"
+import {Check, Errors} from "typebox/value"
+
 export type JsonPrimitive = string | number | boolean | null
 
 export type JsonValue = JsonPrimitive | JsonObject | JsonValue[]
@@ -48,137 +51,214 @@ export type SafeSettingsSnapshot =
     | SafeApplicationSettingsSnapshot
     | SafeProjectSettingsSnapshot
 
-export type PiCompactionSettings = JsonObject & {
-    enabled?: boolean | null
-    reserveTokens?: number | null
-    keepRecentTokens?: number | null
+type SchemaExpected = TSchema & {expected?: string}
+
+function openObject(properties: TProperties, expected = "an object"): TObject {
+    return Type.Object(properties, {additionalProperties: true, expected}) as TObject
 }
 
-export type PiRetryProviderSettings = JsonObject & {
-    timeoutMs?: number | null
-    maxRetries?: number | null
-    maxRetryDelayMs?: number | null
+function optionalNullable(schema: TSchema, expected: string): TSchema {
+    return Type.Optional(Type.Union([schema, Type.Null()], {expected}))
 }
 
-export type PiRetrySettings = JsonObject & {
-    enabled?: boolean | null
-    maxRetries?: number | null
-    baseDelayMs?: number | null
-    provider?: PiRetryProviderSettings | null
+function optionalString(expected = "a string"): TSchema {
+    return optionalNullable(Type.String({expected}), expected)
 }
 
-export type PiBranchSummarySettings = JsonObject & {
-    reserveTokens?: number | null
-    skipPrompt?: boolean | null
+function optionalBoolean(expected = "a boolean"): TSchema {
+    return optionalNullable(Type.Boolean({expected}), expected)
 }
 
-export type PiTerminalSettings = JsonObject & {
-    showImages?: boolean | null
-    imageWidthCells?: number | null
-    clearOnShrink?: boolean | null
-    showTerminalProgress?: boolean | null
+function optionalNonNegativeNumber(expected = "a non-negative number"): TSchema {
+    return optionalNullable(Type.Number({minimum: 0, expected}), expected)
 }
 
-export type PiImageSettings = JsonObject & {
-    autoResize?: boolean | null
-    blockImages?: boolean | null
+function optionalStringArray(expected = "an array of strings"): TSchema {
+    return optionalNullable(Type.Array(Type.String({expected: "a string"}), {expected}), expected)
 }
 
-export type PiThinkingBudgetsSettings = JsonObject & {
-    minimal?: number | null
-    low?: number | null
-    medium?: number | null
-    high?: number | null
+function optionalEnum(values: readonly string[], expected: string): TSchema {
+    return optionalNullable(
+        Type.Union(values.map((value) => Type.Literal(value)), {expected}),
+        expected,
+    )
 }
 
-export type PiMarkdownSettings = JsonObject & {
-    codeBlockIndent?: string | null
-}
+export const PiCompactionSettingsSchema = openObject({
+    enabled: optionalBoolean(),
+    reserveTokens: optionalNonNegativeNumber(),
+    keepRecentTokens: optionalNonNegativeNumber(),
+})
 
-export type PiWarningSettings = JsonObject & {
-    anthropicExtraUsage?: boolean | null
-}
+export const PiRetryProviderSettingsSchema = openObject({
+    timeoutMs: optionalNonNegativeNumber(),
+    maxRetries: optionalNonNegativeNumber(),
+    maxRetryDelayMs: optionalNonNegativeNumber(),
+})
 
-export type PiPackageSettings = JsonObject & {
-    source: string
-    autoload?: boolean
-    extensions?: string[]
-    skills?: string[]
-    prompts?: string[]
-    themes?: string[]
-}
+export const PiRetrySettingsSchema = openObject({
+    enabled: optionalBoolean(),
+    maxRetries: optionalNonNegativeNumber(),
+    baseDelayMs: optionalNonNegativeNumber(),
+    provider: optionalNullable(PiRetryProviderSettingsSchema, "an object"),
+})
 
-export type PiPackageSource = string | PiPackageSettings
+export const PiBranchSummarySettingsSchema = openObject({
+    reserveTokens: optionalNonNegativeNumber(),
+    skipPrompt: optionalBoolean(),
+})
 
-export type PiSettings = JsonObject & {
-    lastChangelogVersion?: string | null
-    defaultProvider?: string | null
-    defaultModel?: string | null
-    defaultThinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null
-    steeringMode?: "all" | "one-at-a-time" | null
-    followUpMode?: "all" | "one-at-a-time" | null
-    transport?: "auto" | "sse" | "websocket" | "websocket-cached" | null
-    theme?: string | null
-    compaction?: PiCompactionSettings | null
-    branchSummary?: PiBranchSummarySettings | null
-    retry?: PiRetrySettings | null
-    hideThinkingBlock?: boolean | null
-    showCacheMissNotices?: boolean | null
-    externalEditor?: string | null
-    shellPath?: string | null
-    quietStartup?: boolean | null
-    defaultProjectTrust?: "ask" | "always" | "never" | null
-    shellCommandPrefix?: string | null
-    npmCommand?: string[] | null
-    collapseChangelog?: boolean | null
-    enableInstallTelemetry?: boolean | null
-    enableAnalytics?: boolean | null
-    trackingId?: string | null
-    packages?: PiPackageSource[] | null
-    extensions?: string[] | null
-    skills?: string[] | null
-    prompts?: string[] | null
-    themes?: string[] | null
-    enableSkillCommands?: boolean | null
-    terminal?: PiTerminalSettings | null
-    images?: PiImageSettings | null
-    enabledModels?: string[] | null
-    doubleEscapeAction?: "fork" | "tree" | "none" | null
-    treeFilterMode?: "default" | "no-tools" | "user-only" | "labeled-only" | "all" | null
-    thinkingBudgets?: PiThinkingBudgetsSettings | null
-    editorPaddingX?: number | null
-    outputPad?: 0 | 1 | null
-    autocompleteMaxVisible?: number | null
-    showHardwareCursor?: boolean | null
-    markdown?: PiMarkdownSettings | null
-    warnings?: PiWarningSettings | null
-    sessionDir?: string | null
-    httpProxy?: string | null
-    httpIdleTimeoutMs?: number | null
-    websocketConnectTimeoutMs?: number | null
-}
+export const PiTerminalSettingsSchema = openObject({
+    showImages: optionalBoolean(),
+    imageWidthCells: optionalNonNegativeNumber(),
+    clearOnShrink: optionalBoolean(),
+    showTerminalProgress: optionalBoolean(),
+})
 
-export type VibeflyCommitSettings = JsonObject & {
-    languageMode?: "follow_ide" | "en" | "zh" | null
-    commitModelSpec?: string | null
-    useCustomPrompt?: boolean | null
-    customPrompt?: string | null
-}
+export const PiImageSettingsSchema = openObject({
+    autoResize: optionalBoolean(),
+    blockImages: optionalBoolean(),
+})
 
-export type VibeflyModelPreferences = JsonObject & {
-    recentModelSpecs?: string[] | null
-    pinnedModelSpecs?: string[] | null
-}
+export const PiThinkingBudgetsSettingsSchema = openObject({
+    minimal: optionalNonNegativeNumber(),
+    low: optionalNonNegativeNumber(),
+    medium: optionalNonNegativeNumber(),
+    high: optionalNonNegativeNumber(),
+})
 
-export type VibeflyUiSettings = JsonObject & {
-    locale?: "follow_ide" | "en" | "zh" | null
-}
+export const PiMarkdownSettingsSchema = openObject({
+    codeBlockIndent: optionalString(),
+})
 
-export type VibeflySettings = JsonObject & {
-    commit?: VibeflyCommitSettings | null
-    modelPreferences?: VibeflyModelPreferences | null
-    ui?: VibeflyUiSettings | null
-}
+export const PiWarningSettingsSchema = openObject({
+    anthropicExtraUsage: optionalBoolean(),
+})
+
+export const PiPackageSettingsSchema = openObject({
+    source: Type.String({expected: "a string"}),
+    autoload: Type.Optional(Type.Boolean({expected: "a boolean"})),
+    extensions: Type.Optional(Type.Array(Type.String({expected: "a string"}), {
+        expected: "an array of strings",
+    })),
+    skills: Type.Optional(Type.Array(Type.String({expected: "a string"}), {
+        expected: "an array of strings",
+    })),
+    prompts: Type.Optional(Type.Array(Type.String({expected: "a string"}), {
+        expected: "an array of strings",
+    })),
+    themes: Type.Optional(Type.Array(Type.String({expected: "a string"}), {
+        expected: "an array of strings",
+    })),
+})
+
+const packageSourcesExpected = "an array of package sources"
+export const PiPackageSourceSchema = Type.Union([
+    Type.String({expected: "a string"}),
+    PiPackageSettingsSchema,
+], {expected: packageSourcesExpected})
+
+export const PiSettingsSchema = openObject({
+    lastChangelogVersion: optionalString(),
+    defaultProvider: optionalString(),
+    defaultModel: optionalString(),
+    defaultThinkingLevel: optionalEnum(
+        ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
+        "a supported thinking level",
+    ),
+    steeringMode: optionalEnum(["all", "one-at-a-time"], "a supported queue mode"),
+    followUpMode: optionalEnum(["all", "one-at-a-time"], "a supported queue mode"),
+    transport: optionalEnum(
+        ["auto", "sse", "websocket", "websocket-cached"],
+        "auto, sse, websocket, or websocket-cached",
+    ),
+    theme: optionalString(),
+    compaction: optionalNullable(PiCompactionSettingsSchema, "an object"),
+    branchSummary: optionalNullable(PiBranchSummarySettingsSchema, "an object"),
+    retry: optionalNullable(PiRetrySettingsSchema, "an object"),
+    hideThinkingBlock: optionalBoolean(),
+    showCacheMissNotices: optionalBoolean(),
+    externalEditor: optionalString(),
+    shellPath: optionalString(),
+    quietStartup: optionalBoolean(),
+    defaultProjectTrust: optionalEnum(["ask", "always", "never"], "ask, always, or never"),
+    shellCommandPrefix: optionalString(),
+    npmCommand: optionalStringArray(),
+    collapseChangelog: optionalBoolean(),
+    enableInstallTelemetry: optionalBoolean(),
+    enableAnalytics: optionalBoolean(),
+    trackingId: optionalString(),
+    packages: optionalNullable(
+        Type.Array(PiPackageSourceSchema, {expected: packageSourcesExpected}),
+        packageSourcesExpected,
+    ),
+    extensions: optionalStringArray(),
+    skills: optionalStringArray(),
+    prompts: optionalStringArray(),
+    themes: optionalStringArray(),
+    enableSkillCommands: optionalBoolean(),
+    terminal: optionalNullable(PiTerminalSettingsSchema, "an object"),
+    images: optionalNullable(PiImageSettingsSchema, "an object"),
+    enabledModels: optionalStringArray(),
+    doubleEscapeAction: optionalEnum(["fork", "tree", "none"], "fork, tree, or none"),
+    treeFilterMode: optionalEnum(
+        ["default", "no-tools", "user-only", "labeled-only", "all"],
+        "a supported tree filter mode",
+    ),
+    thinkingBudgets: optionalNullable(PiThinkingBudgetsSettingsSchema, "an object"),
+    editorPaddingX: optionalNonNegativeNumber(),
+    outputPad: optionalNullable(
+        Type.Union([Type.Literal(0), Type.Literal(1)], {expected: "0 or 1"}),
+        "0 or 1",
+    ),
+    autocompleteMaxVisible: optionalNonNegativeNumber(),
+    showHardwareCursor: optionalBoolean(),
+    markdown: optionalNullable(PiMarkdownSettingsSchema, "an object"),
+    warnings: optionalNullable(PiWarningSettingsSchema, "an object"),
+    sessionDir: optionalString(),
+    httpProxy: optionalString(),
+    httpIdleTimeoutMs: optionalNonNegativeNumber(),
+    websocketConnectTimeoutMs: optionalNonNegativeNumber(),
+})
+
+export const VibeflyCommitSettingsSchema = openObject({
+    languageMode: optionalEnum(["follow_ide", "en", "zh"], "follow_ide, en, or zh"),
+    commitModelSpec: optionalString(),
+    useCustomPrompt: optionalBoolean(),
+    customPrompt: optionalString(),
+})
+
+export const VibeflyModelPreferencesSchema = openObject({
+    recentModelSpecs: optionalStringArray(),
+    pinnedModelSpecs: optionalStringArray(),
+})
+
+export const VibeflyUiSettingsSchema = openObject({
+    locale: optionalEnum(["follow_ide", "en", "zh"], "follow_ide, en, or zh"),
+})
+
+export const VibeflySettingsSchema = openObject({
+    commit: optionalNullable(VibeflyCommitSettingsSchema, "an object"),
+    modelPreferences: optionalNullable(VibeflyModelPreferencesSchema, "an object"),
+    ui: optionalNullable(VibeflyUiSettingsSchema, "an object"),
+})
+
+export type PiCompactionSettings = JsonObject & Static<typeof PiCompactionSettingsSchema>
+export type PiRetryProviderSettings = JsonObject & Static<typeof PiRetryProviderSettingsSchema>
+export type PiRetrySettings = JsonObject & Static<typeof PiRetrySettingsSchema>
+export type PiBranchSummarySettings = JsonObject & Static<typeof PiBranchSummarySettingsSchema>
+export type PiTerminalSettings = JsonObject & Static<typeof PiTerminalSettingsSchema>
+export type PiImageSettings = JsonObject & Static<typeof PiImageSettingsSchema>
+export type PiThinkingBudgetsSettings = JsonObject & Static<typeof PiThinkingBudgetsSettingsSchema>
+export type PiMarkdownSettings = JsonObject & Static<typeof PiMarkdownSettingsSchema>
+export type PiWarningSettings = JsonObject & Static<typeof PiWarningSettingsSchema>
+export type PiPackageSettings = JsonObject & Static<typeof PiPackageSettingsSchema>
+export type PiPackageSource = Static<typeof PiPackageSourceSchema>
+export type PiSettings = JsonObject & Static<typeof PiSettingsSchema>
+export type VibeflyCommitSettings = JsonObject & Static<typeof VibeflyCommitSettingsSchema>
+export type VibeflyModelPreferences = JsonObject & Static<typeof VibeflyModelPreferencesSchema>
+export type VibeflyUiSettings = JsonObject & Static<typeof VibeflyUiSettingsSchema>
+export type VibeflySettings = JsonObject & Static<typeof VibeflySettingsSchema>
 
 export type SettingsValidationResult<T extends JsonObject> = {
     value: T
@@ -193,28 +273,6 @@ export type EffectiveSettings = {
     projectRevision: string | null
     diagnostics: SettingsDiagnostic[]
 }
-
-const THINKING_LEVELS = new Set([
-    "off",
-    "minimal",
-    "low",
-    "medium",
-    "high",
-    "xhigh",
-    "max",
-])
-const TRANSPORTS = new Set(["auto", "sse", "websocket", "websocket-cached"])
-const QUEUE_MODES = new Set(["all", "one-at-a-time"])
-const LOCALE_MODES = new Set(["follow_ide", "en", "zh"])
-const PROJECT_TRUST_MODES = new Set(["ask", "always", "never"])
-const DOUBLE_ESCAPE_ACTIONS = new Set(["fork", "tree", "none"])
-const TREE_FILTER_MODES = new Set([
-    "default",
-    "no-tools",
-    "user-only",
-    "labeled-only",
-    "all",
-])
 
 function hasOwn(object: object, key: string): boolean {
     return Object.prototype.hasOwnProperty.call(object, key)
@@ -339,269 +397,116 @@ export function parseJsonObjectDocument(
     return {value: cloneJsonValue(parsed), diagnostics: []}
 }
 
-type Validator = (value: JsonValue) => boolean
-
-function stringValue(value: JsonValue): boolean {
-    return typeof value === "string"
+function isObjectSchema(schema: TSchema): schema is TObject {
+    const candidate = schema as {type?: unknown; properties?: unknown}
+    return candidate.type === "object"
+        && typeof candidate.properties === "object"
+        && candidate.properties !== null
+        && !Array.isArray(candidate.properties)
 }
 
-function booleanValue(value: JsonValue): boolean {
-    return typeof value === "boolean"
+function schemaVariants(schema: TSchema): TSchema[] {
+    const anyOf = (schema as {anyOf?: TSchema[]}).anyOf
+    return Array.isArray(anyOf) && anyOf.length > 0 ? anyOf : [schema]
 }
 
-function numberValue(value: JsonValue): boolean {
-    return typeof value === "number" && Number.isFinite(value)
+function nonNullVariants(schema: TSchema): TSchema[] {
+    return schemaVariants(schema).filter((variant) => (variant as {type?: unknown}).type !== "null")
 }
 
-function nonNegativeNumber(value: JsonValue): boolean {
-    return numberValue(value) && (value as number) >= 0
+function findObjectSchema(schema: TSchema): TObject | undefined {
+    for (const variant of nonNullVariants(schema)) {
+        if (isObjectSchema(variant)) return variant
+    }
+    return undefined
 }
 
-function stringArray(value: JsonValue): boolean {
-    return Array.isArray(value) && value.every((item) => typeof item === "string")
-}
-
-function packageSources(value: JsonValue): boolean {
-    if (!Array.isArray(value)) return false
-    return value.every((entry) => {
-        if (typeof entry === "string") return true
-        if (!isJsonObject(entry) || typeof entry.source !== "string") return false
-        if (hasOwn(entry, "autoload") && typeof entry.autoload !== "boolean") return false
-        for (const key of ["extensions", "skills", "prompts", "themes"]) {
-            if (hasOwn(entry, key) && !stringArray(entry[key]!)) return false
+function expectedFromTypeBoxErrors(schema: TSchema, value: unknown): string | undefined {
+    for (const error of Errors(schema, value)) {
+        if (error.keyword === "anyOf" || error.keyword === "oneOf") continue
+        if (error.keyword === "type") {
+            const type = (error.params as {type?: string} | undefined)?.type
+            if (type === "string") return "a string"
+            if (type === "boolean") return "a boolean"
+            if (type === "number" || type === "integer") return "a number"
+            if (type === "object") return "an object"
+            if (type === "array") return "an array"
+            if (type === "null") continue
         }
-        return true
-    })
+        if (error.keyword === "minimum" || error.keyword === "exclusiveMinimum") {
+            return "a non-negative number"
+        }
+        if (error.keyword === "const" || error.keyword === "enum") {
+            return "a supported value"
+        }
+    }
+    return undefined
 }
 
-function enumValue(values: ReadonlySet<string>): Validator {
-    return (value) => typeof value === "string" && values.has(value)
+function expectedForSchema(schema: TSchema, value: unknown): string {
+    const annotated = (schema as SchemaExpected).expected
+    if (typeof annotated === "string" && annotated.length > 0) return annotated
+    for (const variant of nonNullVariants(schema)) {
+        const nested = (variant as SchemaExpected).expected
+        if (typeof nested === "string" && nested.length > 0) return nested
+    }
+    return expectedFromTypeBoxErrors(schema, value) ?? "a valid value"
 }
 
-function validateProperty(
-    object: JsonObject,
-    key: string,
-    validator: Validator,
-    expected: string,
-    file: SettingsFileName,
+/**
+ * Tolerant sanitizer: validate known fields via TypeBox, keep unknown fields,
+ * delete the smallest invalid known field. Arrays are validated as a whole.
+ */
+function sanitizeKnownObject(
+    schema: TObject,
+    value: JsonObject,
     path: string,
+    file: SettingsFileName,
     diagnostics: SettingsDiagnostic[],
 ): void {
-    if (!hasOwn(object, key)) return
-    if (object[key] === null) return
-    if (validator(object[key]!)) return
-    delete object[key]
-    diagnostics.push({
-        file,
-        severity: "error",
-        message: `${path}.${key} must be ${expected}`,
-    })
-}
+    const properties = schema.properties ?? {}
+    for (const key of Object.keys(properties)) {
+        if (!hasOwn(value, key)) continue
+        const fieldSchema = properties[key]! as TSchema
+        const current = value[key]
+        if (Check(fieldSchema, current)) continue
 
-function validateObjectProperty(
-    object: JsonObject,
-    key: string,
-    file: SettingsFileName,
-    path: string,
-    diagnostics: SettingsDiagnostic[],
-    validate: (nested: JsonObject, nestedPath: string) => void,
-): void {
-    if (!hasOwn(object, key)) return
-    const nested = object[key]
-    if (nested === null) return
-    if (!isJsonObject(nested)) {
-        delete object[key]
+        const objectSchema = findObjectSchema(fieldSchema)
+        if (objectSchema && isJsonObject(current)) {
+            sanitizeKnownObject(objectSchema, current, `${path}.${key}`, file, diagnostics)
+            if (Check(fieldSchema, current)) continue
+        }
+
+        delete value[key]
         diagnostics.push({
             file,
             severity: "error",
-            message: `${path}.${key} must be an object`,
+            message: `${path}.${key} must be ${expectedForSchema(fieldSchema, current)}`,
         })
-        return
     }
-    validate(nested, `${path}.${key}`)
 }
 
-function validatePiSettingsObject(
+function sanitizeSettingsObject<T extends JsonObject>(
+    schema: TObject,
     value: JsonObject,
+    file: SettingsFileName,
     diagnostics: SettingsDiagnostic[],
-): PiSettings {
-    const file = "settings.json" as const
-    const root = "$"
-
-    for (const key of [
-        "lastChangelogVersion",
-        "defaultProvider",
-        "defaultModel",
-        "theme",
-        "externalEditor",
-        "shellPath",
-        "shellCommandPrefix",
-        "trackingId",
-        "sessionDir",
-        "httpProxy",
-    ]) {
-        validateProperty(value, key, stringValue, "a string", file, root, diagnostics)
-    }
-    for (const key of [
-        "hideThinkingBlock",
-        "showCacheMissNotices",
-        "quietStartup",
-        "collapseChangelog",
-        "enableInstallTelemetry",
-        "enableAnalytics",
-        "enableSkillCommands",
-        "showHardwareCursor",
-    ]) {
-        validateProperty(value, key, booleanValue, "a boolean", file, root, diagnostics)
-    }
-    for (const key of [
-        "editorPaddingX",
-        "autocompleteMaxVisible",
-        "httpIdleTimeoutMs",
-        "websocketConnectTimeoutMs",
-    ]) {
-        validateProperty(value, key, nonNegativeNumber, "a non-negative number", file, root, diagnostics)
-    }
-    for (const key of ["extensions", "skills", "prompts", "themes", "npmCommand", "enabledModels"]) {
-        validateProperty(value, key, stringArray, "an array of strings", file, root, diagnostics)
-    }
-    validateProperty(
-        value,
-        "defaultThinkingLevel",
-        enumValue(THINKING_LEVELS),
-        "a supported thinking level",
-        file,
-        root,
-        diagnostics,
-    )
-    validateProperty(
-        value,
-        "transport",
-        enumValue(TRANSPORTS),
-        "auto, sse, websocket, or websocket-cached",
-        file,
-        root,
-        diagnostics,
-    )
-    validateProperty(value, "steeringMode", enumValue(QUEUE_MODES), "a supported queue mode", file, root, diagnostics)
-    validateProperty(value, "followUpMode", enumValue(QUEUE_MODES), "a supported queue mode", file, root, diagnostics)
-    validateProperty(
-        value,
-        "defaultProjectTrust",
-        enumValue(PROJECT_TRUST_MODES),
-        "ask, always, or never",
-        file,
-        root,
-        diagnostics,
-    )
-    validateProperty(
-        value,
-        "doubleEscapeAction",
-        enumValue(DOUBLE_ESCAPE_ACTIONS),
-        "fork, tree, or none",
-        file,
-        root,
-        diagnostics,
-    )
-    validateProperty(
-        value,
-        "treeFilterMode",
-        enumValue(TREE_FILTER_MODES),
-        "a supported tree filter mode",
-        file,
-        root,
-        diagnostics,
-    )
-    validateProperty(
-        value,
-        "packages",
-        packageSources,
-        "an array of package sources",
-        file,
-        root,
-        diagnostics,
-    )
-    validateProperty(
-        value,
-        "outputPad",
-        (entry) => entry === 0 || entry === 1,
-        "0 or 1",
-        file,
-        root,
-        diagnostics,
-    )
-
-    validateObjectProperty(value, "compaction", file, root, diagnostics, (nested, path) => {
-        validateProperty(nested, "enabled", booleanValue, "a boolean", file, path, diagnostics)
-        validateProperty(nested, "reserveTokens", nonNegativeNumber, "a non-negative number", file, path, diagnostics)
-        validateProperty(nested, "keepRecentTokens", nonNegativeNumber, "a non-negative number", file, path, diagnostics)
-    })
-    validateObjectProperty(value, "branchSummary", file, root, diagnostics, (nested, path) => {
-        validateProperty(nested, "reserveTokens", nonNegativeNumber, "a non-negative number", file, path, diagnostics)
-        validateProperty(nested, "skipPrompt", booleanValue, "a boolean", file, path, diagnostics)
-    })
-    validateObjectProperty(value, "retry", file, root, diagnostics, (nested, path) => {
-        validateProperty(nested, "enabled", booleanValue, "a boolean", file, path, diagnostics)
-        validateProperty(nested, "maxRetries", nonNegativeNumber, "a non-negative number", file, path, diagnostics)
-        validateProperty(nested, "baseDelayMs", nonNegativeNumber, "a non-negative number", file, path, diagnostics)
-        validateObjectProperty(nested, "provider", file, path, diagnostics, (provider, providerPath) => {
-            validateProperty(provider, "timeoutMs", nonNegativeNumber, "a non-negative number", file, providerPath, diagnostics)
-            validateProperty(provider, "maxRetries", nonNegativeNumber, "a non-negative number", file, providerPath, diagnostics)
-            validateProperty(provider, "maxRetryDelayMs", nonNegativeNumber, "a non-negative number", file, providerPath, diagnostics)
-        })
-    })
-    validateObjectProperty(value, "terminal", file, root, diagnostics, (nested, path) => {
-        validateProperty(nested, "showImages", booleanValue, "a boolean", file, path, diagnostics)
-        validateProperty(nested, "imageWidthCells", nonNegativeNumber, "a non-negative number", file, path, diagnostics)
-        validateProperty(nested, "clearOnShrink", booleanValue, "a boolean", file, path, diagnostics)
-        validateProperty(nested, "showTerminalProgress", booleanValue, "a boolean", file, path, diagnostics)
-    })
-    validateObjectProperty(value, "images", file, root, diagnostics, (nested, path) => {
-        validateProperty(nested, "autoResize", booleanValue, "a boolean", file, path, diagnostics)
-        validateProperty(nested, "blockImages", booleanValue, "a boolean", file, path, diagnostics)
-    })
-    validateObjectProperty(value, "thinkingBudgets", file, root, diagnostics, (nested, path) => {
-        for (const key of ["minimal", "low", "medium", "high"]) {
-            validateProperty(nested, key, nonNegativeNumber, "a non-negative number", file, path, diagnostics)
-        }
-    })
-    validateObjectProperty(value, "markdown", file, root, diagnostics, (nested, path) => {
-        validateProperty(nested, "codeBlockIndent", stringValue, "a string", file, path, diagnostics)
-    })
-    validateObjectProperty(value, "warnings", file, root, diagnostics, (nested, path) => {
-        validateProperty(nested, "anthropicExtraUsage", booleanValue, "a boolean", file, path, diagnostics)
-    })
-    return value as PiSettings
+): T {
+    sanitizeKnownObject(schema, value, "$", file, diagnostics)
+    return value as T
 }
 
 export function parsePiSettingsJson(source: string): SettingsValidationResult<PiSettings> {
     const parsed = parseJsonObjectDocument(source, "settings.json")
     return {
-        value: validatePiSettingsObject(parsed.value, parsed.diagnostics),
+        value: sanitizeSettingsObject<PiSettings>(
+            PiSettingsSchema,
+            parsed.value,
+            "settings.json",
+            parsed.diagnostics,
+        ),
         diagnostics: parsed.diagnostics,
     }
-}
-
-function validateVibeflySettingsObject(
-    value: JsonObject,
-    diagnostics: SettingsDiagnostic[],
-): VibeflySettings {
-    const file = "settings.vibefly.json" as const
-    const root = "$"
-    validateObjectProperty(value, "commit", file, root, diagnostics, (nested, path) => {
-        validateProperty(nested, "languageMode", enumValue(LOCALE_MODES), "follow_ide, en, or zh", file, path, diagnostics)
-        validateProperty(nested, "commitModelSpec", stringValue, "a string", file, path, diagnostics)
-        validateProperty(nested, "useCustomPrompt", booleanValue, "a boolean", file, path, diagnostics)
-        validateProperty(nested, "customPrompt", stringValue, "a string", file, path, diagnostics)
-    })
-    validateObjectProperty(value, "modelPreferences", file, root, diagnostics, (nested, path) => {
-        validateProperty(nested, "recentModelSpecs", stringArray, "an array of strings", file, path, diagnostics)
-        validateProperty(nested, "pinnedModelSpecs", stringArray, "an array of strings", file, path, diagnostics)
-    })
-    validateObjectProperty(value, "ui", file, root, diagnostics, (nested, path) => {
-        validateProperty(nested, "locale", enumValue(LOCALE_MODES), "follow_ide, en, or zh", file, path, diagnostics)
-    })
-    return value as VibeflySettings
 }
 
 export function parseVibeflySettingsJson(
@@ -609,7 +514,12 @@ export function parseVibeflySettingsJson(
 ): SettingsValidationResult<VibeflySettings> {
     const parsed = parseJsonObjectDocument(source, "settings.vibefly.json")
     return {
-        value: validateVibeflySettingsObject(parsed.value, parsed.diagnostics),
+        value: sanitizeSettingsObject<VibeflySettings>(
+            VibeflySettingsSchema,
+            parsed.value,
+            "settings.vibefly.json",
+            parsed.diagnostics,
+        ),
         diagnostics: parsed.diagnostics,
     }
 }
