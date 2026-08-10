@@ -275,6 +275,56 @@ describe("settings runtime validation", () => {
         ])
     })
 
+    test("recursively validates schema objects without dropping unknown fields", () => {
+        const result = parsePiSettingsJson(JSON.stringify({
+            retry: {
+                enabled: true,
+                provider: "invalid",
+                futureRetryField: "keep",
+            },
+            terminal: "invalid",
+            packages: [
+                "@scope/valid-package",
+                {autoload: true},
+                {source: "git:valid/repository", futurePackageField: true},
+            ],
+            futurePiField: true,
+        }))
+
+        assert.deepEqual(result.value, {
+            retry: {
+                enabled: true,
+                futureRetryField: "keep",
+            },
+            packages: [
+                "@scope/valid-package",
+                {source: "git:valid/repository", futurePackageField: true},
+            ],
+            futurePiField: true,
+        })
+        assert.deepEqual(result.diagnostics.map((item) => item.message), [
+            "$.packages[1] must be a string or package source object",
+            "$.retry.provider must be an object",
+            "$.terminal must be an object",
+        ])
+
+        const allInvalid = parsePiSettingsJson(JSON.stringify({
+            packages: [{autoload: true}],
+        }))
+        assert.deepEqual(allInvalid.value, {packages: []})
+        assert.deepEqual(allInvalid.diagnostics.map((item) => item.message), [
+            "$.packages[0] must be a string or package source object",
+        ])
+
+        const invalidStringArray = parsePiSettingsJson(JSON.stringify({
+            enabledModels: ["openai/gpt-test", 42],
+        }))
+        assert.deepEqual(invalidStringArray.value, {})
+        assert.deepEqual(invalidStringArray.diagnostics.map((item) => item.message), [
+            "$.enabledModels must be an array of strings",
+        ])
+    })
+
     test("rejects malformed JSON and non-object roots", () => {
         assert.deepEqual(parsePiSettingsJson("{").value, {})
         assert.equal(parsePiSettingsJson("{").diagnostics[0]?.severity, "error")

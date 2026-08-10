@@ -48,173 +48,10 @@ export type SafeSettingsSnapshot =
     | SafeApplicationSettingsSnapshot
     | SafeProjectSettingsSnapshot
 
-export type PiCompactionSettings = JsonObject & {
-    enabled?: boolean | null
-    reserveTokens?: number | null
-    keepRecentTokens?: number | null
-}
-
-export type PiRetryProviderSettings = JsonObject & {
-    timeoutMs?: number | null
-    maxRetries?: number | null
-    maxRetryDelayMs?: number | null
-}
-
-export type PiRetrySettings = JsonObject & {
-    enabled?: boolean | null
-    maxRetries?: number | null
-    baseDelayMs?: number | null
-    provider?: PiRetryProviderSettings | null
-}
-
-export type PiBranchSummarySettings = JsonObject & {
-    reserveTokens?: number | null
-    skipPrompt?: boolean | null
-}
-
-export type PiTerminalSettings = JsonObject & {
-    showImages?: boolean | null
-    imageWidthCells?: number | null
-    clearOnShrink?: boolean | null
-    showTerminalProgress?: boolean | null
-}
-
-export type PiImageSettings = JsonObject & {
-    autoResize?: boolean | null
-    blockImages?: boolean | null
-}
-
-export type PiThinkingBudgetsSettings = JsonObject & {
-    minimal?: number | null
-    low?: number | null
-    medium?: number | null
-    high?: number | null
-}
-
-export type PiMarkdownSettings = JsonObject & {
-    codeBlockIndent?: string | null
-}
-
-export type PiWarningSettings = JsonObject & {
-    anthropicExtraUsage?: boolean | null
-}
-
-export type PiPackageSettings = JsonObject & {
-    source: string
-    autoload?: boolean
-    extensions?: string[]
-    skills?: string[]
-    prompts?: string[]
-    themes?: string[]
-}
-
-export type PiPackageSource = string | PiPackageSettings
-
-export type PiSettings = JsonObject & {
-    lastChangelogVersion?: string | null
-    defaultProvider?: string | null
-    defaultModel?: string | null
-    defaultThinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null
-    steeringMode?: "all" | "one-at-a-time" | null
-    followUpMode?: "all" | "one-at-a-time" | null
-    transport?: "auto" | "sse" | "websocket" | "websocket-cached" | null
-    theme?: string | null
-    compaction?: PiCompactionSettings | null
-    branchSummary?: PiBranchSummarySettings | null
-    retry?: PiRetrySettings | null
-    hideThinkingBlock?: boolean | null
-    showCacheMissNotices?: boolean | null
-    externalEditor?: string | null
-    shellPath?: string | null
-    quietStartup?: boolean | null
-    defaultProjectTrust?: "ask" | "always" | "never" | null
-    shellCommandPrefix?: string | null
-    npmCommand?: string[] | null
-    collapseChangelog?: boolean | null
-    enableInstallTelemetry?: boolean | null
-    enableAnalytics?: boolean | null
-    trackingId?: string | null
-    packages?: PiPackageSource[] | null
-    extensions?: string[] | null
-    skills?: string[] | null
-    prompts?: string[] | null
-    themes?: string[] | null
-    enableSkillCommands?: boolean | null
-    terminal?: PiTerminalSettings | null
-    images?: PiImageSettings | null
-    enabledModels?: string[] | null
-    doubleEscapeAction?: "fork" | "tree" | "none" | null
-    treeFilterMode?: "default" | "no-tools" | "user-only" | "labeled-only" | "all" | null
-    thinkingBudgets?: PiThinkingBudgetsSettings | null
-    editorPaddingX?: number | null
-    outputPad?: 0 | 1 | null
-    autocompleteMaxVisible?: number | null
-    showHardwareCursor?: boolean | null
-    markdown?: PiMarkdownSettings | null
-    warnings?: PiWarningSettings | null
-    sessionDir?: string | null
-    httpProxy?: string | null
-    httpIdleTimeoutMs?: number | null
-    websocketConnectTimeoutMs?: number | null
-}
-
-export type VibeflyCommitSettings = JsonObject & {
-    languageMode?: "follow_ide" | "en" | "zh" | null
-    commitModelSpec?: string | null
-    useCustomPrompt?: boolean | null
-    customPrompt?: string | null
-}
-
-export type VibeflyModelPreferences = JsonObject & {
-    recentModelSpecs?: string[] | null
-    pinnedModelSpecs?: string[] | null
-}
-
-export type VibeflyUiSettings = JsonObject & {
-    locale?: "follow_ide" | "en" | "zh" | null
-}
-
-export type VibeflySettings = JsonObject & {
-    commit?: VibeflyCommitSettings | null
-    modelPreferences?: VibeflyModelPreferences | null
-    ui?: VibeflyUiSettings | null
-}
-
 export type SettingsValidationResult<T extends JsonObject> = {
     value: T
     diagnostics: SettingsDiagnostic[]
 }
-
-export type EffectiveSettings = {
-    settings: PiSettings
-    vibefly: VibeflySettings
-    revision: string
-    applicationRevision: string
-    projectRevision: string | null
-    diagnostics: SettingsDiagnostic[]
-}
-
-const THINKING_LEVELS = new Set([
-    "off",
-    "minimal",
-    "low",
-    "medium",
-    "high",
-    "xhigh",
-    "max",
-])
-const TRANSPORTS = new Set(["auto", "sse", "websocket", "websocket-cached"])
-const QUEUE_MODES = new Set(["all", "one-at-a-time"])
-const LOCALE_MODES = new Set(["follow_ide", "en", "zh"])
-const PROJECT_TRUST_MODES = new Set(["ask", "always", "never"])
-const DOUBLE_ESCAPE_ACTIONS = new Set(["fork", "tree", "none"])
-const TREE_FILTER_MODES = new Set([
-    "default",
-    "no-tools",
-    "user-only",
-    "labeled-only",
-    "all",
-])
 
 function hasOwn(object: object, key: string): boolean {
     return Object.prototype.hasOwnProperty.call(object, key)
@@ -339,269 +176,480 @@ export function parseJsonObjectDocument(
     return {value: cloneJsonValue(parsed), diagnostics: []}
 }
 
-type Validator = (value: JsonValue) => boolean
+type ValueRule<TValue extends JsonValue = JsonValue> = {
+    kind: "value"
+    expected: string
+    test: (value: JsonValue) => value is TValue
+}
 
-function stringValue(value: JsonValue): boolean {
+interface ArrayRule<TItemRule extends SettingsRule = SettingsRule> {
+    kind: "array"
+    expected: string
+    item: TItemRule
+    invalidItems: "reject" | "filter"
+}
+
+interface ObjectRule<TShape extends SettingsShape = SettingsShape> {
+    kind: "object"
+    expected: "an object"
+    shape: TShape
+}
+
+interface StrictObjectRule<TShape extends StrictShape = StrictShape> {
+    kind: "strict-object"
+    expected: string
+    shape: TShape
+}
+
+interface UnionRule<TRules extends readonly SettingsRule[] = readonly SettingsRule[]> {
+    kind: "union"
+    expected: string
+    rules: TRules
+}
+
+interface SettingsShape {
+    [key: string]: SettingsRule
+}
+
+type SettingsRule = ValueRule | ArrayRule | ObjectRule | StrictObjectRule | UnionRule
+
+type InferRule<TRule extends SettingsRule> =
+    TRule extends ValueRule<infer TValue>
+        ? TValue
+        : TRule extends ObjectRule<infer TShape>
+            ? SettingsObject<TShape>
+            : TRule extends StrictObjectRule<infer TShape>
+                ? StrictObject<TShape>
+                : TRule extends ArrayRule<infer TItemRule>
+                    ? InferRule<TItemRule>[]
+                    : TRule extends UnionRule<infer TRules>
+                        ? InferRule<TRules[number]>
+                        : never
+
+type SettingsObject<TShape extends SettingsShape> = JsonObject & {
+    [TKey in keyof TShape]?: InferRule<TShape[TKey]> | null
+}
+
+type StrictField<TRule extends ValueRule = ValueRule> = {
+    required: boolean
+    rule: TRule
+}
+
+type StrictShape = Record<string, StrictField>
+
+type RequiredStrictKey<TShape extends StrictShape> = {
+    [TKey in keyof TShape]-?: TShape[TKey]["required"] extends true
+        ? TKey
+        : never
+}[keyof TShape]
+
+type StrictObject<TShape extends StrictShape> = JsonObject & {
+    [TKey in RequiredStrictKey<TShape>]: InferRule<TShape[TKey]["rule"]>
+} & {
+    [TKey in Exclude<keyof TShape, RequiredStrictKey<TShape>>]?: InferRule<TShape[TKey]["rule"]>
+}
+
+function valueRule<TValue extends JsonValue>(
+    expected: string,
+    test: (value: JsonValue) => value is TValue,
+): ValueRule<TValue> {
+    return {kind: "value", expected, test}
+}
+
+function objectRule<const TShape extends SettingsShape>(
+    shape: TShape,
+): ObjectRule<TShape> {
+    return {kind: "object", expected: "an object", shape}
+}
+
+function strictObjectRule<const TShape extends StrictShape>(
+    shape: TShape,
+    expected: string,
+): StrictObjectRule<TShape> {
+    return {kind: "strict-object", expected, shape}
+}
+
+function arrayRule<const TItemRule extends SettingsRule>(
+    item: TItemRule,
+    expected: string,
+    invalidItems: "reject" | "filter" = "reject",
+): ArrayRule<TItemRule> {
+    return {kind: "array", expected, item, invalidItems}
+}
+
+function unionRule<const TRules extends readonly SettingsRule[]>(
+    rules: TRules,
+    expected: string,
+): UnionRule<TRules> {
+    return {kind: "union", expected, rules}
+}
+
+function required<const TRule extends ValueRule>(rule: TRule): {
+    required: true
+    rule: TRule
+} {
+    return {required: true, rule}
+}
+
+function optional<const TRule extends ValueRule>(rule: TRule): {
+    required: false
+    rule: TRule
+} {
+    return {required: false, rule}
+}
+
+function stringValue(value: JsonValue): value is string {
     return typeof value === "string"
 }
 
-function booleanValue(value: JsonValue): boolean {
+function booleanValue(value: JsonValue): value is boolean {
     return typeof value === "boolean"
 }
 
-function numberValue(value: JsonValue): boolean {
+function numberValue(value: JsonValue): value is number {
     return typeof value === "number" && Number.isFinite(value)
 }
 
-function nonNegativeNumber(value: JsonValue): boolean {
-    return numberValue(value) && (value as number) >= 0
+function nonNegativeNumber(value: JsonValue): value is number {
+    return numberValue(value) && value >= 0
 }
 
-function stringArray(value: JsonValue): boolean {
+function stringArray(value: JsonValue): value is string[] {
     return Array.isArray(value) && value.every((item) => typeof item === "string")
 }
 
-function packageSources(value: JsonValue): boolean {
-    if (!Array.isArray(value)) return false
-    return value.every((entry) => {
-        if (typeof entry === "string") return true
-        if (!isJsonObject(entry) || typeof entry.source !== "string") return false
-        if (hasOwn(entry, "autoload") && typeof entry.autoload !== "boolean") return false
-        for (const key of ["extensions", "skills", "prompts", "themes"]) {
-            if (hasOwn(entry, key) && !stringArray(entry[key]!)) return false
-        }
-        return true
-    })
-}
-
-function enumValue(values: ReadonlySet<string>): Validator {
-    return (value) => typeof value === "string" && values.has(value)
-}
-
-function validateProperty(
-    object: JsonObject,
-    key: string,
-    validator: Validator,
+function enumRule<const TValues extends readonly string[]>(
+    values: TValues,
     expected: string,
-    file: SettingsFileName,
-    path: string,
-    diagnostics: SettingsDiagnostic[],
-): void {
-    if (!hasOwn(object, key)) return
-    if (object[key] === null) return
-    if (validator(object[key]!)) return
-    delete object[key]
-    diagnostics.push({
-        file,
-        severity: "error",
-        message: `${path}.${key} must be ${expected}`,
-    })
+): ValueRule<TValues[number]> {
+    const supported = new Set<string>(values)
+    return valueRule(
+        expected,
+        (value): value is TValues[number] => typeof value === "string" && supported.has(value),
+    )
 }
 
-function validateObjectProperty(
-    object: JsonObject,
-    key: string,
+const STRING_RULE = valueRule("a string", stringValue)
+const BOOLEAN_RULE = valueRule("a boolean", booleanValue)
+const NON_NEGATIVE_NUMBER_RULE = valueRule("a non-negative number", nonNegativeNumber)
+const STRING_ARRAY_VALUE_RULE = valueRule("an array of strings", stringArray)
+const STRING_ARRAY_RULE = arrayRule(STRING_RULE, "an array of strings")
+
+const PI_PACKAGE_SETTINGS_SHAPE = {
+    source: required(STRING_RULE),
+    autoload: optional(BOOLEAN_RULE),
+    extensions: optional(STRING_ARRAY_VALUE_RULE),
+    skills: optional(STRING_ARRAY_VALUE_RULE),
+    prompts: optional(STRING_ARRAY_VALUE_RULE),
+    themes: optional(STRING_ARRAY_VALUE_RULE),
+} satisfies StrictShape
+
+export type PiPackageSettings = StrictObject<typeof PI_PACKAGE_SETTINGS_SHAPE>
+
+const PACKAGE_SOURCE_OBJECT_RULE = strictObjectRule(
+    PI_PACKAGE_SETTINGS_SHAPE,
+    "a package source object",
+)
+const PACKAGE_SOURCE_RULE = unionRule(
+    [STRING_RULE, PACKAGE_SOURCE_OBJECT_RULE] as const,
+    "a string or package source object",
+)
+
+export type PiPackageSource = InferRule<typeof PACKAGE_SOURCE_RULE>
+
+function matchesStrictObject<TShape extends StrictShape>(
+    value: JsonValue,
+    shape: TShape,
+): value is StrictObject<TShape> {
+    if (!isJsonObject(value)) return false
+    for (const [key, field] of Object.entries(shape)) {
+        if (!hasOwn(value, key)) {
+            if (field.required) return false
+            continue
+        }
+        if (!field.rule.test(value[key]!)) return false
+    }
+    return true
+}
+
+const PI_RETRY_PROVIDER_RULE = objectRule({
+    timeoutMs: NON_NEGATIVE_NUMBER_RULE,
+    maxRetries: NON_NEGATIVE_NUMBER_RULE,
+    maxRetryDelayMs: NON_NEGATIVE_NUMBER_RULE,
+})
+
+const PI_RETRY_RULE = objectRule({
+    enabled: BOOLEAN_RULE,
+    maxRetries: NON_NEGATIVE_NUMBER_RULE,
+    baseDelayMs: NON_NEGATIVE_NUMBER_RULE,
+    provider: PI_RETRY_PROVIDER_RULE,
+})
+
+const PI_COMPACTION_RULE = objectRule({
+    enabled: BOOLEAN_RULE,
+    reserveTokens: NON_NEGATIVE_NUMBER_RULE,
+    keepRecentTokens: NON_NEGATIVE_NUMBER_RULE,
+})
+
+const PI_BRANCH_SUMMARY_RULE = objectRule({
+    reserveTokens: NON_NEGATIVE_NUMBER_RULE,
+    skipPrompt: BOOLEAN_RULE,
+})
+
+const PI_TERMINAL_RULE = objectRule({
+    showImages: BOOLEAN_RULE,
+    imageWidthCells: NON_NEGATIVE_NUMBER_RULE,
+    clearOnShrink: BOOLEAN_RULE,
+    showTerminalProgress: BOOLEAN_RULE,
+})
+
+const PI_IMAGE_RULE = objectRule({
+    autoResize: BOOLEAN_RULE,
+    blockImages: BOOLEAN_RULE,
+})
+
+const PI_THINKING_BUDGETS_RULE = objectRule({
+    minimal: NON_NEGATIVE_NUMBER_RULE,
+    low: NON_NEGATIVE_NUMBER_RULE,
+    medium: NON_NEGATIVE_NUMBER_RULE,
+    high: NON_NEGATIVE_NUMBER_RULE,
+})
+
+const PI_MARKDOWN_RULE = objectRule({
+    codeBlockIndent: STRING_RULE,
+})
+
+const PI_WARNING_RULE = objectRule({
+    anthropicExtraUsage: BOOLEAN_RULE,
+})
+
+const PACKAGE_SOURCES_RULE = arrayRule(
+    PACKAGE_SOURCE_RULE,
+    "an array of package sources",
+    "filter",
+)
+const OUTPUT_PAD_RULE = valueRule<0 | 1>(
+    "0 or 1",
+    (value): value is 0 | 1 => value === 0 || value === 1,
+)
+const THINKING_LEVEL_RULE = enumRule(
+    ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const,
+    "a supported thinking level",
+)
+const TRANSPORT_RULE = enumRule(
+    ["auto", "sse", "websocket", "websocket-cached"] as const,
+    "auto, sse, websocket, or websocket-cached",
+)
+const QUEUE_MODE_RULE = enumRule(
+    ["all", "one-at-a-time"] as const,
+    "a supported queue mode",
+)
+const PROJECT_TRUST_RULE = enumRule(
+    ["ask", "always", "never"] as const,
+    "ask, always, or never",
+)
+const DOUBLE_ESCAPE_ACTION_RULE = enumRule(
+    ["fork", "tree", "none"] as const,
+    "fork, tree, or none",
+)
+const TREE_FILTER_MODE_RULE = enumRule(
+    ["default", "no-tools", "user-only", "labeled-only", "all"] as const,
+    "a supported tree filter mode",
+)
+
+const PI_SETTINGS_SHAPE = {
+    lastChangelogVersion: STRING_RULE,
+    defaultProvider: STRING_RULE,
+    defaultModel: STRING_RULE,
+    theme: STRING_RULE,
+    externalEditor: STRING_RULE,
+    shellPath: STRING_RULE,
+    shellCommandPrefix: STRING_RULE,
+    trackingId: STRING_RULE,
+    sessionDir: STRING_RULE,
+    httpProxy: STRING_RULE,
+    hideThinkingBlock: BOOLEAN_RULE,
+    showCacheMissNotices: BOOLEAN_RULE,
+    quietStartup: BOOLEAN_RULE,
+    collapseChangelog: BOOLEAN_RULE,
+    enableInstallTelemetry: BOOLEAN_RULE,
+    enableAnalytics: BOOLEAN_RULE,
+    enableSkillCommands: BOOLEAN_RULE,
+    showHardwareCursor: BOOLEAN_RULE,
+    editorPaddingX: NON_NEGATIVE_NUMBER_RULE,
+    autocompleteMaxVisible: NON_NEGATIVE_NUMBER_RULE,
+    httpIdleTimeoutMs: NON_NEGATIVE_NUMBER_RULE,
+    websocketConnectTimeoutMs: NON_NEGATIVE_NUMBER_RULE,
+    extensions: STRING_ARRAY_RULE,
+    skills: STRING_ARRAY_RULE,
+    prompts: STRING_ARRAY_RULE,
+    themes: STRING_ARRAY_RULE,
+    npmCommand: STRING_ARRAY_RULE,
+    enabledModels: STRING_ARRAY_RULE,
+    defaultThinkingLevel: THINKING_LEVEL_RULE,
+    transport: TRANSPORT_RULE,
+    steeringMode: QUEUE_MODE_RULE,
+    followUpMode: QUEUE_MODE_RULE,
+    defaultProjectTrust: PROJECT_TRUST_RULE,
+    doubleEscapeAction: DOUBLE_ESCAPE_ACTION_RULE,
+    treeFilterMode: TREE_FILTER_MODE_RULE,
+    packages: PACKAGE_SOURCES_RULE,
+    outputPad: OUTPUT_PAD_RULE,
+    compaction: PI_COMPACTION_RULE,
+    branchSummary: PI_BRANCH_SUMMARY_RULE,
+    retry: PI_RETRY_RULE,
+    terminal: PI_TERMINAL_RULE,
+    images: PI_IMAGE_RULE,
+    thinkingBudgets: PI_THINKING_BUDGETS_RULE,
+    markdown: PI_MARKDOWN_RULE,
+    warnings: PI_WARNING_RULE,
+} satisfies SettingsShape
+
+const LOCALE_MODE_RULE = enumRule(
+    ["follow_ide", "en", "zh"] as const,
+    "follow_ide, en, or zh",
+)
+
+const VIBEFLY_COMMIT_RULE = objectRule({
+    languageMode: LOCALE_MODE_RULE,
+    commitModelSpec: STRING_RULE,
+    useCustomPrompt: BOOLEAN_RULE,
+    customPrompt: STRING_RULE,
+})
+
+const VIBEFLY_MODEL_PREFERENCES_RULE = objectRule({
+    recentModelSpecs: STRING_ARRAY_RULE,
+    pinnedModelSpecs: STRING_ARRAY_RULE,
+})
+
+const VIBEFLY_UI_RULE = objectRule({
+    locale: LOCALE_MODE_RULE,
+})
+
+const VIBEFLY_SETTINGS_SHAPE = {
+    commit: VIBEFLY_COMMIT_RULE,
+    modelPreferences: VIBEFLY_MODEL_PREFERENCES_RULE,
+    ui: VIBEFLY_UI_RULE,
+} satisfies SettingsShape
+
+export type PiCompactionSettings = InferRule<typeof PI_COMPACTION_RULE>
+export type PiRetryProviderSettings = InferRule<typeof PI_RETRY_PROVIDER_RULE>
+export type PiRetrySettings = InferRule<typeof PI_RETRY_RULE>
+export type PiBranchSummarySettings = InferRule<typeof PI_BRANCH_SUMMARY_RULE>
+export type PiTerminalSettings = InferRule<typeof PI_TERMINAL_RULE>
+export type PiImageSettings = InferRule<typeof PI_IMAGE_RULE>
+export type PiThinkingBudgetsSettings = InferRule<typeof PI_THINKING_BUDGETS_RULE>
+export type PiMarkdownSettings = InferRule<typeof PI_MARKDOWN_RULE>
+export type PiWarningSettings = InferRule<typeof PI_WARNING_RULE>
+export type PiSettings = SettingsObject<typeof PI_SETTINGS_SHAPE>
+
+export type VibeflyCommitSettings = InferRule<typeof VIBEFLY_COMMIT_RULE>
+export type VibeflyModelPreferences = InferRule<typeof VIBEFLY_MODEL_PREFERENCES_RULE>
+export type VibeflyUiSettings = InferRule<typeof VIBEFLY_UI_RULE>
+export type VibeflySettings = SettingsObject<typeof VIBEFLY_SETTINGS_SHAPE>
+
+export type EffectiveSettings = {
+    settings: PiSettings
+    vibefly: VibeflySettings
+    revision: string
+    applicationRevision: string
+    projectRevision: string | null
+    diagnostics: SettingsDiagnostic[]
+}
+
+function matchesRule(value: JsonValue, rule: SettingsRule): boolean {
+    switch (rule.kind) {
+        case "value":
+            return rule.test(value)
+        case "object":
+            if (!isJsonObject(value)) return false
+            return Object.entries(rule.shape).every(([key, childRule]) => {
+                return !hasOwn(value, key) || value[key] === null || matchesRule(value[key]!, childRule)
+            })
+        case "strict-object":
+            return matchesStrictObject(value, rule.shape)
+        case "array":
+            return Array.isArray(value) && value.every((item) => matchesRule(item, rule.item))
+        case "union":
+            return rule.rules.some((candidate) => matchesRule(value, candidate))
+    }
+}
+
+function validateRule(
+    value: JsonValue,
+    rule: SettingsRule,
     file: SettingsFileName,
     path: string,
     diagnostics: SettingsDiagnostic[],
-    validate: (nested: JsonObject, nestedPath: string) => void,
-): void {
-    if (!hasOwn(object, key)) return
-    const nested = object[key]
-    if (nested === null) return
-    if (!isJsonObject(nested)) {
-        delete object[key]
+): boolean {
+    switch (rule.kind) {
+        case "value":
+            return rule.test(value)
+        case "object":
+            if (!isJsonObject(value)) return false
+            validateSettingsObject(value, rule.shape, file, path, diagnostics)
+            return true
+        case "strict-object":
+            return matchesStrictObject(value, rule.shape)
+        case "union":
+            return matchesRule(value, rule)
+        case "array":
+            if (!Array.isArray(value)) return false
+            if (rule.invalidItems === "reject") {
+                return value.every((item) => matchesRule(item, rule.item))
+            }
+
+            const validItems: JsonValue[] = []
+            for (const [index, item] of value.entries()) {
+                if (matchesRule(item, rule.item)) {
+                    validItems.push(item)
+                    continue
+                }
+                diagnostics.push({
+                    file,
+                    severity: "error",
+                    message: `${path}[${index}] must be ${rule.item.expected}`,
+                })
+            }
+            value.splice(0, value.length, ...validItems)
+            return true
+    }
+}
+
+function validateSettingsObject<TShape extends SettingsShape>(
+    value: JsonObject,
+    shape: TShape,
+    file: SettingsFileName,
+    path: string,
+    diagnostics: SettingsDiagnostic[],
+): SettingsObject<TShape> {
+    for (const [key, rule] of Object.entries(shape)) {
+        if (!hasOwn(value, key) || value[key] === null) continue
+        const child = value[key]!
+        if (validateRule(child, rule, file, `${path}.${key}`, diagnostics)) continue
+
+        delete value[key]
         diagnostics.push({
             file,
             severity: "error",
-            message: `${path}.${key} must be an object`,
+            message: `${path}.${key} must be ${rule.expected}`,
         })
-        return
     }
-    validate(nested, `${path}.${key}`)
-}
-
-function validatePiSettingsObject(
-    value: JsonObject,
-    diagnostics: SettingsDiagnostic[],
-): PiSettings {
-    const file = "settings.json" as const
-    const root = "$"
-
-    for (const key of [
-        "lastChangelogVersion",
-        "defaultProvider",
-        "defaultModel",
-        "theme",
-        "externalEditor",
-        "shellPath",
-        "shellCommandPrefix",
-        "trackingId",
-        "sessionDir",
-        "httpProxy",
-    ]) {
-        validateProperty(value, key, stringValue, "a string", file, root, diagnostics)
-    }
-    for (const key of [
-        "hideThinkingBlock",
-        "showCacheMissNotices",
-        "quietStartup",
-        "collapseChangelog",
-        "enableInstallTelemetry",
-        "enableAnalytics",
-        "enableSkillCommands",
-        "showHardwareCursor",
-    ]) {
-        validateProperty(value, key, booleanValue, "a boolean", file, root, diagnostics)
-    }
-    for (const key of [
-        "editorPaddingX",
-        "autocompleteMaxVisible",
-        "httpIdleTimeoutMs",
-        "websocketConnectTimeoutMs",
-    ]) {
-        validateProperty(value, key, nonNegativeNumber, "a non-negative number", file, root, diagnostics)
-    }
-    for (const key of ["extensions", "skills", "prompts", "themes", "npmCommand", "enabledModels"]) {
-        validateProperty(value, key, stringArray, "an array of strings", file, root, diagnostics)
-    }
-    validateProperty(
-        value,
-        "defaultThinkingLevel",
-        enumValue(THINKING_LEVELS),
-        "a supported thinking level",
-        file,
-        root,
-        diagnostics,
-    )
-    validateProperty(
-        value,
-        "transport",
-        enumValue(TRANSPORTS),
-        "auto, sse, websocket, or websocket-cached",
-        file,
-        root,
-        diagnostics,
-    )
-    validateProperty(value, "steeringMode", enumValue(QUEUE_MODES), "a supported queue mode", file, root, diagnostics)
-    validateProperty(value, "followUpMode", enumValue(QUEUE_MODES), "a supported queue mode", file, root, diagnostics)
-    validateProperty(
-        value,
-        "defaultProjectTrust",
-        enumValue(PROJECT_TRUST_MODES),
-        "ask, always, or never",
-        file,
-        root,
-        diagnostics,
-    )
-    validateProperty(
-        value,
-        "doubleEscapeAction",
-        enumValue(DOUBLE_ESCAPE_ACTIONS),
-        "fork, tree, or none",
-        file,
-        root,
-        diagnostics,
-    )
-    validateProperty(
-        value,
-        "treeFilterMode",
-        enumValue(TREE_FILTER_MODES),
-        "a supported tree filter mode",
-        file,
-        root,
-        diagnostics,
-    )
-    validateProperty(
-        value,
-        "packages",
-        packageSources,
-        "an array of package sources",
-        file,
-        root,
-        diagnostics,
-    )
-    validateProperty(
-        value,
-        "outputPad",
-        (entry) => entry === 0 || entry === 1,
-        "0 or 1",
-        file,
-        root,
-        diagnostics,
-    )
-
-    validateObjectProperty(value, "compaction", file, root, diagnostics, (nested, path) => {
-        validateProperty(nested, "enabled", booleanValue, "a boolean", file, path, diagnostics)
-        validateProperty(nested, "reserveTokens", nonNegativeNumber, "a non-negative number", file, path, diagnostics)
-        validateProperty(nested, "keepRecentTokens", nonNegativeNumber, "a non-negative number", file, path, diagnostics)
-    })
-    validateObjectProperty(value, "branchSummary", file, root, diagnostics, (nested, path) => {
-        validateProperty(nested, "reserveTokens", nonNegativeNumber, "a non-negative number", file, path, diagnostics)
-        validateProperty(nested, "skipPrompt", booleanValue, "a boolean", file, path, diagnostics)
-    })
-    validateObjectProperty(value, "retry", file, root, diagnostics, (nested, path) => {
-        validateProperty(nested, "enabled", booleanValue, "a boolean", file, path, diagnostics)
-        validateProperty(nested, "maxRetries", nonNegativeNumber, "a non-negative number", file, path, diagnostics)
-        validateProperty(nested, "baseDelayMs", nonNegativeNumber, "a non-negative number", file, path, diagnostics)
-        validateObjectProperty(nested, "provider", file, path, diagnostics, (provider, providerPath) => {
-            validateProperty(provider, "timeoutMs", nonNegativeNumber, "a non-negative number", file, providerPath, diagnostics)
-            validateProperty(provider, "maxRetries", nonNegativeNumber, "a non-negative number", file, providerPath, diagnostics)
-            validateProperty(provider, "maxRetryDelayMs", nonNegativeNumber, "a non-negative number", file, providerPath, diagnostics)
-        })
-    })
-    validateObjectProperty(value, "terminal", file, root, diagnostics, (nested, path) => {
-        validateProperty(nested, "showImages", booleanValue, "a boolean", file, path, diagnostics)
-        validateProperty(nested, "imageWidthCells", nonNegativeNumber, "a non-negative number", file, path, diagnostics)
-        validateProperty(nested, "clearOnShrink", booleanValue, "a boolean", file, path, diagnostics)
-        validateProperty(nested, "showTerminalProgress", booleanValue, "a boolean", file, path, diagnostics)
-    })
-    validateObjectProperty(value, "images", file, root, diagnostics, (nested, path) => {
-        validateProperty(nested, "autoResize", booleanValue, "a boolean", file, path, diagnostics)
-        validateProperty(nested, "blockImages", booleanValue, "a boolean", file, path, diagnostics)
-    })
-    validateObjectProperty(value, "thinkingBudgets", file, root, diagnostics, (nested, path) => {
-        for (const key of ["minimal", "low", "medium", "high"]) {
-            validateProperty(nested, key, nonNegativeNumber, "a non-negative number", file, path, diagnostics)
-        }
-    })
-    validateObjectProperty(value, "markdown", file, root, diagnostics, (nested, path) => {
-        validateProperty(nested, "codeBlockIndent", stringValue, "a string", file, path, diagnostics)
-    })
-    validateObjectProperty(value, "warnings", file, root, diagnostics, (nested, path) => {
-        validateProperty(nested, "anthropicExtraUsage", booleanValue, "a boolean", file, path, diagnostics)
-    })
-    return value as PiSettings
+    return value as SettingsObject<TShape>
 }
 
 export function parsePiSettingsJson(source: string): SettingsValidationResult<PiSettings> {
     const parsed = parseJsonObjectDocument(source, "settings.json")
     return {
-        value: validatePiSettingsObject(parsed.value, parsed.diagnostics),
+        value: validateSettingsObject(
+            parsed.value,
+            PI_SETTINGS_SHAPE,
+            "settings.json",
+            "$",
+            parsed.diagnostics,
+        ),
         diagnostics: parsed.diagnostics,
     }
-}
-
-function validateVibeflySettingsObject(
-    value: JsonObject,
-    diagnostics: SettingsDiagnostic[],
-): VibeflySettings {
-    const file = "settings.vibefly.json" as const
-    const root = "$"
-    validateObjectProperty(value, "commit", file, root, diagnostics, (nested, path) => {
-        validateProperty(nested, "languageMode", enumValue(LOCALE_MODES), "follow_ide, en, or zh", file, path, diagnostics)
-        validateProperty(nested, "commitModelSpec", stringValue, "a string", file, path, diagnostics)
-        validateProperty(nested, "useCustomPrompt", booleanValue, "a boolean", file, path, diagnostics)
-        validateProperty(nested, "customPrompt", stringValue, "a string", file, path, diagnostics)
-    })
-    validateObjectProperty(value, "modelPreferences", file, root, diagnostics, (nested, path) => {
-        validateProperty(nested, "recentModelSpecs", stringArray, "an array of strings", file, path, diagnostics)
-        validateProperty(nested, "pinnedModelSpecs", stringArray, "an array of strings", file, path, diagnostics)
-    })
-    validateObjectProperty(value, "ui", file, root, diagnostics, (nested, path) => {
-        validateProperty(nested, "locale", enumValue(LOCALE_MODES), "follow_ide, en, or zh", file, path, diagnostics)
-    })
-    return value as VibeflySettings
 }
 
 export function parseVibeflySettingsJson(
@@ -609,7 +657,13 @@ export function parseVibeflySettingsJson(
 ): SettingsValidationResult<VibeflySettings> {
     const parsed = parseJsonObjectDocument(source, "settings.vibefly.json")
     return {
-        value: validateVibeflySettingsObject(parsed.value, parsed.diagnostics),
+        value: validateSettingsObject(
+            parsed.value,
+            VIBEFLY_SETTINGS_SHAPE,
+            "settings.vibefly.json",
+            "$",
+            parsed.diagnostics,
+        ),
         diagnostics: parsed.diagnostics,
     }
 }
