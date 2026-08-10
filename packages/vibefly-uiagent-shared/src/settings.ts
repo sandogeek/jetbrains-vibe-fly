@@ -1,10 +1,86 @@
-export type JsonPrimitive = string | number | boolean | null
+/**
+ * 设置域：Pi / Vibe Fly 文档 shape、应用+项目合并、快照缓存与失效协调。
+ * JSON 工具见 json.ts；通用 schema 见 json-schema.ts。本文件再导出二者以保持原有导入路径。
+ */
+import {cloneJsonValue, deepMergeJsonObjects, type JsonObject,} from "./json.js"
+import {
+    arrayRule,
+    BOOLEAN_RULE,
+    enumRule,
+    type InferRule,
+    NON_NEGATIVE_NUMBER_RULE,
+    objectRule,
+    optional,
+    parseAndValidateObject,
+    parseJsonObject,
+    required,
+    type SchemaDiagnostic,
+    type SchemaObject,
+    type SchemaShape,
+    type SchemaValidationResult,
+    type StrictObject,
+    strictObjectRule,
+    type StrictShape,
+    STRING_ARRAY_RULE,
+    STRING_ARRAY_VALUE_RULE,
+    STRING_RULE,
+    unionRule,
+    valueRule,
+} from "./json-schema.js"
 
-export type JsonValue = JsonPrimitive | JsonObject | JsonValue[]
-
-export type JsonObject = {
-    [key: string]: JsonValue
-}
+export type {
+    JsonObject,
+    JsonPrimitive,
+    JsonValue,
+} from "./json.js"
+export {
+    cloneJsonValue,
+    deepMergeJsonObjects,
+    isJsonObject,
+    setJsonAtPath,
+    updateJsonAtPath,
+} from "./json.js"
+export type {
+    ArrayRule,
+    InferRule,
+    ObjectRule,
+    SchemaDiagnostic,
+    SchemaObject,
+    SchemaRule,
+    SchemaShape,
+    SchemaValidationResult,
+    StrictField,
+    StrictObject,
+    StrictObjectRule,
+    StrictShape,
+    UnionRule,
+    ValueRule,
+} from "./json-schema.js"
+export {
+    arrayRule,
+    BOOLEAN_RULE,
+    booleanValue,
+    enumRule,
+    matchesRule,
+    matchesStrictObject,
+    NON_NEGATIVE_NUMBER_RULE,
+    numberValue,
+    objectRule,
+    optional,
+    parseJsonObject,
+    required,
+    STRING_ARRAY_RULE,
+    STRING_ARRAY_VALUE_RULE,
+    STRING_RULE,
+    stringArray,
+    stringValue,
+    strictObjectRule,
+    unionRule,
+    parseAndValidateObject,
+    validateObject,
+    validateRule,
+    valueRule,
+} from "./json-schema.js"
 
 export type SettingsScope = "application" | "project"
 
@@ -43,7 +119,7 @@ export type SafeProjectSettingsSnapshot = SafeSettingsSnapshotFields & {
     projectRoot: string
 }
 
-/** Browser-safe snapshot shape. It intentionally has no raw credential field. */
+/** 浏览器安全快照：仅含 JSON 文本，不含原始凭据。 */
 export type SafeSettingsSnapshot =
     | SafeApplicationSettingsSnapshot
     | SafeProjectSettingsSnapshot
@@ -53,86 +129,7 @@ export type SettingsValidationResult<T extends JsonObject> = {
     diagnostics: SettingsDiagnostic[]
 }
 
-function hasOwn(object: object, key: string): boolean {
-    return Object.prototype.hasOwnProperty.call(object, key)
-}
-
-function defineValue(object: JsonObject, key: string, value: JsonValue): void {
-    Object.defineProperty(object, key, {
-        configurable: true,
-        enumerable: true,
-        value,
-        writable: true,
-    })
-}
-
-export function isJsonObject(value: unknown): value is JsonObject {
-    return typeof value === "object" && value !== null && !Array.isArray(value)
-}
-
-export function cloneJsonValue<T extends JsonValue>(value: T): T {
-    if (Array.isArray(value)) {
-        return value.map((item) => cloneJsonValue(item)) as T
-    }
-    if (!isJsonObject(value)) return value
-    const clone: JsonObject = {}
-    for (const [key, child] of Object.entries(value)) {
-        defineValue(clone, key, cloneJsonValue(child))
-    }
-    return clone as T
-}
-
-/**
- * Recursively merge JSON objects. Arrays, scalar values, and null are replaced
- * as a whole by the override layer.
- */
-export function deepMergeJsonObjects(base: JsonObject, override: JsonObject): JsonObject {
-    const merged = cloneJsonValue(base)
-    for (const [key, overrideValue] of Object.entries(override)) {
-        const baseValue = hasOwn(base, key) ? base[key] : undefined
-        const next = isJsonObject(baseValue) && isJsonObject(overrideValue)
-            ? deepMergeJsonObjects(baseValue, overrideValue)
-            : cloneJsonValue(overrideValue)
-        defineValue(merged, key, next)
-    }
-    return merged
-}
-
-export function updateJsonAtPath(
-    source: JsonObject,
-    path: readonly string[],
-    updater: (current: JsonValue | undefined) => JsonValue | undefined,
-): JsonObject {
-    if (path.length === 0) throw new Error("JSON update path must not be empty")
-
-    const updateObject = (current: JsonObject, index: number): JsonObject => {
-        const output = cloneJsonValue(current)
-        const key = path[index]!
-        if (index === path.length - 1) {
-            const next = updater(hasOwn(current, key) ? cloneJsonValue(current[key]!) : undefined)
-            if (next === undefined) delete output[key]
-            else defineValue(output, key, cloneJsonValue(next))
-            return output
-        }
-
-        const child = hasOwn(current, key) && isJsonObject(current[key])
-            ? current[key] as JsonObject
-            : {}
-        defineValue(output, key, updateObject(child, index + 1))
-        return output
-    }
-
-    return updateObject(source, 0)
-}
-
-export function setJsonAtPath(
-    source: JsonObject,
-    path: readonly string[],
-    value: JsonValue | undefined,
-): JsonObject {
-    return updateJsonAtPath(source, path, () => value)
-}
-
+/** 按出现顺序去重合并诊断 */
 export function aggregateSettingsDiagnostics(
     ...groups: Array<readonly SettingsDiagnostic[] | undefined>
 ): SettingsDiagnostic[] {
@@ -153,187 +150,32 @@ export function aggregateSettingsDiagnostics(
     return result
 }
 
+/** 通用 schema 诊断挂上具体设置文件名 */
+function attachFile(
+    file: SettingsFileName,
+    diagnostics: readonly SchemaDiagnostic[],
+): SettingsDiagnostic[] {
+    return diagnostics.map((diagnostic) => ({...diagnostic, file}))
+}
+
+function toSettingsResult<T extends JsonObject>(
+    file: SettingsFileName,
+    result: SchemaValidationResult<T>,
+): SettingsValidationResult<T> {
+    return {
+        value: result.value,
+        diagnostics: attachFile(file, result.diagnostics),
+    }
+}
+
 export function parseJsonObjectDocument(
     source: string,
     file: SettingsFileName,
 ): SettingsValidationResult<JsonObject> {
-    let parsed: unknown
-    try {
-        parsed = JSON.parse(source)
-    } catch (error) {
-        const detail = error instanceof Error ? error.message : "invalid JSON"
-        return {
-            value: {},
-            diagnostics: [{file, severity: "error", message: `Invalid JSON: ${detail}`}],
-        }
-    }
-    if (!isJsonObject(parsed)) {
-        return {
-            value: {},
-            diagnostics: [{file, severity: "error", message: "Document root must be an object"}],
-        }
-    }
-    return {value: cloneJsonValue(parsed), diagnostics: []}
+    return toSettingsResult(file, parseJsonObject(source))
 }
 
-type ValueRule<TValue extends JsonValue = JsonValue> = {
-    kind: "value"
-    expected: string
-    test: (value: JsonValue) => value is TValue
-}
-
-interface ArrayRule<TItemRule extends SettingsRule = SettingsRule> {
-    kind: "array"
-    expected: string
-    item: TItemRule
-    invalidItems: "reject" | "filter"
-}
-
-interface ObjectRule<TShape extends SettingsShape = SettingsShape> {
-    kind: "object"
-    expected: "an object"
-    shape: TShape
-}
-
-interface StrictObjectRule<TShape extends StrictShape = StrictShape> {
-    kind: "strict-object"
-    expected: string
-    shape: TShape
-}
-
-interface UnionRule<TRules extends readonly SettingsRule[] = readonly SettingsRule[]> {
-    kind: "union"
-    expected: string
-    rules: TRules
-}
-
-interface SettingsShape {
-    [key: string]: SettingsRule
-}
-
-type SettingsRule = ValueRule | ArrayRule | ObjectRule | StrictObjectRule | UnionRule
-
-type InferRule<TRule extends SettingsRule> =
-    TRule extends ValueRule<infer TValue>
-        ? TValue
-        : TRule extends ObjectRule<infer TShape>
-            ? SettingsObject<TShape>
-            : TRule extends StrictObjectRule<infer TShape>
-                ? StrictObject<TShape>
-                : TRule extends ArrayRule<infer TItemRule>
-                    ? InferRule<TItemRule>[]
-                    : TRule extends UnionRule<infer TRules>
-                        ? InferRule<TRules[number]>
-                        : never
-
-type SettingsObject<TShape extends SettingsShape> = JsonObject & {
-    [TKey in keyof TShape]?: InferRule<TShape[TKey]> | null
-}
-
-type StrictField<TRule extends ValueRule = ValueRule> = {
-    required: boolean
-    rule: TRule
-}
-
-type StrictShape = Record<string, StrictField>
-
-type RequiredStrictKey<TShape extends StrictShape> = {
-    [TKey in keyof TShape]-?: TShape[TKey]["required"] extends true
-        ? TKey
-        : never
-}[keyof TShape]
-
-type StrictObject<TShape extends StrictShape> = JsonObject & {
-    [TKey in RequiredStrictKey<TShape>]: InferRule<TShape[TKey]["rule"]>
-} & {
-    [TKey in Exclude<keyof TShape, RequiredStrictKey<TShape>>]?: InferRule<TShape[TKey]["rule"]>
-}
-
-function valueRule<TValue extends JsonValue>(
-    expected: string,
-    test: (value: JsonValue) => value is TValue,
-): ValueRule<TValue> {
-    return {kind: "value", expected, test}
-}
-
-function objectRule<const TShape extends SettingsShape>(
-    shape: TShape,
-): ObjectRule<TShape> {
-    return {kind: "object", expected: "an object", shape}
-}
-
-function strictObjectRule<const TShape extends StrictShape>(
-    shape: TShape,
-    expected: string,
-): StrictObjectRule<TShape> {
-    return {kind: "strict-object", expected, shape}
-}
-
-function arrayRule<const TItemRule extends SettingsRule>(
-    item: TItemRule,
-    expected: string,
-    invalidItems: "reject" | "filter" = "reject",
-): ArrayRule<TItemRule> {
-    return {kind: "array", expected, item, invalidItems}
-}
-
-function unionRule<const TRules extends readonly SettingsRule[]>(
-    rules: TRules,
-    expected: string,
-): UnionRule<TRules> {
-    return {kind: "union", expected, rules}
-}
-
-function required<const TRule extends ValueRule>(rule: TRule): {
-    required: true
-    rule: TRule
-} {
-    return {required: true, rule}
-}
-
-function optional<const TRule extends ValueRule>(rule: TRule): {
-    required: false
-    rule: TRule
-} {
-    return {required: false, rule}
-}
-
-function stringValue(value: JsonValue): value is string {
-    return typeof value === "string"
-}
-
-function booleanValue(value: JsonValue): value is boolean {
-    return typeof value === "boolean"
-}
-
-function numberValue(value: JsonValue): value is number {
-    return typeof value === "number" && Number.isFinite(value)
-}
-
-function nonNegativeNumber(value: JsonValue): value is number {
-    return numberValue(value) && value >= 0
-}
-
-function stringArray(value: JsonValue): value is string[] {
-    return Array.isArray(value) && value.every((item) => typeof item === "string")
-}
-
-function enumRule<const TValues extends readonly string[]>(
-    values: TValues,
-    expected: string,
-): ValueRule<TValues[number]> {
-    const supported = new Set<string>(values)
-    return valueRule(
-        expected,
-        (value): value is TValues[number] => typeof value === "string" && supported.has(value),
-    )
-}
-
-const STRING_RULE = valueRule("a string", stringValue)
-const BOOLEAN_RULE = valueRule("a boolean", booleanValue)
-const NON_NEGATIVE_NUMBER_RULE = valueRule("a non-negative number", nonNegativeNumber)
-const STRING_ARRAY_VALUE_RULE = valueRule("an array of strings", stringArray)
-const STRING_ARRAY_RULE = arrayRule(STRING_RULE, "an array of strings")
+// --- Pi settings.json ---
 
 const PI_PACKAGE_SETTINGS_SHAPE = {
     source: required(STRING_RULE),
@@ -356,21 +198,6 @@ const PACKAGE_SOURCE_RULE = unionRule(
 )
 
 export type PiPackageSource = InferRule<typeof PACKAGE_SOURCE_RULE>
-
-function matchesStrictObject<TShape extends StrictShape>(
-    value: JsonValue,
-    shape: TShape,
-): value is StrictObject<TShape> {
-    if (!isJsonObject(value)) return false
-    for (const [key, field] of Object.entries(shape)) {
-        if (!hasOwn(value, key)) {
-            if (field.required) return false
-            continue
-        }
-        if (!field.rule.test(value[key]!)) return false
-    }
-    return true
-}
 
 const PI_RETRY_PROVIDER_RULE = objectRule({
     timeoutMs: NON_NEGATIVE_NUMBER_RULE,
@@ -423,6 +250,7 @@ const PI_WARNING_RULE = objectRule({
     anthropicExtraUsage: BOOLEAN_RULE,
 })
 
+// 非法 package 项过滤掉，避免一条坏配置拖垮整个列表
 const PACKAGE_SOURCES_RULE = arrayRule(
     PACKAGE_SOURCE_RULE,
     "an array of package sources",
@@ -503,7 +331,9 @@ const PI_SETTINGS_SHAPE = {
     thinkingBudgets: PI_THINKING_BUDGETS_RULE,
     markdown: PI_MARKDOWN_RULE,
     warnings: PI_WARNING_RULE,
-} satisfies SettingsShape
+} satisfies SchemaShape
+
+// --- settings.vibefly.json ---
 
 const LOCALE_MODE_RULE = enumRule(
     ["follow_ide", "en", "zh"] as const,
@@ -530,7 +360,7 @@ const VIBEFLY_SETTINGS_SHAPE = {
     commit: VIBEFLY_COMMIT_RULE,
     modelPreferences: VIBEFLY_MODEL_PREFERENCES_RULE,
     ui: VIBEFLY_UI_RULE,
-} satisfies SettingsShape
+} satisfies SchemaShape
 
 export type PiCompactionSettings = InferRule<typeof PI_COMPACTION_RULE>
 export type PiRetryProviderSettings = InferRule<typeof PI_RETRY_PROVIDER_RULE>
@@ -541,12 +371,12 @@ export type PiImageSettings = InferRule<typeof PI_IMAGE_RULE>
 export type PiThinkingBudgetsSettings = InferRule<typeof PI_THINKING_BUDGETS_RULE>
 export type PiMarkdownSettings = InferRule<typeof PI_MARKDOWN_RULE>
 export type PiWarningSettings = InferRule<typeof PI_WARNING_RULE>
-export type PiSettings = SettingsObject<typeof PI_SETTINGS_SHAPE>
+export type PiSettings = SchemaObject<typeof PI_SETTINGS_SHAPE>
 
 export type VibeflyCommitSettings = InferRule<typeof VIBEFLY_COMMIT_RULE>
 export type VibeflyModelPreferences = InferRule<typeof VIBEFLY_MODEL_PREFERENCES_RULE>
 export type VibeflyUiSettings = InferRule<typeof VIBEFLY_UI_RULE>
-export type VibeflySettings = SettingsObject<typeof VIBEFLY_SETTINGS_SHAPE>
+export type VibeflySettings = SchemaObject<typeof VIBEFLY_SETTINGS_SHAPE>
 
 export type EffectiveSettings = {
     settings: PiSettings
@@ -557,115 +387,17 @@ export type EffectiveSettings = {
     diagnostics: SettingsDiagnostic[]
 }
 
-function matchesRule(value: JsonValue, rule: SettingsRule): boolean {
-    switch (rule.kind) {
-        case "value":
-            return rule.test(value)
-        case "object":
-            if (!isJsonObject(value)) return false
-            return Object.entries(rule.shape).every(([key, childRule]) => {
-                return !hasOwn(value, key) || value[key] === null || matchesRule(value[key]!, childRule)
-            })
-        case "strict-object":
-            return matchesStrictObject(value, rule.shape)
-        case "array":
-            return Array.isArray(value) && value.every((item) => matchesRule(item, rule.item))
-        case "union":
-            return rule.rules.some((candidate) => matchesRule(value, candidate))
-    }
-}
-
-function validateRule(
-    value: JsonValue,
-    rule: SettingsRule,
-    file: SettingsFileName,
-    path: string,
-    diagnostics: SettingsDiagnostic[],
-): boolean {
-    switch (rule.kind) {
-        case "value":
-            return rule.test(value)
-        case "object":
-            if (!isJsonObject(value)) return false
-            validateSettingsObject(value, rule.shape, file, path, diagnostics)
-            return true
-        case "strict-object":
-            return matchesStrictObject(value, rule.shape)
-        case "union":
-            return matchesRule(value, rule)
-        case "array":
-            if (!Array.isArray(value)) return false
-            if (rule.invalidItems === "reject") {
-                return value.every((item) => matchesRule(item, rule.item))
-            }
-
-            const validItems: JsonValue[] = []
-            for (const [index, item] of value.entries()) {
-                if (matchesRule(item, rule.item)) {
-                    validItems.push(item)
-                    continue
-                }
-                diagnostics.push({
-                    file,
-                    severity: "error",
-                    message: `${path}[${index}] must be ${rule.item.expected}`,
-                })
-            }
-            value.splice(0, value.length, ...validItems)
-            return true
-    }
-}
-
-function validateSettingsObject<TShape extends SettingsShape>(
-    value: JsonObject,
-    shape: TShape,
-    file: SettingsFileName,
-    path: string,
-    diagnostics: SettingsDiagnostic[],
-): SettingsObject<TShape> {
-    for (const [key, rule] of Object.entries(shape)) {
-        if (!hasOwn(value, key) || value[key] === null) continue
-        const child = value[key]!
-        if (validateRule(child, rule, file, `${path}.${key}`, diagnostics)) continue
-
-        delete value[key]
-        diagnostics.push({
-            file,
-            severity: "error",
-            message: `${path}.${key} must be ${rule.expected}`,
-        })
-    }
-    return value as SettingsObject<TShape>
-}
-
 export function parsePiSettingsJson(source: string): SettingsValidationResult<PiSettings> {
-    const parsed = parseJsonObjectDocument(source, "settings.json")
-    return {
-        value: validateSettingsObject(
-            parsed.value,
-            PI_SETTINGS_SHAPE,
-            "settings.json",
-            "$",
-            parsed.diagnostics,
-        ),
-        diagnostics: parsed.diagnostics,
-    }
+    return toSettingsResult("settings.json", parseAndValidateObject(source, PI_SETTINGS_SHAPE))
 }
 
 export function parseVibeflySettingsJson(
     source: string,
 ): SettingsValidationResult<VibeflySettings> {
-    const parsed = parseJsonObjectDocument(source, "settings.vibefly.json")
-    return {
-        value: validateSettingsObject(
-            parsed.value,
-            VIBEFLY_SETTINGS_SHAPE,
-            "settings.vibefly.json",
-            "$",
-            parsed.diagnostics,
-        ),
-        diagnostics: parsed.diagnostics,
-    }
+    return toSettingsResult(
+        "settings.vibefly.json",
+        parseAndValidateObject(source, VIBEFLY_SETTINGS_SHAPE),
+    )
 }
 
 export function createEffectiveRevision(
@@ -675,6 +407,7 @@ export function createEffectiveRevision(
     return JSON.stringify([applicationRevision, projectRevision])
 }
 
+/** application 为底，project 覆盖；诊断来自两侧快照与解析结果 */
 export function computeEffectiveSettings(
     application: SafeApplicationSettingsSnapshot,
     project?: SafeProjectSettingsSnapshot,
@@ -748,11 +481,17 @@ type RefreshState = {
     running?: Promise<void>
 }
 
+/** 单次失效协调的硬上限，防止 revision 持续抖动时永久拉取 */
 const MAX_REFRESH_FETCHES = 16
+/** 反复拿到与刷新前相同 revision 时，认为通知已过期 */
 const STABLE_BASELINE_FETCHES = 3
+/** 反复拿到另一 revision（非目标）时，接受该权威快照 */
 const STABLE_CHANGED_FETCHES = 2
 
-/** Transport-independent snapshot cache and invalidation coordinator. */
+/**
+ * 与传输无关的设置快照缓存与失效协调器。
+ * 通过 adapter 拉快照；收到 SettingsChanged 后串行刷新直到命中目标 revision 或稳定退出。
+ */
 export class SettingsManager<
     TSnapshot extends SafeSettingsSnapshot = SafeSettingsSnapshot,
 > {
@@ -812,6 +551,10 @@ export class SettingsManager<
         return () => this.#listeners.delete(listener)
     }
 
+    /**
+     * 处理变更通知：同 scope 串行刷新；进行中的刷新可被更新 targetRevision 打断重跟。
+     * 已是目标 revision 且无在途刷新则直接忽略。
+     */
     handleSettingsChanged(change: SettingsChanged): Promise<void> {
         if (!this.#initialized) {
             return Promise.reject(new Error("SettingsManager must be initialized before handling changes"))
@@ -837,6 +580,11 @@ export class SettingsManager<
         return change.projectRoot === this.#project.projectRoot
     }
 
+    /**
+     * 拉取直到 snapshot.revision === target，或稳定/上限退出。
+     * revision 不透明，迟到的旧通知无法与缓存排序；对同一非目标 revision 重复拉取
+     * 达到阈值后接受该权威快照，硬上限防止持续抖动拖死消费者。
+     */
     async #drainRefresh(scope: SettingsScope, state: RefreshState): Promise<void> {
         const current = scope === "application" ? this.#application : this.#project
         let baselineRevision = current?.revision
@@ -850,6 +598,7 @@ export class SettingsManager<
             assertSnapshotScope(snapshot, scope)
             this.#applySnapshot(snapshot)
 
+            // 刷新途中又来了新目标：重置稳定计数，继续跟新 revision
             if (state.targetRevision !== target) {
                 baselineRevision = snapshot.revision
                 mismatchedRevision = undefined
@@ -871,10 +620,6 @@ export class SettingsManager<
                 ? STABLE_BASELINE_FETCHES
                 : STABLE_CHANGED_FETCHES
 
-            // Revisions are opaque, so a late stale notification cannot be ordered
-            // against the current cache. A repeatedly authoritative RPC snapshot is
-            // accepted after a small propagation-lag window. The hard cap also keeps
-            // continuous revision churn from pinning the consumer forever.
             if (mismatchedFetches >= stableThreshold || totalFetches >= MAX_REFRESH_FETCHES) {
                 state.targetRevision = undefined
                 break
