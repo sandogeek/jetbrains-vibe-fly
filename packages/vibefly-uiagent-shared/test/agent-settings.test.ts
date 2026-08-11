@@ -2,12 +2,13 @@ import {readFileSync} from "node:fs"
 import assert from "node:assert/strict"
 import {describe, test} from "node:test"
 import {
-  deleteCredential,
-  getCredential,
-  parseAuthJson,
-  parseModelsJson,
-  setCredential,
-  updateCredential,
+    deleteCredential,
+    getCredential,
+    normalizeAgentSettingsSnapshot,
+    parseAuthJson,
+    parseModelsJson,
+    setCredential,
+    updateCredential,
 } from "../src/agent-settings.js"
 
 describe("agent-only settings documents", () => {
@@ -87,5 +88,38 @@ describe("agent-only settings documents", () => {
         )
         assert.equal(browserEntry.includes("agent-settings"), false)
         assert.equal(browserEntry.includes("authJson"), false)
+    })
+
+    test("normalizeAgentSettingsSnapshot accepts wire-shaped application and project payloads", () => {
+        const application = normalizeAgentSettingsSnapshot({
+            scope: "application",
+            projectRoot: null,
+            settingsJson: '{"defaultModel":"m"}',
+            vibeflyJson: undefined,
+            modelsJson: null,
+            authJson: null,
+            revision: "r1",
+            diagnostics: [
+                {file: "settings.json", severity: "warning", message: "soft"},
+                {file: "unknown.json", severity: "error", message: "drop"},
+            ],
+        })
+        assert.equal(application.scope, "application")
+        assert.equal(application.projectRoot, null)
+        assert.equal(application.vibeflyJson, "{}")
+        assert.equal(application.modelsJson, "{}")
+        assert.equal(application.authJson, "{}")
+        assert.deepEqual(application.diagnostics, [
+            {file: "settings.json", severity: "warning", message: "soft"},
+        ])
+
+        const project = normalizeAgentSettingsSnapshot({
+            scope: "project",
+            projectRoot: " /tmp/p ",
+            revision: "r2",
+        })
+        assert.equal(project.scope, "project")
+        assert.equal(project.projectRoot, "/tmp/p")
+        assert.equal("modelsJson" in project, false)
     })
 })

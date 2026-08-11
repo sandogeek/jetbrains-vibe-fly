@@ -1,23 +1,49 @@
 import {
     type EffectiveSettings,
     parseJsonObjectDocument,
+    parseVibeflySettingsJson,
     type SafeApplicationSettingsSnapshot,
     type SafeProjectSettingsSnapshot,
     type SafeSettingsSnapshot,
     setJsonAtPath,
     type SettingsChanged,
     type SettingsDiagnostic,
+    type SettingsFileName,
     SettingsManager,
 } from "@vibefly/uiagent-shared"
 import type {Ui2Host, UiSettingsSnapshot} from "../generated/rpc"
-import type {CommitForm, IdeSettings, ModelPreferences, ProvidersForm, UiForm,} from "./settingsStore"
+import {
+    type CommitForm,
+    emptySettings,
+    type IdeSettings,
+    type ModelPreferences,
+    type ProvidersForm,
+    type UiForm,
+    withCommit,
+    withModelPreferences,
+    withProviders,
+    withUi,
+} from "./settingsStore"
 
-const FILE_NAMES = new Set([
+const SETTINGS_FILES = new Set<string>([
     "settings.json",
     "settings.vibefly.json",
     "models.json",
     "auth.json",
-])
+] satisfies SettingsFileName[])
+
+const PROVIDER_KEYS = ["defaultProvider", "defaultModel"] as const satisfies ReadonlyArray<keyof ProvidersForm>
+const COMMIT_KEYS = [
+    "languageMode",
+    "commitModelSpec",
+    "useCustomPrompt",
+    "customPrompt",
+] as const satisfies ReadonlyArray<keyof CommitForm>
+const PREFERENCE_KEYS = [
+    "recentModelSpecs",
+    "pinnedModelSpecs",
+] as const satisfies ReadonlyArray<keyof ModelPreferences>
+const FORM_GROUPS = ["providers", "commit", "modelPreferences", "ui"] as const
 
 /** settings.json / settings.vibefly.json are opaque objects (no secrets; auth lives elsewhere). */
 function normalizeJsonObjectDocument(raw: unknown): string {
@@ -34,10 +60,10 @@ function normalizeJsonObjectDocument(raw: unknown): string {
 function safeDiagnostics(raw: UiSettingsSnapshot["diagnostics"]): SettingsDiagnostic[] {
     const diagnostics: SettingsDiagnostic[] = []
     for (const item of raw ?? []) {
-        if (!FILE_NAMES.has(item.file)) continue
+        if (!SETTINGS_FILES.has(item.file)) continue
         if (item.severity !== "error" && item.severity !== "warning") continue
         diagnostics.push({
-            file: item.file as SettingsDiagnostic["file"],
+            file: item.file as SettingsFileName,
             severity: item.severity,
             message: String(item.message),
         })
@@ -80,30 +106,28 @@ export function settingsChanged(scope: string, projectRoot: string | null, revis
     return {scope, projectRoot, revision}
 }
 
+/** Map validated EffectiveSettings into required UI form state. */
 export function formFromEffective(effective: EffectiveSettings): IdeSettings {
-    const preferences = effective.vibefly.modelPreferences
-    const commit = effective.vibefly.commit
-    const ui = effective.vibefly.ui
+    const empty = emptySettings()
+    const {settings, vibefly} = effective
     return {
         providers: {
-            defaultProvider: typeof effective.settings.defaultProvider === "string"
-                ? effective.settings.defaultProvider
-                : "",
-            defaultModel: typeof effective.settings.defaultModel === "string"
-                ? effective.settings.defaultModel
-                : "",
+            defaultProvider: settings.defaultProvider ?? empty.providers.defaultProvider,
+            defaultModel: settings.defaultModel ?? empty.providers.defaultModel,
         },
         commit: {
-            languageMode: commit?.languageMode ?? "follow_ide",
-            commitModelSpec: typeof commit?.commitModelSpec === "string" ? commit.commitModelSpec : "",
-            useCustomPrompt: Boolean(commit?.useCustomPrompt),
-            customPrompt: typeof commit?.customPrompt === "string" ? commit.customPrompt : "",
+            languageMode: vibefly.commit?.languageMode ?? empty.commit.languageMode,
+            commitModelSpec: vibefly.commit?.commitModelSpec ?? empty.commit.commitModelSpec,
+            useCustomPrompt: vibefly.commit?.useCustomPrompt ?? empty.commit.useCustomPrompt,
+            customPrompt: vibefly.commit?.customPrompt ?? empty.commit.customPrompt,
         },
         modelPreferences: {
-            recentModelSpecs: [...(preferences?.recentModelSpecs ?? [])],
-            pinnedModelSpecs: [...(preferences?.pinnedModelSpecs ?? [])],
+            recentModelSpecs: [...(vibefly.modelPreferences?.recentModelSpecs ?? empty.modelPreferences.recentModelSpecs)],
+            pinnedModelSpecs: [...(vibefly.modelPreferences?.pinnedModelSpecs ?? empty.modelPreferences.pinnedModelSpecs)],
         },
-        ui: {locale: ui?.locale ?? "follow_ide"},
+        ui: {
+            locale: vibefly.ui?.locale ?? empty.ui.locale,
+        },
     }
 }
 
@@ -151,7 +175,7 @@ export function mergeSettingsFormPatches(
     update: SettingsFormPatch,
 ): SettingsFormPatch {
     const merged: SettingsFormPatch = {}
-    for (const group of ["providers", "commit", "modelPreferences", "ui"] as const) {
+    for (const group of FORM_GROUPS) {
         const values = {...base[group], ...update[group]}
         if (Object.keys(values).length === 0) continue
         if (group === "modelPreferences") {
@@ -174,17 +198,17 @@ export function mergeSettingsFormPatches(
 
 export function diffSettingsForms(before: IdeSettings, after: IdeSettings): SettingsFormPatch {
     const patch: SettingsFormPatch = {}
-    for (const key of ["defaultProvider", "defaultModel"] as const) {
+    for (const key of PROVIDER_KEYS) {
         if (!equalValue(before.providers[key], after.providers[key])) {
             patch.providers = {...patch.providers, [key]: after.providers[key]}
         }
     }
-    for (const key of ["languageMode", "commitModelSpec", "useCustomPrompt", "customPrompt"] as const) {
+    for (const key of COMMIT_KEYS) {
         if (!equalValue(before.commit[key], after.commit[key])) {
             patch.commit = {...patch.commit, [key]: after.commit[key]}
         }
     }
-    for (const key of ["recentModelSpecs", "pinnedModelSpecs"] as const) {
+    for (const key of PREFERENCE_KEYS) {
         if (!equalValue(before.modelPreferences[key], after.modelPreferences[key])) {
             patch.modelPreferences = {
                 ...patch.modelPreferences,
@@ -202,21 +226,28 @@ export function applySettingsFormPatch(
     settings: IdeSettings,
     patch: SettingsFormPatch,
 ): IdeSettings {
-    return {
-        providers: {...settings.providers, ...patch.providers},
-        commit: {...settings.commit, ...patch.commit},
-        modelPreferences: {
-            ...settings.modelPreferences,
+    let next = settings
+    if (patch.providers && Object.keys(patch.providers).length > 0) {
+        next = withProviders(next, patch.providers)
+    }
+    if (patch.commit && Object.keys(patch.commit).length > 0) {
+        next = withCommit(next, patch.commit)
+    }
+    if (patch.modelPreferences && Object.keys(patch.modelPreferences).length > 0) {
+        next = withModelPreferences(next, {
             ...patch.modelPreferences,
-            ...(patch.modelPreferences?.recentModelSpecs
+            ...(patch.modelPreferences.recentModelSpecs
                 ? {recentModelSpecs: [...patch.modelPreferences.recentModelSpecs]}
                 : {}),
-            ...(patch.modelPreferences?.pinnedModelSpecs
+            ...(patch.modelPreferences.pinnedModelSpecs
                 ? {pinnedModelSpecs: [...patch.modelPreferences.pinnedModelSpecs]}
                 : {}),
-        },
-        ui: {...settings.ui, ...patch.ui},
+        })
     }
+    if (patch.ui && Object.keys(patch.ui).length > 0) {
+        next = withUi(next, patch.ui)
+    }
+    return next
 }
 
 export function subtractSettingsFormPatch(
@@ -224,7 +255,7 @@ export function subtractSettingsFormPatch(
     saved: SettingsFormPatch,
 ): SettingsFormPatch {
     const remaining: SettingsFormPatch = {}
-    for (const group of ["providers", "commit", "modelPreferences", "ui"] as const) {
+    for (const group of FORM_GROUPS) {
         const currentGroup = current[group]
         if (!currentGroup) continue
         const savedGroup = saved[group]
@@ -319,29 +350,18 @@ export function prepareApplicationModelPreferencesSave(
 }
 
 export function modelPreferencesFromEffective(effective: EffectiveSettings): ModelPreferences {
-    const value = effective.vibefly.modelPreferences
-    return {
-        recentModelSpecs: Array.isArray(value?.recentModelSpecs)
-            ? value.recentModelSpecs.filter((item): item is string => typeof item === "string")
-            : [],
-        pinnedModelSpecs: Array.isArray(value?.pinnedModelSpecs)
-            ? value.pinnedModelSpecs.filter((item): item is string => typeof item === "string")
-            : [],
-    }
+    return formFromEffective(effective).modelPreferences
 }
 
 export function modelPreferencesFromApplication(
     snapshot: SafeApplicationSettingsSnapshot,
 ): ModelPreferences {
-    const parsed = parseJsonObjectDocument(snapshot.vibeflyJson, "settings.vibefly.json").value
-    return modelPreferencesFromEffective({
-        settings: {},
-        vibefly: parsed,
-        revision: snapshot.revision,
-        applicationRevision: snapshot.revision,
-        projectRevision: null,
-        diagnostics: [],
-    })
+    const empty = emptySettings().modelPreferences
+    const vibefly = parseVibeflySettingsJson(snapshot.vibeflyJson).value
+    return {
+        recentModelSpecs: [...(vibefly.modelPreferences?.recentModelSpecs ?? empty.recentModelSpecs)],
+        pinnedModelSpecs: [...(vibefly.modelPreferences?.pinnedModelSpecs ?? empty.pinnedModelSpecs)],
+    }
 }
 
 export function applicationSnapshot(

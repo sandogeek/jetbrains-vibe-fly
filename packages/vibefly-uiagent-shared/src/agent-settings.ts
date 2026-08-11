@@ -1,13 +1,13 @@
 import {
-  cloneJsonValue,
-  isJsonObject,
-  type JsonObject,
-  parseJsonObjectDocument,
-  type SafeApplicationSettingsSnapshot,
-  type SafeProjectSettingsSnapshot,
-  type SettingsDiagnostic,
-  type SettingsValidationResult,
-  updateJsonAtPath,
+    cloneJsonValue,
+    isJsonObject,
+    type JsonObject,
+    parseJsonObjectDocument,
+    type SafeApplicationSettingsSnapshot,
+    type SafeProjectSettingsSnapshot,
+    type SettingsDiagnostic,
+    type SettingsValidationResult,
+    updateJsonAtPath,
 } from "./settings.js"
 
 export type AgentApplicationSettingsSnapshot = SafeApplicationSettingsSnapshot & {
@@ -21,11 +21,34 @@ export type AgentSettingsSnapshot =
     | AgentApplicationSettingsSnapshot
     | AgentProjectSettingsSnapshot
 
+/** Wire / RPC-shaped input before domain normalization. */
+export type LooseAgentSettingsSnapshot = {
+    scope: string
+    projectRoot?: string | null
+    settingsJson?: string | null
+    vibeflyJson?: string | null
+    modelsJson?: string | null
+    authJson?: string | null
+    revision: string
+    diagnostics?: Array<{
+        file: string
+        severity: string
+        message: string
+    }> | null
+}
+
 export type ModelsSettings = JsonObject & {
     providers?: Record<string, JsonObject>
 }
 
 export type CredentialMap = Record<string, JsonObject>
+
+const SETTINGS_FILES = new Set([
+    "settings.json",
+    "settings.vibefly.json",
+    "models.json",
+    "auth.json",
+])
 
 function invalidEntry(
     file: "models.json" | "auth.json",
@@ -36,6 +59,56 @@ function invalidEntry(
         severity: "error",
         message: `${path} must be an object`,
     }
+}
+
+function safeDiagnostics(
+    raw: LooseAgentSettingsSnapshot["diagnostics"],
+): SettingsDiagnostic[] {
+    const diagnostics: SettingsDiagnostic[] = []
+    for (const item of raw ?? []) {
+        if (!SETTINGS_FILES.has(item.file)) continue
+        if (item.severity !== "error" && item.severity !== "warning") continue
+        diagnostics.push({
+            file: item.file as SettingsDiagnostic["file"],
+            severity: item.severity,
+            message: String(item.message),
+        })
+    }
+    return diagnostics
+}
+
+/** Normalize Host wire snapshot into the agent domain shape. */
+export function normalizeAgentSettingsSnapshot(
+    raw: LooseAgentSettingsSnapshot,
+): AgentSettingsSnapshot {
+    const common = {
+        settingsJson: raw.settingsJson ?? "{}",
+        vibeflyJson: raw.vibeflyJson ?? "{}",
+        revision: String(raw.revision),
+        diagnostics: safeDiagnostics(raw.diagnostics),
+    }
+    if (raw.scope === "application") {
+        if (raw.projectRoot != null) {
+            throw new Error("Application settings snapshot must have a null projectRoot")
+        }
+        return {
+            ...common,
+            scope: "application",
+            projectRoot: null,
+            modelsJson: raw.modelsJson ?? "{}",
+            authJson: raw.authJson ?? "{}",
+        }
+    }
+    if (raw.scope === "project") {
+        const projectRoot = raw.projectRoot?.trim()
+        if (!projectRoot) throw new Error("Project settings snapshot must have a projectRoot")
+        return {
+            ...common,
+            scope: "project",
+            projectRoot,
+        }
+    }
+    throw new Error(`Unknown settings scope: ${raw.scope}`)
 }
 
 export function parseModelsJson(source: string): SettingsValidationResult<ModelsSettings> {

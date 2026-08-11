@@ -1,27 +1,22 @@
+import type {VibeflyCommitSettings, VibeflyModelPreferences, VibeflyUiSettings,} from "@vibefly/uiagent-shared"
 import {normalizeUiLocaleMode} from "../i18n"
 import {bundledCatalog, type BundledCatalog} from "./catalog"
 import type {ProviderSnapshot, ProvidersSnapshot} from "./providerSnapshots"
 
+/** Drop JsonObject index signature; make known keys required and non-null for form state. */
+type FormOf<T> = {
+    [K in keyof T as string extends K ? never : K]-?: Exclude<T[K], null | undefined>
+}
+
+/** Pi settings.json fields edited in the providers UI. */
 export type ProvidersForm = {
     defaultProvider: string
     defaultModel: string
 }
 
-export type CommitForm = {
-    languageMode: string
-    commitModelSpec: string
-    useCustomPrompt: boolean
-    customPrompt: string
-}
-
-export type ModelPreferences = {
-    recentModelSpecs: string[]
-    pinnedModelSpecs: string[]
-}
-
-export type UiForm = {
-    locale: string
-}
+export type CommitForm = FormOf<VibeflyCommitSettings>
+export type ModelPreferences = FormOf<VibeflyModelPreferences>
+export type UiForm = FormOf<VibeflyUiSettings>
 
 export type IdeSettings = {
     providers: ProvidersForm
@@ -61,44 +56,20 @@ export function emptySettings(): IdeSettings {
     }
 }
 
-export function normalizeSettings(raw: IdeSettings | null | undefined): IdeSettings {
-    const base = emptySettings()
-    if (!raw) return base
-    return {
-        providers: {
-            defaultProvider: raw.providers?.defaultProvider ?? "",
-            defaultModel: raw.providers?.defaultModel ?? "",
-        },
-        commit: {
-            languageMode: raw.commit?.languageMode ?? "follow_ide",
-            commitModelSpec: raw.commit?.commitModelSpec ?? "",
-            useCustomPrompt: Boolean(raw.commit?.useCustomPrompt),
-            customPrompt: raw.commit?.customPrompt ?? "",
-        },
-        modelPreferences: {
-            recentModelSpecs: [...(raw.modelPreferences?.recentModelSpecs ?? [])],
-            pinnedModelSpecs: [...(raw.modelPreferences?.pinnedModelSpecs ?? [])],
-        },
-        ui: {
-            locale: normalizeUiLocaleMode(raw.ui?.locale),
-        },
-    }
-}
-
 export function withProviders(
     settings: IdeSettings,
     patch: Partial<ProvidersForm>,
 ): IdeSettings {
     return {
         ...settings,
-        providers: {...settings.providers!, ...patch},
+        providers: {...settings.providers, ...patch},
     }
 }
 
 export function withCommit(settings: IdeSettings, patch: Partial<CommitForm>): IdeSettings {
     return {
         ...settings,
-        commit: {...settings.commit!, ...patch},
+        commit: {...settings.commit, ...patch},
     }
 }
 
@@ -106,7 +77,7 @@ export function withUi(settings: IdeSettings, patch: Partial<UiForm>): IdeSettin
     return {
         ...settings,
         ui: {
-            locale: normalizeUiLocaleMode(patch.locale ?? settings.ui?.locale),
+            locale: normalizeUiLocaleMode(patch.locale ?? settings.ui.locale),
         },
     }
 }
@@ -118,8 +89,8 @@ export function withModelPreferences(
     return {
         ...settings,
         modelPreferences: {
-            recentModelSpecs: patch.recentModelSpecs ?? settings.modelPreferences?.recentModelSpecs ?? [],
-            pinnedModelSpecs: patch.pinnedModelSpecs ?? settings.modelPreferences?.pinnedModelSpecs ?? [],
+            recentModelSpecs: patch.recentModelSpecs ?? settings.modelPreferences.recentModelSpecs,
+            pinnedModelSpecs: patch.pinnedModelSpecs ?? settings.modelPreferences.pinnedModelSpecs,
         },
     }
 }

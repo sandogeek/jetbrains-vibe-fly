@@ -1,28 +1,30 @@
 import type {Api, Credential, CredentialInfo, CredentialStore, Model} from "@earendil-works/pi-ai"
 import {type ModelRuntime, SettingsManager as PiSettingsManager,} from "@earendil-works/pi-coding-agent"
 import {
-  type EffectiveSettings,
-  type JsonObject,
-  type JsonValue,
-  type SettingsChanged,
-  SettingsManager as SnapshotSettingsManager,
-  type SettingsManagerAdapter,
+    type EffectiveSettings,
+    isJsonObject,
+    type JsonObject,
+    type JsonValue,
+    type SettingsChanged,
+    SettingsManager as SnapshotSettingsManager,
+    type SettingsManagerAdapter,
 } from "@vibefly/uiagent-shared"
 import {
-  type AgentApplicationSettingsSnapshot,
-  type AgentSettingsSnapshot,
-  type CredentialMap,
-  deleteCredential,
-  getCredential,
-  parseAuthJson,
-  parseModelsJson,
-  setCredential,
+    type AgentApplicationSettingsSnapshot,
+    type AgentSettingsSnapshot,
+    type CredentialMap,
+    deleteCredential,
+    getCredential,
+    normalizeAgentSettingsSnapshot,
+    parseAuthJson,
+    parseModelsJson,
+    setCredential,
 } from "@vibefly/uiagent-shared/agent"
 import type {
-  AgentSettingsSnapshot as WireSettingsSnapshot,
-  AuthSaveRequest,
-  GenerateCommitMessageRequest,
-  SettingsSaveResult,
+    AgentSettingsSnapshot as WireSettingsSnapshot,
+    AuthSaveRequest,
+    GenerateCommitMessageRequest,
+    SettingsSaveResult,
 } from "./generated/controlRpc.js"
 import {log} from "./log.js"
 
@@ -117,7 +119,7 @@ function finiteNumber(value: unknown, fallback: number): number {
 }
 
 function stringRecord(value: unknown): Record<string, string> | undefined {
-    if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
+    if (!isJsonObject(value)) return undefined
     const entries = Object.entries(value).filter((entry): entry is [string, string] =>
         typeof entry[1] === "string",
     )
@@ -126,24 +128,17 @@ function stringRecord(value: unknown): Record<string, string> | undefined {
 
 type PiModel = Model<Api>
 
-function jsonObject(value: unknown): JsonObject | undefined {
-    return value !== null && typeof value === "object" && !Array.isArray(value)
-        ? value as JsonObject
-        : undefined
-}
-
 function mergeCompat(...values: unknown[]): JsonObject | undefined {
     let merged: JsonObject | undefined
     for (const value of values) {
-        const object = jsonObject(value)
-        if (!object) continue
+        if (!isJsonObject(value)) continue
         const next = merged ? structuredClone(merged) : {}
-        for (const [key, child] of Object.entries(object)) {
+        for (const [key, child] of Object.entries(value)) {
             const previous = next[key]
             const nested = key === "openRouterRouting" ||
                 key === "vercelGatewayRouting" ||
                 key === "chatTemplateKwargs"
-            if (nested && jsonObject(previous) && jsonObject(child)) {
+            if (nested && isJsonObject(previous) && isJsonObject(child)) {
                 next[key] = mergeCompat(previous, child)!
             } else {
                 next[key] = structuredClone(child)
@@ -155,8 +150,8 @@ function mergeCompat(...values: unknown[]): JsonObject | undefined {
 }
 
 function modelOverride(raw: JsonObject, modelId: string): JsonObject | undefined {
-    const overrides = jsonObject(raw.modelOverrides)
-    return overrides ? jsonObject(overrides[modelId]) : undefined
+    const overrides = isJsonObject(raw.modelOverrides) ? raw.modelOverrides : undefined
+    return overrides && isJsonObject(overrides[modelId]) ? overrides[modelId] : undefined
 }
 
 function modelAsJson(model: PiModel): JsonObject {
@@ -199,8 +194,8 @@ function modelHeaders(...values: unknown[]): Record<string, string> | undefined 
 }
 
 function modelCost(base: unknown, override: unknown): JsonObject {
-    const baseCost = jsonObject(base) ?? {}
-    const overrideCost = jsonObject(override) ?? {}
+    const baseCost = isJsonObject(base) ? base : {}
+    const overrideCost = isJsonObject(override) ? override : {}
     return {
         input: finiteNumber(overrideCost.input, finiteNumber(baseCost.input, 0)),
         output: finiteNumber(overrideCost.output, finiteNumber(baseCost.output, 0)),
@@ -248,8 +243,12 @@ function buildModelDefinition(
     if (baseUrl) model.baseUrl = baseUrl
     if (headers) model.headers = headers
     if (compat) model.compat = compat as never
-    const candidateThinking = jsonObject(candidate.thinkingLevelMap)
-    const overrideThinking = jsonObject(override.thinkingLevelMap)
+    const candidateThinking = isJsonObject(candidate.thinkingLevelMap)
+        ? candidate.thinkingLevelMap
+        : undefined
+    const overrideThinking = isJsonObject(override.thinkingLevelMap)
+        ? override.thinkingLevelMap
+        : undefined
     if (candidateThinking || overrideThinking) {
         model.thinkingLevelMap = {
             ...(candidateThinking ? structuredClone(candidateThinking) : {}),
@@ -294,12 +293,12 @@ function providerConfig(
     }
     if (Array.isArray(raw.models)) {
         for (const candidate of raw.models) {
-            const object = jsonObject(candidate)
-            const id = object && requiredString(object.id)
-            if (id) definitions.set(id, {candidate: object, isBaseModel: false})
+            if (!isJsonObject(candidate)) continue
+            const id = requiredString(candidate.id)
+            if (id) definitions.set(id, {candidate, isBaseModel: false})
         }
     }
-    const overrides = jsonObject(raw.modelOverrides)
+    const overrides = isJsonObject(raw.modelOverrides) ? raw.modelOverrides : undefined
     if (overrides) {
         // Overrides for unknown ids are ignored by pi; only existing base/custom
         // models become registration entries.
@@ -320,42 +319,6 @@ function providerConfig(
 
     // models.json must never inject credentials into the runtime registration.
     return output
-}
-
-function normalizeWireSnapshot(snapshot: WireSettingsSnapshot): AgentSettingsSnapshot {
-    const diagnostics = (snapshot.diagnostics ?? []).map((diagnostic) => ({
-        file: diagnostic.file as AgentSettingsSnapshot["diagnostics"][number]["file"],
-        severity: diagnostic.severity === "warning" ? "warning" as const : "error" as const,
-        message: diagnostic.message,
-    }))
-    if (snapshot.scope === "application") {
-        if (snapshot.projectRoot != null) {
-            throw new Error("Application settings snapshot must have a null projectRoot")
-        }
-        return {
-            scope: "application",
-            projectRoot: null,
-            settingsJson: snapshot.settingsJson ?? "{}",
-            vibeflyJson: snapshot.vibeflyJson ?? "{}",
-            modelsJson: snapshot.modelsJson ?? "{}",
-            authJson: snapshot.authJson ?? "{}",
-            revision: snapshot.revision,
-            diagnostics,
-        }
-    }
-    if (snapshot.scope === "project") {
-        const projectRoot = snapshot.projectRoot?.trim()
-        if (!projectRoot) throw new Error("Project settings snapshot must have a projectRoot")
-        return {
-            scope: "project",
-            projectRoot,
-            settingsJson: snapshot.settingsJson ?? "{}",
-            vibeflyJson: snapshot.vibeflyJson ?? "{}",
-            revision: snapshot.revision,
-            diagnostics,
-        }
-    }
-    throw new Error(`Unknown settings scope: ${snapshot.scope}`)
 }
 
 /** Read-only storage that exposes the already deep-merged Host snapshot to pi. */
@@ -482,7 +445,7 @@ export class HostBackedCredentialStore implements CredentialStore {
     }
 
     async #refetchApplication(): Promise<boolean> {
-        const snapshot = normalizeWireSnapshot(await this.host.getSettingsSnapshot("application"))
+        const snapshot = normalizeAgentSettingsSnapshot(await this.host.getSettingsSnapshot("application"))
         if (snapshot.scope !== "application") {
             throw new Error("Host returned a project snapshot for application credentials")
         }
@@ -514,7 +477,7 @@ export class HostSettingsController {
     ) {
         const adapter: SettingsManagerAdapter<AgentSettingsSnapshot> = {
             getSettingsSnapshot: async (scope) =>
-                normalizeWireSnapshot(await host.getSettingsSnapshot(scope)),
+                normalizeAgentSettingsSnapshot(await host.getSettingsSnapshot(scope)),
         }
         this.snapshots = new SnapshotSettingsManager(adapter)
         this.#reloadLiveSessions = options.reloadLiveSessions ?? (async () => {

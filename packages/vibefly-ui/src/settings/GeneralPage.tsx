@@ -1,7 +1,7 @@
 import {useEffect, useRef} from "react"
 import {applyUiLocale, useAppTranslation} from "../i18n"
 import {isEmptySettingsFormPatch, mergeSettingsFormPatches, type SettingsFormPatch,} from "./hostSettings"
-import {type IdeSettings, withUi} from "./settingsStore"
+import {type IdeSettings, type UiForm, withUi} from "./settingsStore"
 
 export type GeneralPageProps = {
     settings: IdeSettings
@@ -34,7 +34,7 @@ export function GeneralPage(props: GeneralPageProps) {
             if (!isEmptySettingsFormPatch(pending)) void onSaveRef.current(pending)
         }, 300)
     }
-    const onLocale = (value: string) => {
+    const onLocale = (value: UiForm["locale"]) => {
         applyUiLocale(value)
         debounceSave(withUi(props.settings, {locale: value}), {ui: {locale: value}})
     }
