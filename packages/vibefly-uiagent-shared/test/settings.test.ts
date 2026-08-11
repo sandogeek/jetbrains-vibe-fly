@@ -12,10 +12,17 @@ import {
     type SafeSettingsSnapshot,
     setJsonAtPath,
     type SettingsChanged,
-    SettingsManager,
-    type SettingsManagerAdapter,
     updateJsonAtPath,
-} from "../src/settings.js"
+} from "../src/settings/schema.js"
+import {settingKeys} from "../src/settings/keys.js"
+import {setSetting, unsetSetting} from "../src/settings/mutation.js"
+import {
+    selectSetting,
+    SettingsSyncClient,
+    type SettingsDocumentSaveRequest,
+    type SettingsSaveOutcome,
+    type SettingsSyncAdapter,
+} from "../src/settings/sync-client.js"
 
 function application(
     revision: string,
@@ -48,8 +55,10 @@ function project(
     }
 }
 
-class MutableAdapter implements SettingsManagerAdapter {
+class MutableAdapter implements SettingsSyncAdapter {
     readonly calls: SettingsChanged["scope"][] = []
+    readonly saves: SettingsDocumentSaveRequest[] = []
+    saveImpl?: (request: SettingsDocumentSaveRequest) => Promise<SettingsSaveOutcome>
 
     constructor(
         public applicationSnapshot: SafeApplicationSettingsSnapshot,
@@ -57,11 +66,17 @@ class MutableAdapter implements SettingsManagerAdapter {
     ) {
     }
 
-    async getSettingsSnapshot(scope: SettingsChanged["scope"]): Promise<SafeSettingsSnapshot> {
+    async fetch(scope: SettingsChanged["scope"]): Promise<SafeSettingsSnapshot> {
         this.calls.push(scope)
         if (scope === "application") return this.applicationSnapshot
         if (!this.projectSnapshot) throw new Error("project snapshot unavailable")
         return this.projectSnapshot
+    }
+
+    async save(request: SettingsDocumentSaveRequest): Promise<SettingsSaveOutcome> {
+        this.saves.push(structuredClone(request))
+        if (!this.saveImpl) throw new Error("save unavailable")
+        return this.saveImpl(request)
     }
 }
 
@@ -395,27 +410,27 @@ describe("effective settings", () => {
     })
 })
 
-describe("SettingsManager cache and invalidation", () => {
+describe("SettingsSyncClient cache and invalidation", () => {
     test("initializes both scopes once and exposes the effective cache", async () => {
         const adapter = new MutableAdapter(
             application("app-1", {defaultProvider: "app"}),
             project("project-1", {defaultModel: "project-model"}),
         )
-        const manager = new SettingsManager(adapter)
-        const events: Array<string | null> = []
-        manager.subscribe((change) => events.push(change.scope))
+        const client = new SettingsSyncClient(adapter)
+        const revisions: string[] = []
+        client.subscribe((state) => state.effective.revision, (revision) => revisions.push(revision))
 
-        const effective = await manager.initialize(true)
+        const state = await client.start({hasProject: true})
 
         assert.deepEqual(adapter.calls, ["application", "project"])
-        assert.deepEqual(effective.settings, {
+        assert.deepEqual(state.effective.settings, {
             defaultProvider: "app",
             defaultModel: "project-model",
         })
-        assert.equal(manager.getSnapshot("application")?.revision, "app-1")
-        assert.equal(manager.getSnapshot("project")?.revision, "project-1")
-        assert.equal(manager.getEffectiveSettings(), effective)
-        assert.deepEqual(events, [null])
+        assert.equal(client.getSnapshot("application").revision, "app-1")
+        assert.equal(client.getSnapshot("project")?.revision, "project-1")
+        assert.equal(client.getState(), state)
+        assert.deepEqual(revisions, [JSON.stringify(["app-1", "project-1"])])
     })
 
     test("application and project invalidations both replace the effective cache", async () => {
@@ -423,49 +438,49 @@ describe("SettingsManager cache and invalidation", () => {
             application("app-1", {retry: {enabled: true}}),
             project("project-1", {retry: {maxRetries: 1}}),
         )
-        const manager = new SettingsManager(adapter)
-        await manager.initialize(true)
+        const client = new SettingsSyncClient(adapter)
+        await client.start({hasProject: true})
 
         adapter.applicationSnapshot = application("app-2", {retry: {enabled: false}})
-        await manager.handleSettingsChanged({
+        await client.notify({
             scope: "application",
             projectRoot: null,
             revision: "app-2",
         })
-        assert.deepEqual(manager.getEffectiveSettings()?.settings.retry, {
+        assert.deepEqual(client.getState().effective.settings.retry, {
             enabled: false,
             maxRetries: 1,
         })
-        assert.equal(manager.getEffectiveSettings()?.revision,
+        assert.equal(client.getState().effective.revision,
             JSON.stringify(["app-2", "project-1"]),
         )
 
         adapter.projectSnapshot = project("project-2", {retry: {maxRetries: 5}})
-        await manager.handleSettingsChanged({
+        await client.notify({
             scope: "project",
             projectRoot: "/workspace/project",
             revision: "project-2",
         })
-        assert.deepEqual(manager.getEffectiveSettings()?.settings.retry, {
+        assert.deepEqual(client.getState().effective.settings.retry, {
             enabled: false,
             maxRetries: 5,
         })
-        assert.equal(manager.getEffectiveSettings()?.revision,
+        assert.equal(client.getState().effective.revision,
             JSON.stringify(["app-2", "project-2"]),
         )
     })
 
     test("ignores duplicate revisions and notifications for another project", async () => {
         const adapter = new MutableAdapter(application("app-1"), project("project-1"))
-        const manager = new SettingsManager(adapter)
-        await manager.initialize(true)
+        const client = new SettingsSyncClient(adapter)
+        await client.start({hasProject: true})
 
-        await manager.handleSettingsChanged({
+        await client.notify({
             scope: "application",
             projectRoot: null,
             revision: "app-1",
         })
-        await manager.handleSettingsChanged({
+        await client.notify({
             scope: "project",
             projectRoot: "/workspace/other",
             revision: "project-2",
@@ -476,25 +491,25 @@ describe("SettingsManager cache and invalidation", () => {
 
     test("settles a stale notification after a newer cached snapshot", async () => {
         let calls = 0
-        const adapter: SettingsManagerAdapter = {
-            async getSettingsSnapshot() {
+        const adapter: SettingsSyncAdapter = {
+            async fetch() {
                 calls += 1
                 if (calls > 4) throw new Error("stale notification did not settle")
                 return application("app-3", {defaultModel: "current"})
             },
         }
-        const manager = new SettingsManager(adapter)
-        await manager.initialize(false)
+        const client = new SettingsSyncClient(adapter)
+        await client.start({hasProject: false})
 
-        await manager.handleSettingsChanged({
+        await client.notify({
             scope: "application",
             projectRoot: null,
             revision: "app-2",
         })
 
         assert.equal(calls, 4)
-        assert.equal(manager.getSnapshot("application")?.revision, "app-3")
-        assert.equal(manager.getEffectiveSettings()?.settings.defaultModel, "current")
+        assert.equal(client.getSnapshot("application").revision, "app-3")
+        assert.equal(client.getState().effective.settings.defaultModel, "current")
     })
 
     test("retries propagation lag until the notified revision is fetched", async () => {
@@ -504,25 +519,25 @@ describe("SettingsManager cache and invalidation", () => {
             application("app-1"),
             application("app-2", {defaultModel: "new"}),
         ]
-        const adapter: SettingsManagerAdapter = {
-            async getSettingsSnapshot(scope) {
+        const adapter: SettingsSyncAdapter = {
+            async fetch(scope) {
                 calls.push(scope)
                 const snapshot = snapshots.shift()
                 if (!snapshot) throw new Error("unexpected fetch")
                 return snapshot
             },
         }
-        const manager = new SettingsManager(adapter)
-        await manager.initialize(false)
+        const client = new SettingsSyncClient(adapter)
+        await client.start({hasProject: false})
 
-        await manager.handleSettingsChanged({
+        await client.notify({
             scope: "application",
             projectRoot: null,
             revision: "app-2",
         })
 
         assert.deepEqual(calls, ["application", "application", "application"])
-        assert.equal(manager.getSnapshot("application")?.revision, "app-2")
+        assert.equal(client.getSnapshot("application").revision, "app-2")
     })
 
     test("does not mistake a repeatedly cached starting revision for a newer one", async () => {
@@ -533,18 +548,18 @@ describe("SettingsManager cache and invalidation", () => {
             application("app-1"),
             application("app-2", {defaultModel: "new"}),
         ]
-        const adapter: SettingsManagerAdapter = {
-            async getSettingsSnapshot(scope) {
+        const adapter: SettingsSyncAdapter = {
+            async fetch(scope) {
                 calls.push(scope)
                 const snapshot = snapshots.shift()
                 if (!snapshot) throw new Error("unexpected fetch")
                 return snapshot
             },
         }
-        const manager = new SettingsManager(adapter)
-        await manager.initialize(false)
+        const client = new SettingsSyncClient(adapter)
+        await client.start({hasProject: false})
 
-        await manager.handleSettingsChanged({
+        await client.notify({
             scope: "application",
             projectRoot: null,
             revision: "app-2",
@@ -556,15 +571,15 @@ describe("SettingsManager cache and invalidation", () => {
             "application",
             "application",
         ])
-        assert.equal(manager.getSnapshot("application")?.revision, "app-2")
+        assert.equal(client.getSnapshot("application").revision, "app-2")
     })
 
     test("a different revision received during refresh forces another fetch", async () => {
         const firstRefresh = deferred<SafeSettingsSnapshot>()
         const calls: SettingsChanged["scope"][] = []
         let applicationCall = 0
-        const adapter: SettingsManagerAdapter = {
-            async getSettingsSnapshot(scope) {
+        const adapter: SettingsSyncAdapter = {
+            async fetch(scope) {
                 calls.push(scope)
                 applicationCall += 1
                 if (applicationCall === 1) return application("app-1")
@@ -573,16 +588,16 @@ describe("SettingsManager cache and invalidation", () => {
                 throw new Error("unexpected fetch")
             },
         }
-        const manager = new SettingsManager(adapter)
-        await manager.initialize(false)
+        const client = new SettingsSyncClient(adapter)
+        await client.start({hasProject: false})
 
-        const refreshToTwo = manager.handleSettingsChanged({
+        const refreshToTwo = client.notify({
             scope: "application",
             projectRoot: null,
             revision: "app-2",
         })
         await until(() => applicationCall === 2)
-        const refreshToThree = manager.handleSettingsChanged({
+        const refreshToThree = client.notify({
             scope: "application",
             projectRoot: null,
             revision: "app-3",
@@ -591,22 +606,156 @@ describe("SettingsManager cache and invalidation", () => {
 
         await Promise.all([refreshToTwo, refreshToThree])
         assert.deepEqual(calls, ["application", "application", "application"])
-        assert.equal(manager.getSnapshot("application")?.revision, "app-3")
-        assert.equal(manager.getEffectiveSettings()?.settings.defaultModel, "three")
+        assert.equal(client.getSnapshot("application").revision, "app-3")
+        assert.equal(client.getState().effective.settings.defaultModel, "three")
     })
 
     test("application-only managers never request or accept project snapshots", async () => {
         const adapter = new MutableAdapter(application("app-1"))
-        const manager = new SettingsManager(adapter)
-        await manager.initialize(false)
-        await manager.handleSettingsChanged({
+        const client = new SettingsSyncClient(adapter)
+        await client.start({hasProject: false})
+        await client.notify({
             scope: "project",
             projectRoot: "/workspace/project",
             revision: "project-1",
         })
 
         assert.deepEqual(adapter.calls, ["application"])
-        assert.equal(manager.getSnapshot("project"), undefined)
-        assert.equal(manager.getEffectiveSettings()?.projectRevision, null)
+        assert.equal(client.getSnapshot("project"), undefined)
+        assert.equal(client.getState().effective.projectRevision, null)
+    })
+})
+
+describe("SettingsSyncClient mutations and typed keys", () => {
+    test("queues notifications received before start and publishes selected values only when changed", async () => {
+        const adapter = new MutableAdapter(application("app-1", {}, {ui: {locale: "en"}}))
+        const client = new SettingsSyncClient(adapter)
+        const locales: string[] = []
+        client.subscribe(selectSetting(settingKeys.uiLocale), (locale) => locales.push(locale))
+
+        adapter.applicationSnapshot = application("app-2", {}, {ui: {locale: "zh"}})
+        await client.notify({scope: "application", projectRoot: null, revision: "app-2"})
+        await client.start({hasProject: false})
+        adapter.applicationSnapshot = {
+            ...application("app-3", {}, {ui: {locale: "zh"}}),
+            diagnostics: [{file: "settings.json", severity: "warning", message: "diagnostic only"}],
+        }
+        await client.notify({scope: "application", projectRoot: null, revision: "app-3"})
+
+        assert.deepEqual(locales, ["zh"])
+        assert.equal(client.getSnapshot("application").revision, "app-3")
+    })
+
+    test("saves both documents atomically and preserves unknown fields", async () => {
+        const adapter = new MutableAdapter(application(
+            "app-1",
+            {defaultProvider: "old", futurePi: {keep: true}},
+            {commit: {customPrompt: "old"}, futureProduct: true},
+        ))
+        adapter.saveImpl = async (request) => {
+            adapter.applicationSnapshot = application(
+                "app-2",
+                request.settingsJson ?? adapter.applicationSnapshot.settingsJson,
+                request.vibeflyJson ?? adapter.applicationSnapshot.vibeflyJson,
+            )
+            return {ok: true, revision: "app-2"}
+        }
+        const client = new SettingsSyncClient(adapter)
+        await client.start({hasProject: false})
+
+        const result = await client.mutate("application", [
+            setSetting(settingKeys.defaultProvider, "openai"),
+            setSetting(settingKeys.commitCustomPrompt, "new"),
+        ])
+
+        assert.equal(result.ok, true)
+        assert.equal(adapter.saves.length, 1)
+        assert.deepEqual(JSON.parse(adapter.saves[0]!.settingsJson!), {
+            defaultProvider: "openai",
+            futurePi: {keep: true},
+        })
+        assert.deepEqual(JSON.parse(adapter.saves[0]!.vibeflyJson!), {
+            commit: {customPrompt: "new"},
+            futureProduct: true,
+        })
+    })
+
+    test("refetches and replays semantic mutations after a conflict", async () => {
+        const adapter = new MutableAdapter(application("app-1", {future: "one"}, {ui: {locale: "en"}}))
+        let saveCall = 0
+        adapter.saveImpl = async (request) => {
+            saveCall += 1
+            if (saveCall === 1) {
+                adapter.applicationSnapshot = application("app-2", {future: "external"}, {ui: {locale: "en"}})
+                return {ok: false, conflict: true, revision: "app-2"}
+            }
+            adapter.applicationSnapshot = application(
+                "app-3",
+                request.settingsJson ?? adapter.applicationSnapshot.settingsJson,
+                request.vibeflyJson ?? adapter.applicationSnapshot.vibeflyJson,
+            )
+            return {ok: true, revision: "app-3"}
+        }
+        const client = new SettingsSyncClient(adapter)
+        await client.start({hasProject: false})
+
+        const result = await client.mutate("application", [
+            setSetting(settingKeys.uiLocale, "zh"),
+            unsetSetting(settingKeys.defaultProvider),
+        ])
+
+        assert.equal(result.attempts, 2)
+        assert.deepEqual(JSON.parse(adapter.saves[1]!.settingsJson!), {future: "external"})
+        assert.equal(selectSetting(settingKeys.uiLocale)(client.getState()), "zh")
+    })
+
+    test("reports retry exhaustion after four conflicts", async () => {
+        const adapter = new MutableAdapter(application("app-1"))
+        let revision = 1
+        adapter.saveImpl = async () => {
+            revision += 1
+            adapter.applicationSnapshot = application(`app-${revision}`, {
+                external: revision,
+            })
+            return {ok: false, conflict: true, revision: `app-${revision}`}
+        }
+        const client = new SettingsSyncClient(adapter)
+        await client.start({hasProject: false})
+
+        const result = await client.mutate("application", [
+            setSetting(settingKeys.defaultModel, "local-model"),
+        ])
+
+        assert.deepEqual(result, {
+            ok: false,
+            revision: "app-5",
+            attempts: 4,
+            conflict: true,
+            error: "Settings changed externally",
+        })
+        assert.equal(adapter.saves.length, 4)
+    })
+
+    test("serializes one scope while allowing application and project to fetch in parallel", async () => {
+        let active = 0
+        let maxActive = 0
+        const release = deferred<void>()
+        const entered = deferred<void>()
+        const adapter: SettingsSyncAdapter = {
+            async fetch(scope) {
+                active += 1
+                maxActive = Math.max(maxActive, active)
+                if (active === 2) entered.resolve()
+                await release.promise
+                active -= 1
+                return scope === "application" ? application("app-1") : project("project-1")
+            },
+        }
+        const client = new SettingsSyncClient(adapter)
+        const starting = client.start({hasProject: true})
+        await entered.promise
+        assert.equal(maxActive, 2)
+        release.resolve()
+        await starting
     })
 })

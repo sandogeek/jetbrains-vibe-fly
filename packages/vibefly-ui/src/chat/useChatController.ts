@@ -17,12 +17,10 @@ import {createChatUiRpc} from "../rpc/client"
 import {bindConsoleToHost} from "../rpc/console"
 import type {ModelPickerOption} from "../settings/ModelPicker"
 import {
-    applicationSnapshot,
-    createUiSettingsManager,
-    modelPreferencesFromApplication,
-    prepareApplicationModelPreferencesSave,
+    modelPreferenceMutations,
     settingsChanged as toSettingsChanged,
 } from "../settings/hostSettings"
+import {UiSettingsRuntime, useUiSettingsView} from "../settings/UiSettingsRuntime"
 import type {ModelPreferences} from "../settings/settingsStore"
 import {applyJbTheme} from "../theme"
 import {applyChatEvent} from "./chatEventState"
@@ -103,6 +101,8 @@ export function useChatController(): ChatController {
     const [pendingInput, setPendingInput] = useState<PendingInput | null>(null)
     const [inputReply, setInputReply] = useState("")
     const [offline, setOffline] = useState(false)
+    const [settingsStore, setSettingsStore] = useState<UiSettingsRuntime | null>(null)
+    const settingsView = useUiSettingsView(settingsStore)
 
     const hostRef = useRef<Ui2Host | null>(null)
     const hostChatRef = useRef<Ui2HostChat | null>(null)
@@ -111,19 +111,7 @@ export function useChatController(): ChatController {
     const peerRef = useRef<SimpleRpcPeer | null>(null)
     const stopAgentRef = useRef<(() => void) | null>(null)
     const unbindConsoleRef = useRef<(() => void) | null>(null)
-    const settingsManagerRef = useRef<ReturnType<typeof createUiSettingsManager> | null>(null)
-    const stopSettingsRef = useRef<(() => void) | null>(null)
-    const settingsReadyRef = useRef(false)
-    const pendingSettingsChangesRef = useRef(new Map<
-        "application" | "project",
-        NonNullable<ReturnType<typeof toSettingsChanged>>
-    >())
-    const modelPreferencesSaveRef = useRef(Promise.resolve())
-    const pendingModelPreferencesRef = useRef<{
-        generation: number
-        value: ModelPreferences
-    } | null>(null)
-    const modelPreferencesGenerationRef = useRef(0)
+    const settingsRuntimeRef = useRef<UiSettingsRuntime | null>(null)
     const tabsRef = useRef<ChatTab[]>([])
     const activeIdRef = useRef("")
     const contextsRef = useRef<ChatContexts>({})
@@ -264,36 +252,24 @@ export function useChatController(): ChatController {
 
     const loadModelPreferences = useCallback(async (ui2Host: Ui2Host) => {
         try {
-            const manager = createUiSettingsManager(ui2Host)
-            settingsReadyRef.current = false
-            pendingSettingsChangesRef.current.clear()
-            settingsManagerRef.current = manager
-            const applySettings = () => {
-                const pending = pendingModelPreferencesRef.current
-                const application = manager.getSnapshot("application")
-                if (application) {
-                    setModelPreferences(pending?.value ?? modelPreferencesFromApplication(application))
-                }
-                const effective = manager.getEffectiveSettings()
-                if (effective) applyUiLocale(effective.vibefly.ui?.locale)
+            let runtime = settingsRuntimeRef.current
+            if (!runtime) {
+                runtime = new UiSettingsRuntime(ui2Host)
+                settingsRuntimeRef.current = runtime
+                setSettingsStore(runtime)
             }
-            stopSettingsRef.current?.()
-            stopSettingsRef.current = manager.subscribe(() => applySettings())
-            // Pin/MRU are application-scoped; still load project so locale can merge.
-            await manager.initialize(true)
-            while (pendingSettingsChangesRef.current.size > 0) {
-                const changes = [...pendingSettingsChangesRef.current.values()]
-                pendingSettingsChangesRef.current.clear()
-                for (const change of changes) {
-                    await manager.handleSettingsChanged(change)
-                }
-            }
-            settingsReadyRef.current = true
-            applySettings()
+            // Pin/MRU stay application-scoped while locale consumes project-effective settings.
+            await runtime.start(true)
         } catch (preferencesError) {
             log.warn("model preferences unavailable", preferencesError)
         }
     }, [])
+
+    useEffect(() => {
+        if (!settingsView) return
+        setModelPreferences(settingsView.settings.modelPreferences)
+        applyUiLocale(settingsView.settings.ui.locale)
+    }, [settingsView])
 
     const persistWorkspace = useCallback(async () => {
         const chatHost = hostChatRef.current
@@ -439,15 +415,11 @@ export function useChatController(): ChatController {
                     applyJbTheme(mode)
                 },
                 async settingsChanged(scope, projectRoot, revision) {
-                    const manager = settingsManagerRef.current
                     const change = toSettingsChanged(scope, projectRoot, revision)
-                    if (!manager || !change) return
-                    if (!settingsReadyRef.current) {
-                        pendingSettingsChangesRef.current.set(change.scope, change)
-                        return
-                    }
+                    const runtime = settingsRuntimeRef.current
+                    if (!runtime || !change) return
                     try {
-                        await manager.handleSettingsChanged(change)
+                        await runtime.notify(change.scope, change.projectRoot, change.revision)
                     } catch (settingsError) {
                         log.warn("settings refresh failed", settingsError)
                     }
@@ -482,6 +454,11 @@ export function useChatController(): ChatController {
             hostChatRef.current = rpc.ui2HostChat
             peerRef.current = rpc.peer
             unbindConsoleRef.current = bindConsoleToHost(rpc.ui2Host)
+            // Install the runtime before bootstrap awaits Host calls so an early
+            // settingsChanged notification is queued and replayed by start().
+            const runtime = new UiSettingsRuntime(rpc.ui2Host)
+            settingsRuntimeRef.current = runtime
+            setSettingsStore(runtime)
             void bootstrap(rpc.ui2Host, rpc.ui2HostChat, () => disposed)
         }
 
@@ -491,12 +468,8 @@ export function useChatController(): ChatController {
             stopAgentRef.current = null
             unbindConsoleRef.current?.()
             unbindConsoleRef.current = null
-            stopSettingsRef.current?.()
-            stopSettingsRef.current = null
-            settingsReadyRef.current = false
-            pendingSettingsChangesRef.current.clear()
-            settingsManagerRef.current = null
-            pendingModelPreferencesRef.current = null
+            settingsRuntimeRef.current = null
+            setSettingsStore(null)
             peerRef.current?.close()
             peerRef.current = null
             hostRef.current = null
@@ -769,44 +742,11 @@ export function useChatController(): ChatController {
     }
 
     const persistModelPreferences = (preferences: ModelPreferences) => {
-        if (!hostRef.current || offlineRef.current) return
-        const chatHost = hostRef.current
-        const manager = settingsManagerRef.current
-        if (!manager) return
-        const generation = ++modelPreferencesGenerationRef.current
-        const savedPreferences: ModelPreferences = {
-            recentModelSpecs: [...preferences.recentModelSpecs],
-            pinnedModelSpecs: [...preferences.pinnedModelSpecs],
-        }
-        pendingModelPreferencesRef.current = {generation, value: savedPreferences}
-        modelPreferencesSaveRef.current = modelPreferencesSaveRef.current.then(async () => {
-            for (let attempt = 0; attempt < 4; attempt += 1) {
-                try {
-                    const prepared = prepareApplicationModelPreferencesSave(manager, savedPreferences)
-                    const result = await chatHost.saveSettings({scope: "application", ...prepared})
-                    if (result.revision) {
-                        const change = toSettingsChanged("application", null, result.revision)
-                        if (change) await manager.handleSettingsChanged(change)
-                    }
-                    if (result.ok) {
-                        if (pendingModelPreferencesRef.current?.generation === generation) {
-                            pendingModelPreferencesRef.current = null
-                        }
-                        const pending = pendingModelPreferencesRef.current
-                        setModelPreferences(
-                            pending?.value ?? modelPreferencesFromApplication(applicationSnapshot(manager)),
-                        )
-                        return
-                    }
-                    if (result.conflict) continue
-                    throw new Error(result.error ?? "Settings save failed")
-                } catch (preferencesError) {
-                    log.warn("model preferences save failed", preferencesError)
-                    setError(errorText(preferencesError))
-                    return
-                }
-            }
-            setError("Settings changed externally")
+        const runtime = settingsRuntimeRef.current
+        if (!runtime || offlineRef.current) return
+        void runtime.mutate(modelPreferenceMutations(preferences)).catch((preferencesError) => {
+            log.warn("model preferences save failed", preferencesError)
+            setError(errorText(preferencesError))
         })
     }
 

@@ -6,8 +6,9 @@ import {
     type JsonObject,
     type JsonValue,
     type SettingsChanged,
-    SettingsManager as SnapshotSettingsManager,
-    type SettingsManagerAdapter,
+    SettingsSyncClient,
+    type SettingsSyncAdapter,
+    type SettingsSyncState,
 } from "@vibefly/uiagent-shared"
 import {
     type AgentApplicationSettingsSnapshot,
@@ -28,7 +29,19 @@ import type {
 } from "./generated/controlRpc.js"
 import {log} from "./log.js"
 
-type SettingsStorage = Parameters<typeof PiSettingsManager.fromStorage>[0]
+type PiSettingsStorage = Parameters<typeof PiSettingsManager.fromStorage>[0]
+type PiInMemorySettings = Parameters<typeof PiSettingsManager.inMemory>[0]
+
+// Keep the Host bridge coupled to pi's public factory signatures at compile time.
+// A pi upgrade that changes either input fails here instead of at session creation.
+type Assert<T extends true> = T
+type PiSettingsManagerContract = {
+    fromStorage(storage: PiSettingsStorage): PiSettingsManager
+    inMemory(settings?: PiInMemorySettings): PiSettingsManager
+}
+type PiSettingsManagerContractCheck = Assert<
+    typeof PiSettingsManager extends PiSettingsManagerContract ? true : false
+>
 
 export interface HostSettingsRpc {
     getSettingsSnapshot(scope: string): Promise<WireSettingsSnapshot>
@@ -43,7 +56,7 @@ export type HostModelRuntime = Pick<
     "getModels" | "refresh" | "registerProvider" | "unregisterProvider"
 >
 
-export type HostSettingsControllerOptions = {
+export type HostSettingsRuntimeOptions = {
     hasProject: boolean
     reloadLiveSessions?: (modelCatalogChanged: boolean) => Promise<void>
 }
@@ -321,8 +334,8 @@ function providerConfig(
     return output
 }
 
-/** Read-only storage that exposes the already deep-merged Host snapshot to pi. */
-export class HostBackedSettingsStorage implements SettingsStorage {
+/** Read-only pi storage that exposes the already deep-merged Host snapshot as global. */
+export class PiSettingsBridge implements PiSettingsStorage {
     #settingsJson = "{}"
 
     replace(settings: JsonObject): boolean {
@@ -344,7 +357,7 @@ export class HostBackedSettingsStorage implements SettingsStorage {
 }
 
 /** In-memory pi credential store whose only persistence path is Agent2Host.saveAuth. */
-export class HostBackedCredentialStore implements CredentialStore {
+export class HostCredentialStore implements CredentialStore {
     #credentials: CredentialMap = {}
     #revision = ""
     #stateVersion = 0
@@ -459,147 +472,20 @@ export class HostBackedCredentialStore implements CredentialStore {
     }
 }
 
-export class HostSettingsController {
-    readonly settingsStorage = new HostBackedSettingsStorage()
-    readonly credentials: HostBackedCredentialStore
-    readonly snapshots: SnapshotSettingsManager<AgentSettingsSnapshot>
+export class ModelConfigBridge {
     readonly #registeredModels = new Map<string, string>()
     #runtime?: HostModelRuntime
-    #settingsFingerprint = ""
-    #modelsFingerprint = ""
-    #authFingerprint = ""
-    #reconcileTail: Promise<void> = Promise.resolve()
-    #reloadLiveSessions: (modelCatalogChanged: boolean) => Promise<void>
 
-    constructor(
-        private readonly host: HostSettingsRpc,
-        private readonly options: HostSettingsControllerOptions,
-    ) {
-        const adapter: SettingsManagerAdapter<AgentSettingsSnapshot> = {
-            getSettingsSnapshot: async (scope) =>
-                normalizeAgentSettingsSnapshot(await host.getSettingsSnapshot(scope)),
-        }
-        this.snapshots = new SnapshotSettingsManager(adapter)
-        this.#reloadLiveSessions = options.reloadLiveSessions ?? (async () => {
-        })
-        this.credentials = new HostBackedCredentialStore(
-            host,
-            (revision) => {
-                // Saving auth also publishes a Host invalidation, but drive the same
-                // revision through the normal refresh path as a fallback. The cache
-                // deduplicates the real notification, so live sessions reload once.
-                setImmediate(() => {
-                    void this.handleSettingsChanged("application", null, revision).catch(() => {
-                    })
-                })
-            },
-        )
-    }
-
-    async initialize(): Promise<void> {
-        await this.credentials.runExclusive(async (replaceCredentials) => {
-            const effective = await this.snapshots.initialize(this.options.hasProject)
-            const application = this.#applicationSnapshot()
-            this.settingsStorage.replace(effective.settings)
-            replaceCredentials(application.authJson, application.revision)
-            this.#settingsFingerprint = fingerprint(effective.settings)
-            this.#modelsFingerprint = fingerprint(parseModelsJson(application.modelsJson).value)
-            this.#authFingerprint = fingerprint(parseAuthJson(application.authJson).value)
-        })
-    }
-
-    setReloadLiveSessions(reload: (modelCatalogChanged: boolean) => Promise<void>): void {
-        this.#reloadLiveSessions = reload
-    }
-
-    async attachModelRuntime(runtime: HostModelRuntime): Promise<void> {
+    async attach(runtime: HostModelRuntime, modelsJson: string): Promise<void> {
         this.#runtime = runtime
-        await this.#applyModels(this.#applicationSnapshot().modelsJson)
+        await this.apply(modelsJson)
     }
 
-    handleSettingsChanged(
-        scope: string,
-        projectRoot: string | null,
-        revision: string,
-    ): Promise<void> {
-        if (scope !== "application" && scope !== "project") {
-            return Promise.reject(new Error(`Unknown settings scope: ${scope}`))
-        }
-        const change: SettingsChanged = {scope, projectRoot, revision}
-        return this.#enqueue(async () => {
-            await this.credentials.runExclusive(async (replaceCredentials) => {
-                await this.snapshots.handleSettingsChanged(change)
-                await this.#reconcile(replaceCredentials, scope === "application")
-            })
-        })
+    async refreshAuth(): Promise<void> {
+        await this.#runtime?.refresh({allowNetwork: false})
     }
 
-    /** Re-read both Host scopes after the control service starts accepting notifications. */
-    refreshFromHost(): Promise<void> {
-        return this.#enqueue(async () => {
-            await this.credentials.runExclusive(async (replaceCredentials) => {
-                await this.snapshots.initialize(this.options.hasProject)
-                await this.#reconcile(replaceCredentials, true)
-            })
-        })
-    }
-
-    getApplicationSnapshot(): AgentApplicationSettingsSnapshot {
-        return structuredClone(this.#applicationSnapshot())
-    }
-
-    applyCommitSettings(request: GenerateCommitMessageRequest): GenerateCommitMessageRequest {
-        const effective = this.snapshots.getEffectiveSettings()
-        if (!effective) throw new Error("Effective Host settings are unavailable")
-        return applyEffectiveCommitSettings(request, effective)
-    }
-
-    #enqueue(operation: () => Promise<void>): Promise<void> {
-        const result = this.#reconcileTail.then(operation, operation)
-        this.#reconcileTail = result.catch((error) => {
-            log.warn("host settings reconciliation failed", {err: error})
-        })
-        return result
-    }
-
-    async #reconcile(
-        replaceCredentials: (authJson: string, revision: string) => boolean,
-        replaceApplicationCredentials: boolean,
-    ): Promise<void> {
-        const application = this.#applicationSnapshot()
-        const effective = this.snapshots.getEffectiveSettings()
-        if (!effective) throw new Error("Effective Host settings are unavailable")
-
-        const settingsFingerprint = fingerprint(effective.settings)
-        const modelsFingerprint = fingerprint(parseModelsJson(application.modelsJson).value)
-        const authFingerprint = fingerprint(parseAuthJson(application.authJson).value)
-        const settingsChanged = settingsFingerprint !== this.#settingsFingerprint
-        const modelsChanged = modelsFingerprint !== this.#modelsFingerprint
-        const authChanged = authFingerprint !== this.#authFingerprint
-
-        this.#settingsFingerprint = settingsFingerprint
-        this.#modelsFingerprint = modelsFingerprint
-        this.#authFingerprint = authFingerprint
-        this.settingsStorage.replace(effective.settings)
-        if (replaceApplicationCredentials) {
-            replaceCredentials(application.authJson, application.revision)
-        }
-
-        if (modelsChanged) await this.#applyModels(application.modelsJson)
-        else if (authChanged) await this.#runtime?.refresh({allowNetwork: false})
-
-        if (settingsChanged || modelsChanged || authChanged) {
-            await this.#reloadLiveSessions(modelsChanged || authChanged)
-            log.info("host settings applied", {
-                scopeRevision: effective.revision,
-                settingsChanged,
-                modelsChanged,
-                authChanged,
-            })
-        }
-    }
-
-    async #applyModels(modelsJson: string): Promise<void> {
+    async apply(modelsJson: string): Promise<void> {
         const runtime = this.#runtime
         if (!runtime) return
         const providers = parseModelsJson(modelsJson).value.providers ?? {}
@@ -634,10 +520,179 @@ export class HostSettingsController {
         }
         await runtime.refresh({allowNetwork: false})
     }
+}
+
+function applicationSnapshot(
+    state: SettingsSyncState<AgentSettingsSnapshot>,
+): AgentApplicationSettingsSnapshot {
+    return state.application
+}
+
+export class HostSettingsRuntime {
+    readonly settingsStorage = new PiSettingsBridge()
+    readonly credentials: HostCredentialStore
+    readonly snapshots: SettingsSyncClient<AgentSettingsSnapshot>
+    readonly models = new ModelConfigBridge()
+    #settingsFingerprint = ""
+    #modelsFingerprint = ""
+    #authFingerprint = ""
+    #reconcileTail: Promise<void> = Promise.resolve()
+    #reloadLiveSessions: (modelCatalogChanged: boolean) => Promise<void>
+    #initialized = false
+    #batchDepth = 0
+    #batchedState?: {
+        current: SettingsSyncState<AgentSettingsSnapshot>
+        previous: SettingsSyncState<AgentSettingsSnapshot> | undefined
+    }
+
+    constructor(
+        private readonly host: HostSettingsRpc,
+        private readonly options: HostSettingsRuntimeOptions,
+    ) {
+        const adapter: SettingsSyncAdapter<AgentSettingsSnapshot> = {
+            fetch: async (scope) =>
+                normalizeAgentSettingsSnapshot(await host.getSettingsSnapshot(scope)),
+        }
+        this.snapshots = new SettingsSyncClient(adapter)
+        this.#reloadLiveSessions = options.reloadLiveSessions ?? (async () => {
+        })
+        this.credentials = new HostCredentialStore(
+            host,
+            (revision) => {
+                // Host normally publishes this invalidation. Drive the returned
+                // revision through the same client as a fallback; duplicate events
+                // are suppressed by snapshot revision and semantic fingerprints.
+                setImmediate(() => {
+                    void this.handleSettingsChanged("application", null, revision).catch(() => {
+                    })
+                })
+            },
+        )
+        this.snapshots.subscribe(
+            (state) => state,
+            (current, previous) => {
+                if (this.#batchDepth > 0) {
+                    this.#batchedState = {
+                        current,
+                        previous: this.#batchedState?.previous ?? previous,
+                    }
+                    return
+                }
+                void this.#enqueue(() => this.#reconcile(current, previous))
+            },
+        )
+    }
+
+    async initialize(): Promise<void> {
+        const state = await this.snapshots.start({hasProject: this.options.hasProject})
+        await this.#drain()
+        if (!this.#initialized) {
+            // start() publishes synchronously to the subscription, so this branch is
+            // only a guard for a future client implementation that does not.
+            await this.#enqueue(() => this.#reconcile(state, undefined))
+        }
+    }
+
+    setReloadLiveSessions(reload: (modelCatalogChanged: boolean) => Promise<void>): void {
+        this.#reloadLiveSessions = reload
+    }
+
+    async attachModelRuntime(runtime: HostModelRuntime): Promise<void> {
+        await this.models.attach(runtime, this.#applicationSnapshot().modelsJson)
+    }
+
+    handleSettingsChanged(
+        scope: string,
+        projectRoot: string | null,
+        revision: string,
+    ): Promise<void> {
+        if (scope !== "application" && scope !== "project") {
+            return Promise.reject(new Error(`Unknown settings scope: ${scope}`))
+        }
+        const change: SettingsChanged = {scope, projectRoot, revision}
+        return this.snapshots.notify(change).then(() => this.#drain())
+    }
+
+    /** Re-read both Host scopes after the control service starts accepting notifications. */
+    async refreshFromHost(): Promise<void> {
+        this.#batchDepth += 1
+        try {
+            await Promise.all([
+                this.snapshots.syncTo("application"),
+                ...(this.options.hasProject ? [this.snapshots.syncTo("project")] : []),
+            ])
+        } finally {
+            this.#batchDepth -= 1
+            if (this.#batchDepth === 0 && this.#batchedState) {
+                const batch = this.#batchedState
+                this.#batchedState = undefined
+                void this.#enqueue(() => this.#reconcile(batch.current, batch.previous))
+            }
+        }
+        await this.#drain()
+    }
+
+    getApplicationSnapshot(): AgentApplicationSettingsSnapshot {
+        return structuredClone(this.#applicationSnapshot())
+    }
+
+    applyCommitSettings(request: GenerateCommitMessageRequest): GenerateCommitMessageRequest {
+        return applyEffectiveCommitSettings(request, this.snapshots.getState().effective)
+    }
+
+    #enqueue(operation: () => Promise<void>): Promise<void> {
+        const result = this.#reconcileTail.then(operation, operation)
+        this.#reconcileTail = result.catch((error) => {
+            log.warn("host settings reconciliation failed", {err: error})
+        })
+        return result
+    }
+
+    #drain(): Promise<void> {
+        return this.#reconcileTail
+    }
+
+    async #reconcile(
+        current: SettingsSyncState<AgentSettingsSnapshot>,
+        previous: SettingsSyncState<AgentSettingsSnapshot> | undefined,
+    ): Promise<void> {
+        const application = applicationSnapshot(current)
+        const effective = current.effective
+        const settingsFingerprint = fingerprint(effective.settings)
+        const modelsFingerprint = fingerprint(parseModelsJson(application.modelsJson).value)
+        const authFingerprint = fingerprint(parseAuthJson(application.authJson).value)
+        const settingsChanged = this.#initialized && settingsFingerprint !== this.#settingsFingerprint
+        const modelsChanged = this.#initialized && modelsFingerprint !== this.#modelsFingerprint
+        const authChanged = this.#initialized && authFingerprint !== this.#authFingerprint
+        const applicationAdvanced = previous?.application.revision !== application.revision
+
+        // One snapshot transaction always applies bridges in this order.
+        this.settingsStorage.replace(effective.settings)
+        await this.credentials.runExclusive(async (replaceCredentials) => {
+            if (!this.#initialized || applicationAdvanced) {
+                replaceCredentials(application.authJson, application.revision)
+            }
+        })
+        if (modelsChanged) await this.models.apply(application.modelsJson)
+        else if (authChanged) await this.models.refreshAuth()
+
+        this.#settingsFingerprint = settingsFingerprint
+        this.#modelsFingerprint = modelsFingerprint
+        this.#authFingerprint = authFingerprint
+        this.#initialized = true
+
+        if (settingsChanged || modelsChanged || authChanged) {
+            await this.#reloadLiveSessions(modelsChanged || authChanged)
+            log.info("host settings applied", {
+                scopeRevision: effective.revision,
+                settingsChanged,
+                modelsChanged,
+                authChanged,
+            })
+        }
+    }
 
     #applicationSnapshot(): AgentApplicationSettingsSnapshot {
-        const snapshot = this.snapshots.getSnapshot("application")
-        if (!snapshot) throw new Error("Application Host settings are unavailable")
-        return snapshot
+        return this.snapshots.getState().application
     }
 }

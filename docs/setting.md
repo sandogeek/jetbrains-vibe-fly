@@ -1,6 +1,6 @@
 # Host 集中式设置架构
 
-本文描述设置系统的 **目标架构和迁移边界**。其中“迁移前现状”来自当前代码，其余章节均为待实施设计，不能当作已上线能力。
+本文描述当前设置系统及设置消费层的实现边界。Host 集中落盘、四文件布局、revision 协议和凭据隔离已经落地；本文同时标明本轮未提供的产品能力。
 
 ## 目标与约束
 
@@ -18,21 +18,13 @@
 UI -> Agent 的业务契约仍只存在于 `packages/vibefly-uiagent-shared`，不新增 Kotlin 镜像。设置读取属于 UI -> Host 和
 Agent -> Host；不得为此引入 SimpleRpc 之外的第二套 RPC。
 
-## 迁移前现状
+## 当前实现边界
 
-当前实现仍使用以下路径，迁移完成后才由后续章节的架构取代：
-
-| 数据                  | 当前载体                             | 当前级别            |
-|-----------------------|--------------------------------------|---------------------|
-| 默认 Provider / Model | `VibeflyProviderSettingsState`       | application IDE XML |
-| 最近 / 固定模型       | `VibeflyModelPreferencesState`       | application IDE XML |
-| UI 语言               | `VibeflyUiSettingsState`             | application IDE XML |
-| Commit Message        | `VibeflyCommitMessageSettingsState`  | application IDE XML |
-| Providers 模型与鉴权  | Agent 侧 `models.json` / `auth.json` | Agent 目录          |
-| 标签 / session 列表   | `ChatWorkspaceState`                 | project workspace   |
-
-设置面板当前通过 `withControlForSettings` 借用一个 project Agent 处理 Providers；默认模型变化时部分路径仍会调用
-`stopAllOpenProjects()`。当前没有统一设置变更通知，其他 WebView 只能主动重读。这些是实现替换对象，不是目标架构应保留的行为；替换时不迁移其已有数据。
+- 设置页和聊天页通过同一个 UI runtime 消费 Host 快照；Agent 通过相同的共享同步核心消费受信任快照。
+- 当前 UI 所有设置写入仍固定为 application scope。typed key 已记录合法 scope 并支持 `unset`，但本轮不展示 Global / Project 切换、继承来源或“恢复继承”入口。
+- Settings WebView 以 `hasProject: false` 启动；Chat WebView 以 `hasProject: true` 启动。因此 locale 等 effective 字段可在聊天页读取 project 覆盖，pin / MRU 始终读取 application 层。
+- Provider 登录生命周期继续使用 `withControlForSettings` 和反向 RPC；没有迁移成独立 settings Agent。Provider 配置和 revision 收敛已进入统一 UI client。
+- 不读取或迁移旧 IDE XML settings；session / workspace 状态也不属于本设置系统。
 
 ## 文件与作用域
 
@@ -99,7 +91,7 @@ Host 提供两级服务：
 - project service 依赖 application service。application 快照变化时，所有 project 消费者的 effective cache 都必须失效。
 
 application service 缓存四份原始 JSON，project service 缓存两份原始 JSON。消费者请求 project 配置时分别获取 application 和
-project 快照，再由共享 `SettingsManager` 计算 effective 配置。这样 UI 和 Agent 使用完全相同的覆盖规则，同时不会为
+project 快照，再由共享 `SettingsSyncClient` 计算 effective 配置。这样 UI 和 Agent 使用完全相同的覆盖规则，同时不会为
 `models.json`、`auth.json` 虚构 project 层。
 
 ### 快照模型
@@ -145,7 +137,7 @@ type SettingsSnapshot = ApplicationSettingsSnapshot | ProjectSettingsSnapshot
 - `revision` 只用于相等性判断，消费者不得解析、排序或自行生成。
 - 内容或 diagnostics 发生可观察变化时 revision 都要变化；无实际变化的重复 watcher 事件不能产生新 revision。
 
-project 的 effective revision 由 application revision 与 project revision 共同组成，仅存在于共享 `SettingsManager`
+project 的 effective revision 由 application revision 与 project revision 共同组成，仅存在于共享 `SettingsSyncClient`
 的缓存中。任一层变化都使 effective cache 失效。
 
 上面的类型是 Host 内部和受信任 Agent 使用的完整模型。Providers RPC 返回完整的单个 Provider entry（`configJson`，即
@@ -239,29 +231,29 @@ Host2Agent.settingsChanged(scope, projectRoot, revision) -> void
 通知不携带 JSON。`projectRoot` 仅作身份字段：application 为 `null`，project 为规范化绝对路径，便于消费者区分缓存键；不是让调用方回传路径。消费者比较
 revision；发现本地快照不是该 revision 时，通过相反方向的 RPC 重新拉取。通知允许合并或重复，因此正确性依赖重新读取，而不是依赖每条事件都送达。
 
-application 任一文件变化都必须 fan-out 给所有设置面板、聊天面板和存活的 project Agent。每个 project `SettingsManager` 同时订阅
+application 任一文件变化都必须 fan-out 给所有设置面板、聊天面板和存活的 project Agent。每个 project `SettingsSyncClient` 同时订阅
 application scope 和自己的 project scope，所以 application 通知会使所有 project effective cache 失效。project 通知只发送给对应
 project 的消费者。
 
-若消费者在通知时尚未连接，不需要事件重放；它在建立 RPC 会话时必须先读取当前快照。断线重连也执行完整初始读取。
+`SettingsSyncClient.notify()` 可在 `start()` 前接收通知，并按 scope 保留最新目标 revision；首次快照完成后自动追平。断线重连仍执行完整初始读取，因此不依赖 Host 保存历史事件。
 
-## 共享 TypeScript `SettingsManager`
+## 共享 TypeScript 设置核心
 
-`packages/vibefly-uiagent-shared` 保存以下不依赖浏览器、Node 文件系统或 Kotlin 的逻辑：
+`packages/vibefly-uiagent-shared/src/settings/` 将设置 schema、typed keys、semantic mutation 和同步 client 分开维护。这些逻辑不依赖浏览器、Node 文件系统或 Kotlin：
 
 - `settings.json`、`settings.vibefly.json`、`models.json` 和 `auth.json` 的 TypeScript schema 与运行时校验。
 - application / project object deep merge。
 - `models.json` / `auth.json` 的 application-only 约束和无合并语义。
 - 原始快照、opaque revision 和 effective revision 管理。
-- 按 scope 缓存、失效、重新拉取和订阅。
+- 按 scope 缓存、失效、重新拉取、保存队列和 selector 订阅。
 - 保留未知键的不可变更新辅助函数。
 - diagnostics 聚合。
 
-共享 `SettingsManager` 依赖一个小型 RPC adapter，而不直接依赖具体传输。UI adapter 调用 `Ui2Host` 并使用安全投影，Agent
-adapter 调用 `Agent2Host` 并使用完整投影；两边复用 revision、缓存和合并行为，但不会新增 UI <-> Agent 设置 RPC。处理
-`authJson` 的代码必须位于不会进入 UI bundle 的 Agent 专用入口。
+核心 API 是 `SettingsSyncClient<TSnapshot>` 和 `SettingsSyncAdapter<TSnapshot>`。adapter 提供 `fetch(scope)`，可写消费者再提供 `save(request)`；UI adapter 调用 `Ui2Host` 并使用安全投影，Agent adapter 调用 `Agent2Host` 并使用完整投影。两边复用 revision、缓存和合并行为，但不会新增 UI <-> Agent 设置 RPC。`modelsJson`、`authJson`、credential helper 只从 `@vibefly/uiagent-shared/agent` 导出，不会进入 WebView root bundle。
 
-并发通知按 scope 串行刷新。如果刷新进行中又收到不同 revision，当前刷新完成后必须再拉取一次，直到缓存 revision 与最新通知一致。
+同 scope 的 fetch/save 串行，不同 scope 可并行。`mutate()` 在目标原始层按 typed key 重放语义操作，一次请求可同时保存 settings/vibefly 文档并保留未知键；冲突时拉取最新层并重放，最多四次。保存成功后仍拉取 Host 权威快照，不在客户端伪造 revision。selector 只有选中值变化时才通知，因此 diagnostics-only revision 不会触发无关消费方。
+
+当前 typed keys 包括默认 Provider/Model、Commit Message 四个字段、pin/MRU 和 UI locale。默认模型、Commit 和 locale 从 effective 层读取；pin/MRU 固定从 application 层读取。key 同时声明合法写入 scope 和 `unset` 语义，为后续恢复继承保留基础。
 
 ## UI 流程
 
@@ -269,33 +261,39 @@ adapter 调用 `Agent2Host` 并使用完整投影；两边复用 revision、缓�
 
 1. WebView 建立 `Ui2Host` / `Host2Ui` 会话。
 2. UI adapter 拉取脱敏 application 快照；有 project 上下文时再拉取 project 快照。
-3. 共享 `SettingsManager` 校验并合并设置层；Providers 页面只消费脱敏模型和鉴权状态。
+3. `UiSettingsRuntime` 组合安全快照 adapter、`SettingsSyncClient`、optimistic draft 和 selector 订阅；Providers 页面只消费脱敏模型和鉴权状态。
 4. diagnostics 与有效配置分开呈现，错误不能让整个设置页不可用。
 
 ### 保存
 
-1. `settings.json` / `settings.vibefly.json` 表单修改明确落到 application 或 project scope；Provider / Model 修改固定落到
-   application scope。
-2. `SettingsManager` 在目标原始层上应用修改并保留未知键。
+1. 当前表单写入固定落到 application scope；Provider / Model 修改也固定为 application scope。
+2. `UiSettingsRuntime` 将 typed mutations 交给 `SettingsSyncClient`，在 application 原始层上应用并保留未知键。
 3. UI 用该层读取时的 revision 作为 `expectedRevision` 调用 `Ui2Host.saveSettings`。
-4. 成功后以 Host 返回的新快照 / revision 更新缓存；冲突时重新读取并提示用户重新确认合并结果。
+4. 成功后拉取 Host 权威快照；冲突时在最新层自动重放本地语义 mutation，最多四次。
 5. 其他面板通过 `Host2Ui.settingsChanged` 自行刷新。
+
+General / Commit 页面仍使用 300ms debounce 并在卸载时 flush；Provider 默认模型以及聊天 pin/MRU 立即进入 runtime 的统一保存队列。`IdeSettings` 只是 typed keys 投影得到的视图模型，不再负责 JSON path 或 revision retry。
+
+`UiProviderSettingsClient` 统一 Provider refresh、patch、login/logout 后的 application revision 对齐。Provider patch 最多冲突重放四次；login/logout 不自动重试。只有 settings client 已收敛到 RPC 返回 revision 时才接受其 Provider snapshot，application 失效后由 SettingsShell 的单一订阅触发合并刷新。
 
 ## Agent 与 pi 热重载
 
-Agent 启动后通过 `Agent2Host.getSettingsSnapshot` 获取 application 四文件和自己的 project 两文件。Agent adapter 分别把
-effective `settingsJson`、application `modelsJson` 和 application `authJson` 暴露为 Host-backed pi settings storage、model
-registry storage 和 credential store；不创建 `<project>/.pi/settings.json`，也不让 pi 直接监听或写入 Vibe Fly 文件。
+Agent 启动后通过 `Agent2Host.getSettingsSnapshot` 获取 application 四文件和自己的 project 两文件。`HostSettingsRuntime` 只订阅一次共享 sync state，并组合三个小桥接层：
+
+- `PiSettingsBridge`：把递归合并后的 effective settings 作为 pi `global` storage，pi `project` 固定返回 `{}`，所有 pi 写入均消费后丢弃。
+- `ModelConfigBridge`：解析 application `models.json`，通过 pi 公共 `registerProvider()` / `unregisterProvider()` API 更新目录，并拒绝把 `apiKey` 等敏感字段注入 runtime registration。`ModelsStore` 是动态模型目录缓存，不用于加载 `models.json`。
+- `HostCredentialStore`：保持 pi `CredentialStore` 的 provider 级 modify/delete 语义，经 `Agent2Host.saveAuth` 持久化并在冲突时重拉、重放。
+
+这里故意不把 application/project 原始层直接交给 pi。pi 0.83 的 `SettingsManager` 对 global/project 嵌套字段只进行一层合并，无法替代 Vibe Fly 的递归 object merge；因此共享层先算出完整 effective settings，再物化为 pi global，project 保持空对象。Agent 侧还对 pi 0.83 的 `SettingsManager.fromStorage` / `inMemory` 参数建立编译期契约检查，不让共享包依赖 pi，也不 patch 上游。
 
 收到 `Host2Agent.settingsChanged` 后：
 
-1. Agent adapter 重新拉取变更 scope，更新共享 `SettingsManager`。
-2. effective 配置确实变化后，按文件更新对应 Host-backed storage。
-3. `settings.json` 变化时调用 pi `SettingsManager.reload()`；`models.json` 变化时刷新 model registry；`auth.json` 变化时刷新
-   credential store。
-4. 影响当前会话的 settings 或 models 变化时，对存活会话调用已有 `AgentSession.reload()`，使模型、thinking、compaction
-   等在不重启进程的情况下生效。
-5. 单个会话 reload 失败只记录到 stderr 并上报诊断，不回退 Host 快照，也不调用 `stopAllOpenProjects()`。
+1. `SettingsSyncClient` 重新拉取变更 scope，产出带 previous/current 的单次状态事务。
+2. 先更新 `PiSettingsBridge`。
+3. 在 credential 互斥区更新 application auth；project 失效不能回滚刚持久化的 application credential。
+4. models 变化时应用注册；仅 auth 变化时执行一次 `allowNetwork: false` 的 runtime refresh。
+5. settings/models/auth 任一语义内容变化时，对存活会话最多 reload 一次；models/auth 变化同时发布 model catalog change。diagnostics-only revision 不 reload。
+6. 单个会话 reload 失败只记录到 stderr 并隔离，不回退 Host 快照，也不调用 `stopAllOpenProjects()`。
 
 新增会话总是从最新 effective 快照创建。Agent 没有活跃会话时仍更新缓存，下一次创建会话不需要再重启进程。
 
@@ -316,17 +314,12 @@ fallback。
 4. sessions 与 `ChatWorkspaceState` 不在配置快照内，本架构不触碰。
 5. 用户首次在 UI 保存时才按正常校验、锁和原子写协议落盘对应文件。
 
-## 实施顺序
+## 本轮不包含
 
-1. 在 `uiagent-shared` 实现四文件 schema、两文件 scope merge、revision cache、订阅模型和单元测试，并隔离 Agent-only auth 入口。
-2. 在 Host 实现 application 四文件 / project 两文件 service、watcher、锁、原子写和快照测试；不实现 XML 数据迁移。
-3. 扩展并生成 `Ui2Host` / `Host2Ui` 与 `Agent2Host` / `Host2Agent` RPC，提供 UI 脱敏投影、Agent 完整投影和 opaque revision
-   DTO。
-4. 接入 UI adapter，切换设置页、聊天页和 Providers 页面到 Host 快照；移除对 IDE XML 运行时状态及 Agent 文件写入的依赖（不拷贝旧
-   XML 值）。
-5. 接入 Agent adapter、Host-backed settings / models / auth storage 和 live reload，移除 Agent 直接文件 I/O 与设置变化触发的全
-   Agent 重启。
-6. 清理 `withControlForSettings` 对配置文件读写的依赖；Providers 交互流程仍走现有控制面，但持久化统一落到 Host service。
+- 不增加 Global / Project scope 切换、继承来源展示或恢复继承 UI。
+- 不迁移 Provider 登录生命周期；`withControlForSettings`、登录反向 RPC 和取消流程保持现状。
+- 不修改 Kotlin Host、SimpleRpc wire 契约、四文件格式、revision 算法或原子落盘协议。
+- 不新增独立 settings Agent，不迁移旧 XML 数据，也不让 UI 获得原始 `authJson`。
 
 ## 验证场景
 
@@ -335,14 +328,14 @@ fallback。
 | 首次加载                | application 四文件和 project 两文件各读取一次；只有 settings / vibefly 按 project 覆盖 application |
 | UI 保存                 | revision 匹配时原子写入目标 scope，只发送失效通知，其他消费者重新拉取                              |
 | 外部文件变更            | watcher 去抖后更新快照和 revision，UI / Agent 不重启即可看到新值                                   |
-| revision 冲突           | Host 不写盘；UI 重新读取并重新应用用户修改                                                         |
+| revision 冲突           | Host 不写盘；UI 重新读取并语义重放用户修改，最多四次                                               |
 | 无效 JSON               | 文件保持原状，运行时使用最后有效快照并收到 diagnostics；修复后自动恢复                             |
 | application 变化        | 所有 project effective cache 失效，所有存活 Agent reload                                           |
 | project 变化            | 仅对应 project 的 UI / Agent 失效和 reload                                                         |
 | models application-only | 所有 project 使用同一份 `models.json`，`<project>/.vibefly/models.json` 永不读取                   |
 | auth application-only   | 所有 project 使用同一份 `auth.json`，并发 provider 级写入发生冲突时重读重放                        |
 | UI secret 隔离          | UI 快照和 WebView 日志中均不存在原始凭据、API Key 或 token                                         |
-| Agent live reload       | pi `SettingsManager.reload()` 与存活 `AgentSession.reload()` 被调用，进程 PID 不变                 |
+| Agent live reload       | Host-backed pi storage 更新且存活 `AgentSession.reload()` 最多调用一次，进程 PID 不变              |
 | 重连 / 漏通知           | 消费者首次读取当前 snapshot 后收敛，不依赖历史事件重放                                             |
 
 文档和实现收尾检查：

@@ -1,29 +1,26 @@
 import {describe, test} from "node:test"
 import {expect} from "expect"
 import {
-    type SafeApplicationSettingsSnapshot,
-    type SafeProjectSettingsSnapshot,
     type SafeSettingsSnapshot,
-    SettingsManager,
+    settingKeys,
+    SettingsSyncClient,
+    setSetting,
+    unsetSetting,
 } from "@vibefly/uiagent-shared"
-import {
-    applicationSnapshot,
-    applySettingsFormPatch,
-    diffSettingsForms,
-    formFromEffective,
-    mergeSettingsFormPatches,
-    modelPreferencesFromApplication,
-    prepareApplicationFormSave,
-    prepareSettingsFormPatchSave,
-    safeUiSettingsSnapshot,
-} from "./hostSettings"
-import {emptySettings} from "./settingsStore"
+import type {
+    SettingsSaveRequest,
+    SettingsSaveResult,
+    Ui2Host,
+    UiSettingsSnapshot,
+} from "../generated/rpc"
+import {safeUiSettingsSnapshot, settingsFromState} from "./hostSettings"
+import {UiSettingsRuntime} from "./UiSettingsRuntime"
 
 function application(
     revision: string,
     settingsJson = "{}",
     vibeflyJson = "{}",
-): SafeApplicationSettingsSnapshot {
+): UiSettingsSnapshot {
     return {
         scope: "application",
         projectRoot: null,
@@ -34,222 +31,181 @@ function application(
     }
 }
 
-function project(vibeflyJson: string): SafeProjectSettingsSnapshot {
+function project(
+    revision: string,
+    settingsJson = "{}",
+    vibeflyJson = "{}",
+): UiSettingsSnapshot {
     return {
         scope: "project",
         projectRoot: "/workspace/project",
-        settingsJson: "{}",
+        settingsJson,
         vibeflyJson,
-        revision: "project-1",
+        revision,
         diagnostics: [],
     }
 }
 
-describe("Host-backed UI settings", () => {
-    test("passes through raw object documents and coerces invalid JSON", () => {
-        const settings = {
+class FakeHost {
+    application = application("app-1")
+    project = project("project-1")
+    saves: SettingsSaveRequest[] = []
+    saveImpl?: (request: SettingsSaveRequest) => Promise<SettingsSaveResult>
+
+    async getSettingsSnapshot(scope: string): Promise<UiSettingsSnapshot> {
+        return structuredClone(scope === "application" ? this.application : this.project)
+    }
+
+    async saveSettings(request: SettingsSaveRequest): Promise<SettingsSaveResult> {
+        this.saves.push(structuredClone(request))
+        if (this.saveImpl) return this.saveImpl(request)
+        const revision = `app-${this.saves.length + 1}`
+        this.application = application(
+            revision,
+            request.settingsJson ?? this.application.settingsJson,
+            request.vibeflyJson ?? this.application.vibeflyJson,
+        )
+        return {ok: true, revision}
+    }
+
+    asHost(): Ui2Host {
+        return this as unknown as Ui2Host
+    }
+}
+
+describe("UI settings projection", () => {
+    test("normalizes wire snapshots and preserves unknown object fields", () => {
+        const raw = application(
+            "application-raw",
+            JSON.stringify({defaultProvider: "openai", futureSettings: {nested: true}}),
+            JSON.stringify({ui: {locale: "zh"}, futureVibefly: {flag: 1}}),
+        )
+        const snapshot = safeUiSettingsSnapshot(raw)
+        expect(JSON.parse(snapshot.settingsJson)).toEqual({
             defaultProvider: "openai",
-            defaultModel: "gpt",
             futureSettings: {nested: true},
-            compaction: {enabled: true},
-        }
-        const vibefly = {
-            commit: {languageMode: "zh", useCustomPrompt: false},
-            modelPreferences: {pinnedModelSpecs: ["openai/gpt-5"]},
+        })
+        expect(JSON.parse(snapshot.vibeflyJson)).toEqual({
             ui: {locale: "zh"},
             futureVibefly: {flag: 1},
-        }
-        const snapshot = safeUiSettingsSnapshot({
-            scope: "application",
-            projectRoot: null,
-            settingsJson: JSON.stringify(settings),
-            vibeflyJson: JSON.stringify(vibefly),
-            revision: "application-raw",
-            diagnostics: [],
         })
-        expect(JSON.parse(snapshot.settingsJson)).toEqual(settings)
-        expect(JSON.parse(snapshot.vibeflyJson)).toEqual(vibefly)
 
-        const invalid = safeUiSettingsSnapshot({
-            scope: "application",
-            projectRoot: null,
-            settingsJson: "[1,2]",
-            vibeflyJson: "not-json",
-            revision: "application-invalid",
-            diagnostics: [],
-        })
-        expect(invalid.settingsJson).toBe("{}")
-        expect(invalid.vibeflyJson).toBe("{}")
+        expect(safeUiSettingsSnapshot(application("invalid", "[1,2]", "not-json")))
+            .toMatchObject({settingsJson: "{}", vibeflyJson: "{}"})
     })
 
-    test("reads pin and recent models from the application layer", async () => {
+    test("maps effective fields while keeping model preferences application-scoped", async () => {
         const snapshots: Record<"application" | "project", SafeSettingsSnapshot> = {
-            application: application(
-                "application-1",
-                "{}",
+            application: safeUiSettingsSnapshot(application(
+                "app-1",
+                JSON.stringify({defaultProvider: "application-provider"}),
                 JSON.stringify({
                     modelPreferences: {
-                        pinnedModelSpecs: ["app/pinned"],
-                        recentModelSpecs: ["app/recent"],
+                        pinnedModelSpecs: ["application/pinned"],
+                        recentModelSpecs: ["application/recent"],
                     },
+                    ui: {locale: "en"},
                 }),
-            ),
-            project: project(JSON.stringify({
-                modelPreferences: {
-                    pinnedModelSpecs: ["project/pinned"],
-                    recentModelSpecs: ["project/recent"],
-                },
-            })),
+            )),
+            project: safeUiSettingsSnapshot(project(
+                "project-1",
+                JSON.stringify({defaultModel: "project-model"}),
+                JSON.stringify({
+                    modelPreferences: {
+                        pinnedModelSpecs: ["project/pinned"],
+                        recentModelSpecs: ["project/recent"],
+                    },
+                    ui: {locale: "zh"},
+                }),
+            )),
         }
-        const manager = new SettingsManager({
-            async getSettingsSnapshot(scope) {
+        const client = new SettingsSyncClient({
+            async fetch(scope) {
                 return snapshots[scope]
             },
         })
-        await manager.initialize(true)
+        const state = await client.start({hasProject: true})
 
-        expect(modelPreferencesFromApplication(applicationSnapshot(manager))).toEqual({
-            pinnedModelSpecs: ["app/pinned"],
-            recentModelSpecs: ["app/recent"],
-        })
-    })
-
-    test("captures the raw layer and revision before a save enters the queue", async () => {
-        let current = application(
-            "application-1",
-            JSON.stringify({defaultProvider: "old", futureSetting: true}),
-            JSON.stringify({futureVibefly: true}),
-        )
-        const manager = new SettingsManager({
-            async getSettingsSnapshot() {
-                return current
-            },
-        })
-        await manager.initialize(false)
-        const form = emptySettings()
-        form.providers.defaultProvider = "local"
-        form.providers.defaultModel = "model"
-        const prepared = prepareApplicationFormSave(manager, form)
-
-        current = application(
-            "application-2",
-            JSON.stringify({defaultProvider: "external", futureSetting: false}),
-            JSON.stringify({futureVibefly: false}),
-        )
-        await manager.handleSettingsChanged({
-            scope: "application",
-            projectRoot: null,
-            revision: "application-2",
-        })
-
-        expect(prepared.expectedRevision).toBe("application-1")
-        expect(JSON.parse(prepared.settingsJson!)).toMatchObject({
-            defaultProvider: "local",
-            defaultModel: "model",
-            futureSetting: true,
-        })
-        expect(JSON.parse(prepared.vibeflyJson!)).toMatchObject({futureVibefly: true})
-    })
-
-    test("replays a local form patch over a SettingsManager revision change", async () => {
-        let current = application(
-            "application-1",
-            JSON.stringify({
-                defaultProvider: "remote-provider-1",
-                defaultModel: "remote-model-1",
-            }),
-            JSON.stringify({
-                commit: {
-                    languageMode: "follow_ide",
-                    useCustomPrompt: false,
-                    customPrompt: "",
-                },
-                ui: {locale: "follow_ide"},
-            }),
-        )
-        const manager = new SettingsManager({
-            async getSettingsSnapshot() {
-                return current
-            },
-        })
-        await manager.initialize(false)
-
-        let displayed = formFromEffective(manager.getEffectiveSettings()!)
-        const localDraft = {
-            ...displayed,
-            providers: {...displayed.providers, defaultModel: "local-model"},
+        expect(settingsFromState(state)).toEqual({
+            providers: {defaultProvider: "application-provider", defaultModel: "project-model"},
             commit: {
-                ...displayed.commit,
-                useCustomPrompt: true,
-                customPrompt: "local prompt",
+                languageMode: "follow_ide",
+                commitModelSpec: "",
+                useCustomPrompt: false,
+                customPrompt: "",
             },
-        }
-        let pendingPatch = mergeSettingsFormPatches(
-            {},
-            diffSettingsForms(displayed, localDraft),
-        )
-        displayed = applySettingsFormPatch(displayed, pendingPatch)
-
-        manager.subscribe((change) => {
-            displayed = applySettingsFormPatch(
-                formFromEffective(change.effective),
-                pendingPatch,
-            )
-        })
-        current = application(
-            "application-2",
-            JSON.stringify({
-                defaultProvider: "remote-provider-2",
-                defaultModel: "remote-model-2",
-            }),
-            JSON.stringify({
-                commit: {
-                    languageMode: "en",
-                    useCustomPrompt: false,
-                    customPrompt: "remote prompt",
-                },
-                ui: {locale: "zh"},
-            }),
-        )
-        await manager.handleSettingsChanged({
-            scope: "application",
-            projectRoot: null,
-            revision: "application-2",
-        })
-
-        expect(displayed.providers).toEqual({
-            defaultProvider: "remote-provider-2",
-            defaultModel: "local-model",
-        })
-        expect(displayed.commit).toEqual({
-            languageMode: "en",
-            commitModelSpec: "",
-            useCustomPrompt: true,
-            customPrompt: "local prompt",
-        })
-        expect(displayed.ui.locale).toBe("zh")
-
-        const prepared = prepareSettingsFormPatchSave(manager, pendingPatch)
-        expect(prepared.expectedRevision).toBe("application-2")
-        expect(JSON.parse(prepared.settingsJson!)).toEqual({
-            defaultProvider: "remote-provider-2",
-            defaultModel: "local-model",
-        })
-        expect(JSON.parse(prepared.vibeflyJson!)).toEqual({
-            commit: {
-                languageMode: "en",
-                useCustomPrompt: true,
-                customPrompt: "local prompt",
+            modelPreferences: {
+                pinnedModelSpecs: ["application/pinned"],
+                recentModelSpecs: ["application/recent"],
             },
             ui: {locale: "zh"},
         })
+    })
+})
 
-        pendingPatch = mergeSettingsFormPatches(pendingPatch, {
-            commit: {customPrompt: "newer local prompt"},
+describe("UiSettingsRuntime", () => {
+    test("publishes optimistic typed mutations and converges to the Host snapshot", async () => {
+        const host = new FakeHost()
+        const runtime = new UiSettingsRuntime(host.asHost())
+        await runtime.start(false)
+
+        const saving = runtime.mutate([
+            setSetting(settingKeys.uiLocale, "zh"),
+            setSetting(settingKeys.defaultProvider, "openai"),
+        ])
+        expect(runtime.getView().settings).toMatchObject({
+            providers: {defaultProvider: "openai"},
+            ui: {locale: "zh"},
         })
-        expect(applySettingsFormPatch(
-            formFromEffective(manager.getEffectiveSettings()!),
-            pendingPatch,
-        ).commit.customPrompt).toBe("newer local prompt")
+        await saving
+
+        expect(host.saves).toHaveLength(1)
+        expect(JSON.parse(host.saves[0]!.settingsJson!)).toEqual({defaultProvider: "openai"})
+        expect(JSON.parse(host.saves[0]!.vibeflyJson!)).toEqual({ui: {locale: "zh"}})
+        expect(runtime.getView().applicationRevision).toBe("app-2")
+    })
+
+    test("keeps a newer optimistic value when an earlier save completes", async () => {
+        const host = new FakeHost()
+        const runtime = new UiSettingsRuntime(host.asHost())
+        await runtime.start(false)
+
+        const first = runtime.mutate([setSetting(settingKeys.commitCustomPrompt, "first")])
+        const second = runtime.mutate([setSetting(settingKeys.commitCustomPrompt, "second")])
+        await Promise.all([first, second])
+
+        expect(runtime.getView().settings.commit.customPrompt).toBe("second")
+        expect(host.saves).toHaveLength(2)
+    })
+
+    test("optimistically restores inheritance with an unset mutation", async () => {
+        const host = new FakeHost()
+        host.application = application("app-1", "{}", JSON.stringify({ui: {locale: "zh"}}))
+        const runtime = new UiSettingsRuntime(host.asHost())
+        await runtime.start(false)
+
+        const saving = runtime.mutate([unsetSetting(settingKeys.uiLocale)])
+        expect(runtime.getView().settings.ui.locale).toBe("follow_ide")
+        await saving
+
+        expect(JSON.parse(host.saves[0]!.vibeflyJson!)).toEqual({ui: {}})
+    })
+
+    test("replays a staged debounce draft over an external snapshot", async () => {
+        const host = new FakeHost()
+        const runtime = new UiSettingsRuntime(host.asHost())
+        await runtime.start(false)
+        runtime.stage([setSetting(settingKeys.uiLocale, "zh")])
+
+        host.application = application(
+            "app-external",
+            JSON.stringify({defaultProvider: "external"}),
+        )
+        await runtime.notify("application", null, "app-external")
+
+        expect(runtime.getView().settings).toMatchObject({
+            providers: {defaultProvider: "external"},
+            ui: {locale: "zh"},
+        })
     })
 })

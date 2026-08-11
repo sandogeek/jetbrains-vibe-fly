@@ -2,7 +2,7 @@
  * 设置域：Pi / Vibe Fly 文档 shape、应用+项目合并、快照缓存与失效协调。
  * JSON 工具见 json.ts；通用 schema 见 json-schema.ts。本文件再导出二者以保持原有导入路径。
  */
-import {cloneJsonValue, deepMergeJsonObjects, type JsonObject,} from "./json.js"
+import {cloneJsonValue, deepMergeJsonObjects, type JsonObject,} from "../json.js"
 import {
     arrayRule,
     BOOLEAN_RULE,
@@ -26,20 +26,20 @@ import {
     STRING_RULE,
     unionRule,
     valueRule,
-} from "./json-schema.js"
+} from "../json-schema.js"
 
 export type {
     JsonObject,
     JsonPrimitive,
     JsonValue,
-} from "./json.js"
+} from "../json.js"
 export {
     cloneJsonValue,
     deepMergeJsonObjects,
     isJsonObject,
     setJsonAtPath,
     updateJsonAtPath,
-} from "./json.js"
+} from "../json.js"
 export type {
     ArrayRule,
     InferRule,
@@ -55,7 +55,7 @@ export type {
     StrictShape,
     UnionRule,
     ValueRule,
-} from "./json-schema.js"
+} from "../json-schema.js"
 export {
     arrayRule,
     BOOLEAN_RULE,
@@ -80,7 +80,7 @@ export {
     validateObject,
     validateRule,
     valueRule,
-} from "./json-schema.js"
+} from "../json-schema.js"
 
 export type SettingsScope = "application" | "project"
 
@@ -455,210 +455,5 @@ function assertSnapshotScope(
     }
     if (snapshot.scope === "project" && !snapshot.projectRoot.trim()) {
         throw new Error("Project settings snapshot must have a projectRoot")
-    }
-}
-
-export interface SettingsManagerAdapter<
-    TSnapshot extends SafeSettingsSnapshot = SafeSettingsSnapshot,
-> {
-    getSettingsSnapshot(scope: SettingsScope): Promise<TSnapshot>
-}
-
-export type SettingsManagerChange<
-    TSnapshot extends SafeSettingsSnapshot = SafeSettingsSnapshot,
-> = {
-    scope: SettingsScope | null
-    snapshot: TSnapshot | null
-    effective: EffectiveSettings
-}
-
-export type SettingsManagerListener<
-    TSnapshot extends SafeSettingsSnapshot = SafeSettingsSnapshot,
-> = (change: SettingsManagerChange<TSnapshot>) => void
-
-type RefreshState = {
-    targetRevision?: string
-    running?: Promise<void>
-}
-
-/** 单次失效协调的硬上限，防止 revision 持续抖动时永久拉取 */
-const MAX_REFRESH_FETCHES = 16
-/** 反复拿到与刷新前相同 revision 时，认为通知已过期 */
-const STABLE_BASELINE_FETCHES = 3
-/** 反复拿到另一 revision（非目标）时，接受该权威快照 */
-const STABLE_CHANGED_FETCHES = 2
-
-/**
- * 与传输无关的设置快照缓存与失效协调器。
- * 通过 adapter 拉快照；收到 SettingsChanged 后串行刷新直到命中目标 revision 或稳定退出。
- */
-export class SettingsManager<
-    TSnapshot extends SafeSettingsSnapshot = SafeSettingsSnapshot,
-> {
-    readonly #listeners = new Set<SettingsManagerListener<TSnapshot>>()
-    readonly #refresh: Record<SettingsScope, RefreshState> = {
-        application: {},
-        project: {},
-    }
-    #application?: Extract<TSnapshot, { scope: "application" }>
-    #project?: Extract<TSnapshot, { scope: "project" }>
-    #effective?: EffectiveSettings
-    #hasProject = false
-    #initialized = false
-
-    constructor(readonly adapter: SettingsManagerAdapter<TSnapshot>) {
-    }
-
-    async initialize(hasProject: boolean): Promise<EffectiveSettings> {
-        const requested: SettingsScope[] = hasProject
-            ? ["application", "project"]
-            : ["application"]
-        const snapshots = await Promise.all(
-            requested.map((scope) => this.adapter.getSettingsSnapshot(scope)),
-        )
-        const application = snapshots.find((snapshot) => snapshot.scope === "application")
-        const project = snapshots.find((snapshot) => snapshot.scope === "project")
-        if (!application) throw new Error("Settings adapter did not return an application snapshot")
-        assertSnapshotScope(application, "application")
-        if (hasProject && !project) {
-            throw new Error("Settings adapter did not return a project snapshot")
-        }
-        if (project) assertSnapshotScope(project, "project")
-
-        this.#application = application as Extract<TSnapshot, { scope: "application" }>
-        this.#project = project as Extract<TSnapshot, { scope: "project" }> | undefined
-        this.#hasProject = hasProject
-        this.#initialized = true
-        this.#refresh.application.targetRevision = undefined
-        this.#refresh.project.targetRevision = undefined
-        this.#effective = this.#computeEffective()
-        this.#emit(null, null)
-        return this.#effective
-    }
-
-    getSnapshot(scope: "application"): Extract<TSnapshot, { scope: "application" }> | undefined
-    getSnapshot(scope: "project"): Extract<TSnapshot, { scope: "project" }> | undefined
-    getSnapshot(scope: SettingsScope): TSnapshot | undefined {
-        return scope === "application" ? this.#application : this.#project
-    }
-
-    getEffectiveSettings(): EffectiveSettings | undefined {
-        return this.#effective
-    }
-
-    subscribe(listener: SettingsManagerListener<TSnapshot>): () => void {
-        this.#listeners.add(listener)
-        return () => this.#listeners.delete(listener)
-    }
-
-    /**
-     * 处理变更通知：同 scope 串行刷新；进行中的刷新可被更新 targetRevision 打断重跟。
-     * 已是目标 revision 且无在途刷新则直接忽略。
-     */
-    handleSettingsChanged(change: SettingsChanged): Promise<void> {
-        if (!this.#initialized) {
-            return Promise.reject(new Error("SettingsManager must be initialized before handling changes"))
-        }
-        if (!this.#accepts(change)) return Promise.resolve()
-        const current = change.scope === "application" ? this.#application : this.#project
-        const state = this.#refresh[change.scope]
-        if (!state.running && current?.revision === change.revision) return Promise.resolve()
-        if (state.targetRevision !== change.revision) {
-            state.targetRevision = change.revision
-        }
-        if (!state.running) {
-            state.running = this.#drainRefresh(change.scope, state).finally(() => {
-                state.running = undefined
-            })
-        }
-        return state.running
-    }
-
-    #accepts(change: SettingsChanged): boolean {
-        if (change.scope === "application") return change.projectRoot === null
-        if (!this.#hasProject || !this.#project) return false
-        return change.projectRoot === this.#project.projectRoot
-    }
-
-    /**
-     * 拉取直到 snapshot.revision === target，或稳定/上限退出。
-     * revision 不透明，迟到的旧通知无法与缓存排序；对同一非目标 revision 重复拉取
-     * 达到阈值后接受该权威快照，硬上限防止持续抖动拖死消费者。
-     */
-    async #drainRefresh(scope: SettingsScope, state: RefreshState): Promise<void> {
-        const current = scope === "application" ? this.#application : this.#project
-        let baselineRevision = current?.revision
-        let mismatchedRevision: string | undefined
-        let mismatchedFetches = 0
-        let totalFetches = 0
-        while (state.targetRevision !== undefined) {
-            const target = state.targetRevision
-            const snapshot = await this.adapter.getSettingsSnapshot(scope)
-            totalFetches += 1
-            assertSnapshotScope(snapshot, scope)
-            this.#applySnapshot(snapshot)
-
-            // 刷新途中又来了新目标：重置稳定计数，继续跟新 revision
-            if (state.targetRevision !== target) {
-                baselineRevision = snapshot.revision
-                mismatchedRevision = undefined
-                mismatchedFetches = 0
-                totalFetches = 0
-                continue
-            }
-            if (snapshot.revision === target) {
-                state.targetRevision = undefined
-                break
-            }
-
-            if (mismatchedRevision === snapshot.revision) mismatchedFetches += 1
-            else {
-                mismatchedRevision = snapshot.revision
-                mismatchedFetches = 1
-            }
-            const stableThreshold = snapshot.revision === baselineRevision
-                ? STABLE_BASELINE_FETCHES
-                : STABLE_CHANGED_FETCHES
-
-            if (mismatchedFetches >= stableThreshold || totalFetches >= MAX_REFRESH_FETCHES) {
-                state.targetRevision = undefined
-                break
-            }
-        }
-    }
-
-    #applySnapshot(snapshot: TSnapshot): void {
-        if (snapshot.scope === "application") {
-            const current = this.#application
-            if (current?.revision === snapshot.revision) return
-            this.#application = snapshot as Extract<TSnapshot, { scope: "application" }>
-        } else {
-            const current = this.#project
-            if (current && current.projectRoot !== snapshot.projectRoot) {
-                throw new Error("Settings adapter returned a snapshot for another project")
-            }
-            if (current?.revision === snapshot.revision) return
-            this.#project = snapshot as Extract<TSnapshot, { scope: "project" }>
-        }
-        this.#effective = this.#computeEffective()
-        this.#emit(snapshot.scope, snapshot)
-    }
-
-    #computeEffective(): EffectiveSettings {
-        if (!this.#application) throw new Error("Application settings snapshot is unavailable")
-        if (this.#hasProject && !this.#project) {
-            throw new Error("Project settings snapshot is unavailable")
-        }
-        return computeEffectiveSettings(this.#application, this.#project)
-    }
-
-    #emit(scope: SettingsScope | null, snapshot: TSnapshot | null): void {
-        if (!this.#effective) return
-        const change: SettingsManagerChange<TSnapshot> = {
-            scope,
-            snapshot,
-            effective: this.#effective,
-        }
-        for (const listener of this.#listeners) listener(change)
     }
 }

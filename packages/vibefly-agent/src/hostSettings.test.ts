@@ -2,9 +2,9 @@ import {describe, test} from "node:test"
 import {expect} from "expect"
 import type {AgentSettingsSnapshot, AuthSaveRequest, SettingsSaveResult,} from "./generated/controlRpc.js"
 import {
-    HostBackedCredentialStore,
+    HostCredentialStore,
     type HostModelRuntime,
-    HostSettingsController,
+    HostSettingsRuntime,
     type HostSettingsRpc,
 } from "./hostSettings.js"
 
@@ -112,7 +112,7 @@ async function until(predicate: () => boolean): Promise<void> {
 }
 
 function readStorage(
-    storage: HostSettingsController["settingsStorage"],
+    storage: HostSettingsRuntime["settingsStorage"],
     scope: "global" | "project",
 ): string | undefined {
     let value: string | undefined
@@ -123,7 +123,7 @@ function readStorage(
     return value
 }
 
-describe("HostSettingsController", () => {
+describe("HostSettingsRuntime", () => {
     test("fetches both scopes, deep-merges settings, and registers Host models", async () => {
         const host = new FakeHost()
         host.application = applicationSnapshot("app-1", {
@@ -148,7 +148,7 @@ describe("HostSettingsController", () => {
                 enabledModels: ["project/model"],
             }),
         })
-        const controller = new HostSettingsController(host, {hasProject: true})
+        const controller = new HostSettingsRuntime(host, {hasProject: true})
         await controller.initialize()
 
         expect(host.fetches.sort()).toEqual(["application", "project"])
@@ -226,7 +226,7 @@ describe("HostSettingsController", () => {
                 },
             }),
         })
-        const controller = new HostSettingsController(host, {hasProject: false})
+        const controller = new HostSettingsRuntime(host, {hasProject: false})
         await controller.initialize()
         const runtime = new FakeRuntime()
         runtime.baseModels.set("openai", [{
@@ -287,7 +287,7 @@ describe("HostSettingsController", () => {
     test("ignores diagnostics-only revisions and converges serial notifications", async () => {
         const host = new FakeHost()
         const reloads: string[] = []
-        const controller = new HostSettingsController(host, {
+        const controller = new HostSettingsRuntime(host, {
             hasProject: true,
             reloadLiveSessions: async () => {
                 reloads.push("reload")
@@ -339,7 +339,7 @@ describe("HostSettingsController", () => {
             }),
         })
         let reloads = 0
-        const controller = new HostSettingsController(host, {
+        const controller = new HostSettingsRuntime(host, {
             hasProject: false,
             reloadLiveSessions: async () => {
                 reloads += 1
@@ -399,7 +399,7 @@ describe("HostSettingsController", () => {
                 },
             }),
         })
-        const controller = new HostSettingsController(host, {hasProject: false})
+        const controller = new HostSettingsRuntime(host, {hasProject: false})
         await controller.initialize()
 
         expect(controller.applyCommitSettings({
@@ -416,7 +416,7 @@ describe("HostSettingsController", () => {
     test("re-reads both scopes after registration and applies missed startup changes", async () => {
         const host = new FakeHost()
         let reloads = 0
-        const controller = new HostSettingsController(host, {
+        const controller = new HostSettingsRuntime(host, {
             hasProject: true,
             reloadLiveSessions: async () => {
                 reloads += 1
@@ -462,7 +462,7 @@ describe("HostSettingsController", () => {
     })
 })
 
-describe("HostBackedCredentialStore", () => {
+describe("HostCredentialStore", () => {
     test("re-fetches on conflict and replays only the target provider mutation", async () => {
         const host = new FakeHost()
         host.application = applicationSnapshot("rev-1", {
@@ -486,7 +486,7 @@ describe("HostBackedCredentialStore", () => {
             return {ok: true, revision: "rev-3"}
         }
         const persisted: string[] = []
-        const store = new HostBackedCredentialStore(host, (revision) => {
+        const store = new HostCredentialStore(host, (revision) => {
             persisted.push(revision)
         })
         await store.replace(host.application.authJson!, host.application.revision)
@@ -533,7 +533,7 @@ describe("HostBackedCredentialStore", () => {
             host.application = applicationSnapshot("rev-3", {authJson: request.authJson})
             return {ok: true, revision: "rev-3"}
         }
-        const store = new HostBackedCredentialStore(host)
+        const store = new HostCredentialStore(host)
         await store.replace(host.application.authJson!, host.application.revision)
         let replays = 0
 
@@ -579,7 +579,7 @@ describe("HostBackedCredentialStore", () => {
             authJson: JSON.stringify({target: {type: "api_key", key: "old"}}),
         })
         let reloads = 0
-        const controller = new HostSettingsController(host, {
+        const controller = new HostSettingsRuntime(host, {
             hasProject: false,
             reloadLiveSessions: async () => {
                 reloads += 1
@@ -622,7 +622,7 @@ describe("HostBackedCredentialStore", () => {
         host.application = applicationSnapshot("app-1", {
             authJson: JSON.stringify({target: {type: "api_key", key: "old"}}),
         })
-        const controller = new HostSettingsController(host, {hasProject: true})
+        const controller = new HostSettingsRuntime(host, {hasProject: true})
         await controller.initialize()
         host.save = async (request) => {
             host.application = applicationSnapshot("app-2", {authJson: request.authJson})

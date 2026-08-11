@@ -8,7 +8,7 @@ import {
     type SettingsDiagnostic,
     type SettingsValidationResult,
     updateJsonAtPath,
-} from "./settings.js"
+} from "./settings/schema.js"
 
 export type AgentApplicationSettingsSnapshot = SafeApplicationSettingsSnapshot & {
     modelsJson: string

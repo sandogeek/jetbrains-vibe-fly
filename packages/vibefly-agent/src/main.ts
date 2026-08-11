@@ -27,7 +27,7 @@ import {applyAgentDirFromEnv, clearPiRuntimeCache, getPiRuntime} from "./piRunti
 import {getProvidersSnapshot, rejectAgentProviderPatch,} from "./providerConfig.js"
 import {cancelActiveLogin, getLoginProviders, loginProvider, logoutProvider,} from "./providerLogin.js"
 import {createAgentWsServer, createTicketStore, isValidOrigin,} from "./ws.js"
-import {HostSettingsController} from "./hostSettings.js"
+import {HostSettingsRuntime} from "./hostSettings.js"
 
 /** Fire-and-forget reverse RPC; host resets idle timeout on each call. */
 const progressOpts = rpcOptions({ timeoutMs: 5_000 })
@@ -53,7 +53,7 @@ async function main(): Promise<void> {
   })
   const agent2Host = createAgent2HostProxy(peer)
 
-  const hostSettings = new HostSettingsController(agent2Host, {
+  const hostSettings = new HostSettingsRuntime(agent2Host, {
     hasProject: Boolean(process.env.VIBEFLY_PROJECT_ROOT?.trim()),
   })
   await hostSettings.initialize()
