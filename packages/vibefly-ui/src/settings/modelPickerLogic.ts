@@ -314,6 +314,7 @@ export function tokenizeQuery(query: string): QueryToken[] {
     return out
 }
 
+/** Match score tiers: exact 100, prefix 60, word-boundary 40, substring 20. */
 function matchField(field: string, token: string): number | null {
     if (!token) return 100
     if (field === token) return 100
@@ -368,12 +369,14 @@ export function scoreEntry(entry: ModelPickerEntry, tokens: QueryToken[]): numbe
     return total
 }
 
+/** Substring match against EN/ZH labels for the synthetic "Follow default model" row. */
 function matchesFollowDefault(tokens: QueryToken[]): boolean {
     if (tokens.length === 0) return true
     const labels = ["follow", "default", "model", "follow default model", "跟随", "默认", "默认模型", "跟随默认模型"]
     return tokens.every((t) => labels.some((label) => label.includes(t.raw)))
 }
 
+/** Substring match against EN/ZH labels for the synthetic "No default model" row. */
 function matchesNoDefault(tokens: QueryToken[]): boolean {
     if (tokens.length === 0) return true
     const labels = ["none", "no default", "no default model", "无默认", "无默认模型", "清除"]

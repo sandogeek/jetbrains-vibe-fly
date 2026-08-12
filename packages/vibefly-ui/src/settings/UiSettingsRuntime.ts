@@ -63,12 +63,14 @@ export class UiSettingsRuntime {
         return this.client.notify({scope, projectRoot, revision})
     }
 
+    /** Returns true when local application revision converged to `revision` (conflict probe). */
     alignApplicationRevision(revision: string): Promise<boolean> {
         return this.client.syncTo("application", revision).then(
             () => this.client.getSnapshot("application").revision === revision,
         )
     }
 
+    /** Apply mutations to the local draft only (optimistic UI, no host write). */
     stage(operations: readonly SettingMutation[]): void {
         for (const operation of operations) {
             const id = settingMutationId(operation)
@@ -77,6 +79,11 @@ export class UiSettingsRuntime {
         if (operations.length > 0) this.#updateView(this.client.getState())
     }
 
+    /**
+     * Persist mutations to Host application scope, then clear matching draft entries.
+     * Fingerprint capture at send time avoids deleting a draft entry that a later
+     * edit overwrote while this save was in flight.
+     */
     mutate(operations: readonly SettingMutation[]): Promise<void> {
         if (operations.length === 0) return Promise.resolve()
         const captured = new Map<string, string>()
@@ -85,6 +92,7 @@ export class UiSettingsRuntime {
             const id = settingMutationId(operation)
             captured.set(id, operationFingerprint(operation))
         }
+        // Settings shell always saves application scope (project overrides are separate).
         return this.client.mutate("application", operations).then((result) => {
             if (!result.ok) throw new Error(result.error ?? "Settings save failed")
             for (const [id, fingerprint] of captured) {
@@ -102,6 +110,7 @@ export class UiSettingsRuntime {
         })
     }
 
+    /** Recompute view from host state + in-memory draft overlay. */
     #updateView(state: SettingsSyncState<SafeSettingsSnapshot>): void {
         const documents = applySettingMutations(state.application, [...this.#draft.values()])
         const application = {

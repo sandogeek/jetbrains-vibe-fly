@@ -230,6 +230,8 @@ function buildModelDefinition(
     const override = modelOverride(rawProvider, id) ?? {}
     const name = requiredString(override.name) ?? requiredString(candidate.name) ?? id
     const api = requiredString(candidate.api) ?? requiredString(rawProvider.api)
+    // Builtin base models use the provider baseUrl, except radius OAuth where each
+    // model carries its own baseUrl. Host-defined models prefer the model baseUrl.
     const baseUrl = isBaseModel
         ? rawProvider.oauth === "radius"
             ? requiredString(candidate.baseUrl)
@@ -503,13 +505,14 @@ export class ModelConfigBridge {
             }
         }
 
+        // Compose Host overlay over pi builtins: unregister → read base list → re-register.
+        // Without unregister, getModels() would return the previous Host overlay and
+        // buildModelDefinition would layer Host config on itself.
         for (const [providerId, raw] of Object.entries(providers)) {
             const next = nextFingerprints.get(providerId)!
             if (this.#registeredModels.get(providerId) === next) continue
             if (this.#registeredModels.has(providerId)) runtime.unregisterProvider(providerId)
             try {
-                // Unregister first so getModels() exposes the builtin base list rather
-                // than a previous Host overlay when a provider is being replaced.
                 const baseModels = runtime.getModels(providerId)
                 runtime.registerProvider(providerId, providerConfig(providerId, raw, baseModels))
                 this.#registeredModels.set(providerId, next)

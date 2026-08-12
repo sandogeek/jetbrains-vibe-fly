@@ -34,8 +34,10 @@ export class SettingsMutationQueue {
         if (this.#closed || mutations.length === 0) return
         const runtime = this.#runtime()
         if (!runtime) return
+        // Optimistic UI immediately; host save is debounced (or flushed now).
         runtime.stage(mutations)
         this.#pending = mergeSettingMutations(this.#pending, mutations)
+        // immediate still goes through flush() so ordering vs an in-flight save is preserved.
         if (options?.immediate) {
             void this.flush()
             return
@@ -47,6 +49,11 @@ export class SettingsMutationQueue {
         }, this.#debounceMs)
     }
 
+    /**
+     * Coalesce pending mutations into one host save.
+     * Reuses the in-flight promise when already flushing, then re-checks `#pending`
+     * so mutations enqueued during the save are not dropped (tail recursion).
+     */
     flush(): Promise<void> {
         if (this.#timer) {
             clearTimeout(this.#timer)

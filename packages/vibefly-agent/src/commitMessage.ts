@@ -485,7 +485,7 @@ export function fairQuotas(weights: number[], totalBudget: number): number[] {
     }
   }
 
-  // Redistribute leftover from caps.
+  // Redistribute leftover from caps. `guard < n*4` bounds the loop if no progress.
   let leftover = totalBudget - quotas.reduce((a, b) => a + b, 0)
   let guard = 0
   while (leftover > 0 && guard < n * 4) {

@@ -32,6 +32,7 @@ const EMPTY: BundledCatalog = {
   providerRank: new Map(),
 }
 
+// PackedModel tuple: [id, name, flags, contextWindow, inputCost, outputCost]
 const MFLAG_VISION = 1
 const MFLAG_REASONING = 2
 const MFLAG_TOOLS_UNSUPPORTED = 4
@@ -57,6 +58,7 @@ function indexCatalog(raw: {
   const providers = raw.providers ?? []
   const providerRank = new Map<string, number>()
   providerOrder.forEach((id, i) => providerRank.set(id, i))
+  // Providers missing from providerOrder get stable ranks after the ordered list.
   for (const p of providers) {
     if (!providerRank.has(p.id)) {
       providerRank.set(p.id, providerOrder.length + providerRank.size)

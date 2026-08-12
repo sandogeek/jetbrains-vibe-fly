@@ -14,6 +14,11 @@ export function normalizeProjectRoot(projectRoot: string): string {
   return fs.realpathSync(resolved)
 }
 
+/**
+ * Per-project session directory under agentDir/sessions.
+ * Envelope `--<sanitized-root>--` (slashes/colons → `-`) keeps path separators
+ * out of the folder name while remaining unique per absolute root.
+ */
 export function sessionDirFor(projectRoot: string, agentDir: string): string {
   const resolvedRoot = path.resolve(projectRoot)
   const safePath = `--${resolvedRoot.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`

@@ -407,6 +407,7 @@ export class ChatSessionRegistry {
     return record ? {...record.summary} : undefined
   }
 
+  /** Bind this agent process to a single project root for its lifetime. */
   #ensureProject(value: string): string {
     const projectRoot = normalizeProjectRoot(value)
     if (this.#projectRoot && this.#projectRoot !== projectRoot) {
@@ -510,6 +511,10 @@ export class ChatSessionRegistry {
     })
   }
 
+  /**
+   * LRU dispose of idle runtimes when over MAX_RUNTIME_SESSIONS.
+   * Never evict: keepSessionId, the active turn, or sessions waiting on the user.
+   */
   async #evictRuntime(keepSessionId: string): Promise<void> {
     const live = [...this.#records.values()].filter((record) => record.runtime)
     if (live.length <= MAX_RUNTIME_SESSIONS) return
@@ -605,6 +610,7 @@ export class ChatSessionRegistry {
       record.summary.state = "completed"
     } catch (error) {
       failure = errorMessage(error)
+      // pi surfaces cancel as various messages; treat common abort phrasing as user cancel.
       aborted = /abort|stopped|interrupt/i.test(failure)
       record.summary.state = aborted ? "idle" : "error"
       log.warn("chat turn failed", {sessionId: turn.sessionId, turnId: turn.turnId, err: error})
@@ -657,6 +663,7 @@ export class ChatSessionRegistry {
     this.#emit(record, {kind: "summary", summary: {...record.summary}})
   }
 
+  /** Buffer events and flush after EVENT_BATCH_WINDOW_MS to coalesce stream noise. */
   #emit(record: SessionRecord, event: ChatEvent): void {
     const sessionId = record.summary.sessionId
     const events = this.#pendingEvents.get(sessionId) ?? []
@@ -667,6 +674,10 @@ export class ChatSessionRegistry {
     this.#eventTimers.set(sessionId, timer)
   }
 
+  /**
+   * Deliver one batch to the UI. `sequence` is per-session and increments once
+   * per flushed batch so the UI can detect gaps / reorder.
+   */
   #flushEvents(record: SessionRecord): void {
     const sessionId = record.summary.sessionId
     this.#eventTimers.delete(sessionId)

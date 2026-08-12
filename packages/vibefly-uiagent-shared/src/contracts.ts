@@ -20,7 +20,10 @@ function contractOnly(name: string): never {
   throw new Error(`${name} is an RPC contract; use the generated proxy/service helpers`)
 }
 
-/** UI -> Agent methods over WebSocket SimpleRpc. */
+/**
+ * UI → Agent business RPC (WebSocket SimpleRpc on 127.0.0.1 + one-time ticket).
+ * Control-plane Host↔Agent lives on stdio; do not mirror these methods in Kotlin.
+ */
 @rpcService()
 export abstract class Ui2Agent {
   @rpcId(1)
@@ -124,7 +127,10 @@ export abstract class Ui2Agent {
   }
 }
 
-/** Agent -> UI methods over WebSocket SimpleRpc. */
+/**
+ * Agent → UI push RPC (same WebSocket business plane as Ui2Agent).
+ * Streaming chat events, tool permission, and user-input prompts.
+ */
 @rpcService()
 export abstract class Agent2Ui {
   @rpcId(1)

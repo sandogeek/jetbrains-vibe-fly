@@ -17,11 +17,21 @@ export type GatedProviderResult<T> = T & {
     safeSnapshot: ProvidersSnapshot | null
 }
 
+/**
+ * Host provider config client with revision-gated snapshot delivery.
+ *
+ * Provider RPCs return a settings `revision` + optional snapshot. Before publishing
+ * to listeners we align the local SettingsSyncClient to that revision so the UI
+ * never shows provider data against a stale application document.
+ */
 export class UiProviderSettingsClient {
     readonly #listeners = new Set<(snapshot: ProvidersSnapshot | null) => void>()
+    /** Baseline used to ignore the subscribe callback's initial/same-revision fire. */
     #lastApplicationRevision?: string
     #refreshing?: Promise<void>
+    /** Nested count of in-flight `#gate` calls (read-side lock over invalidations). */
     #aligning = 0
+    /** Set when an application revision change arrives while `#aligning > 0`. */
     #invalidationDuringAlign = false
 
     constructor(
@@ -33,12 +43,15 @@ export class UiProviderSettingsClient {
     /** Own application invalidation → Provider refresh and merged snapshot publication. */
     watch(listener: (snapshot: ProvidersSnapshot | null) => void): () => void {
         this.#listeners.add(listener)
+        // Snapshot the revision we already know; only later *changes* schedule refresh.
         this.#lastApplicationRevision = this.settings.client.getSnapshot("application").revision
         const unsubscribe = this.settings.client.subscribe(
             (state) => state.application.revision,
             (revision) => {
                 if (revision === this.#lastApplicationRevision) return
                 this.#lastApplicationRevision = revision
+                // Defer refresh until the active gate finishes — it may already carry
+                // a converged snapshot, making an immediate refresh redundant or racy.
                 if (this.#aligning > 0) {
                     this.#invalidationDuringAlign = true
                     return
@@ -57,6 +70,12 @@ export class UiProviderSettingsClient {
         return this.#gate(result)
     }
 
+    /**
+     * Optimistic-concurrency patch with revision replay.
+     * On conflict, advance `expectedRevision` from the host response when align
+     * succeeded, otherwise re-read the local application revision and retry.
+     * Exhausted retries surface conflict without a snapshot (caller must refresh).
+     */
     async applyPatch(
         providers: ProviderPatch[],
         credentials: CredentialAction[] = [],
@@ -95,6 +114,12 @@ export class UiProviderSettingsClient {
         return this.host.cancelProviderLogin(PROVIDER_CONFIG_RPC_OPTIONS)
     }
 
+    /**
+     * Align local settings to `result.revision`, then publish a catalog-merged
+     * snapshot only when alignment succeeded. Nested calls share one invalidation
+     * flag: deferred refresh runs after the outermost gate if no snapshot was
+     * accepted and the result is not a conflict (conflicts are replayed by applyPatch).
+     */
     async #gate<T extends {
         revision?: string | null
         snapshot?: import("../generated/rpc").ProvidersSnapshot | null
@@ -128,6 +153,7 @@ export class UiProviderSettingsClient {
         return {...result, currentRevision, safeSnapshot}
     }
 
+    /** Single-flight: concurrent invalidations collapse into one in-flight refresh. */
     #scheduleRefresh(): void {
         if (this.#refreshing) return
         this.#refreshing = this.refresh().then(() => undefined).catch(() => undefined).finally(() => {

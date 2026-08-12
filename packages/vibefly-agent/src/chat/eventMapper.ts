@@ -120,6 +120,7 @@ export function mapSessionEvent(
       return {events: []}
     }
     const activeMessageId = state.activeMessageId ?? makeId("assistant")
+    // `activeMessageId: undefined` means "keep stored id"; only set when creating one.
     return {
       activeMessageId: state.activeMessageId ? undefined : activeMessageId,
       events: [{
@@ -135,6 +136,7 @@ export function mapSessionEvent(
     const activeMessageId = state.activeMessageId ?? makeId("assistant")
     const locations = locationsFromArgs(event.args, state.projectRoot)
     if (locations) state.toolLocations.set(event.toolCallId, locations)
+    // Same carrier convention as message_update: only assign when no active message yet.
     return {
       activeMessageId: state.activeMessageId ? undefined : activeMessageId,
       events: [{
@@ -153,6 +155,7 @@ export function mapSessionEvent(
     }
   }
   if (event.type === "tool_execution_end") {
+    // Tool results only attach to an in-flight assistant message; drop if already cleared.
     if (!state.activeMessageId) return {events: []}
     const locations = state.toolLocations.get(event.toolCallId)
     state.toolLocations.delete(event.toolCallId)
@@ -173,6 +176,7 @@ export function mapSessionEvent(
       }],
     }
   }
+  // pi event typing omits `role` on message; cast to filter assistant-only ends.
   if (event.type === "message_end" && (event.message as unknown as {role?: string}).role === "assistant") {
     if (!state.activeMessageId) return {events: []}
     return {

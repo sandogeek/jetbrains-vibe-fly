@@ -12,6 +12,11 @@ type ToolPermissionRequest = Parameters<Agent2Ui["requestToolPermission"]>[0]
 
 const FILE_TOOLS = new Set(["read", "grep", "glob", "ast_grep", "edit", "write"])
 
+/**
+ * Resolve a project-relative path and reject escapes (including via symlinks).
+ * Walks up to the nearest existing ancestor, realpath-s it, then re-applies the
+ * unresolved suffix so non-existent targets cannot slip outside the project root.
+ */
 export function pathInsideProject(projectRoot: string, candidate: string): string {
   const normalizedRoot = fs.realpathSync(projectRoot)
   if (!candidate.trim() || path.isAbsolute(candidate)) {
@@ -54,6 +59,7 @@ export function locationsFromArgs(args: unknown, projectRoot: string): ChatFileL
   return locations.length > 0 ? locations : undefined
 }
 
+/** Extract filesystem path-like args from pi tool inputs (common keys + edit formats). */
 function pathCandidates(toolName: string, input: unknown): string[] {
   if (!input || typeof input !== "object" || Array.isArray(input)) return []
   const values = input as Record<string, unknown>
@@ -81,12 +87,15 @@ function pathCandidates(toolName: string, input: unknown): string[] {
       if (typeof rename === "string") candidates.push(rename)
     }
     if (typeof values.input === "string") {
+      // pi apply-patch style: [path] or [path#hunk]
       for (const match of values.input.matchAll(/^\[([^#\r\n]+)(?:#[0-9a-fA-F]{4})?]/gm)) {
         if (match[1]) candidates.push(match[1])
       }
+      // *** Add/Update/Delete/Move to File: path
       for (const match of values.input.matchAll(/^\*\*\* (?:Add|Update|Delete|Move to) File:\s*(.+)$/gm)) {
         if (match[1]) candidates.push(match[1])
       }
+      // *** Move to: path
       for (const match of values.input.matchAll(/^\*\*\* Move to:\s*(.+)$/gm)) {
         if (match[1]) candidates.push(match[1])
       }
@@ -98,6 +107,11 @@ function pathCandidates(toolName: string, input: unknown): string[] {
     .filter(Boolean)
 }
 
+/**
+ * Reject tool paths outside the project.
+ * http(s)/memory/skill URIs are intentional non-file refs and are skipped;
+ * any other `scheme://` is treated as an escape and rejected.
+ */
 export function validateToolPaths(projectRoot: string, toolName: string, input: unknown): void {
   for (const candidate of pathCandidates(toolName, input)) {
     if (/^(?:https?|memory|skill):\/\//i.test(candidate)) continue
