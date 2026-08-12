@@ -13,9 +13,11 @@ export default defineConfig({
   base: "./",
   root,
   resolve: {
-    alias: {
-      "@": resolve(root, "src"),
-    },
+    alias: [
+      {find: "@", replacement: resolve(root, "src")},
+      // @streamdown/code imports full shiki (~340 langs). Web bundle is enough for chat code blocks.
+      {find: /^shiki$/, replacement: "shiki/bundle/web"},
+    ],
   },
   server: {
     // JCEF loads this origin when -Dvibefly.ui.dev=true (WebSocket HMR needs real HTTP, not classpath scheme).
@@ -35,7 +37,8 @@ export default defineConfig({
     outDir: resolve(root, "../vibefly-jcef/src/main/resources/web"),
     emptyOutDir: true,
     assetsDir: "assets",
-    sourcemap: true,
+    // Production zip must stay small; enable maps only for explicit debug builds.
+    sourcemap: process.env.VIBEFLY_UI_SOURCEMAP === "true",
     cssCodeSplit: true,
     modulePreload: {
       polyfill: false,

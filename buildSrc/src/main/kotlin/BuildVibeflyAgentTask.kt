@@ -128,7 +128,7 @@ abstract class BuildVibeflyAgentTask @Inject constructor(
         if (!File(distSrc, "main.js").isFile) {
             throw GradleException("Agent build missing ${File(distSrc, "main.js")}")
         }
-        copyDirectory(distSrc, File(out, "dist"), skipTests = true)
+        copyDirectory(distSrc, File(out, "dist"), skipTests = true, runtimeJsOnly = true)
 
         val rootPackage = File(out, "package.json")
         Files.copy(
@@ -155,7 +155,15 @@ abstract class BuildVibeflyAgentTask @Inject constructor(
         // --ignore-workspace: staged tree lives under the monorepo; do not hoist into root workspace.
         pnpmExec(out, pnpm, node, "install", "--prod", "--ignore-scripts", "--ignore-workspace")
 
-        pruneHeavyOptionalRuntime(File(out, "node_modules"))
+        val nodeModules = File(out, "node_modules")
+        pruneHeavyOptionalRuntime(nodeModules)
+        val strippedBytes = stripNonRuntimeArtifacts(out)
+        val sizeBytes = directorySize(out)
+        logger.lifecycle(
+            "Pruned agent runtime: stripped {} non-runtime files; staged size {}",
+            formatBytes(strippedBytes),
+            formatBytes(sizeBytes),
+        )
 
         val entry = File(out, "dist/main.js")
         if (!entry.isFile) {
@@ -237,20 +245,28 @@ abstract class BuildVibeflyAgentTask @Inject constructor(
         // Runtime packages must expose compiled JavaScript to the plain Node process.
         val dist = File(from, "dist")
         if (dist.isDirectory) {
-            copyDirectory(dist, File(to, "dist"))
+            copyDirectory(dist, File(to, "dist"), runtimeJsOnly = true)
         }
         if (!dist.isDirectory) {
             throw GradleException("Runtime package missing compiled dist: $from")
         }
     }
 
-    private fun copyDirectory(from: File, to: File, skipTests: Boolean = false) {
+    private fun copyDirectory(
+        from: File,
+        to: File,
+        skipTests: Boolean = false,
+        runtimeJsOnly: Boolean = false,
+    ) {
         if (to.exists()) {
             to.deleteRecursively()
         }
         from.walkTopDown().forEach { src ->
             val rel = src.relativeTo(from)
             if (skipTests && isTestArtifact(rel.path)) {
+                return@forEach
+            }
+            if (runtimeJsOnly && src.isFile && isNonRuntimeDistFile(src.name)) {
                 return@forEach
             }
             val dest = File(to, rel.path)
@@ -266,6 +282,13 @@ abstract class BuildVibeflyAgentTask @Inject constructor(
     private fun isTestArtifact(relativePath: String): Boolean {
         val name = relativePath.substringAfterLast('/')
         return name.contains(".test.") || name.endsWith(".test.js") || name.endsWith(".test.d.ts")
+    }
+
+    private fun isNonRuntimeDistFile(name: String): Boolean {
+        return name.endsWith(".map") ||
+            name.endsWith(".d.ts") ||
+            name.endsWith(".d.mts") ||
+            name.endsWith(".d.cts")
     }
 
     private fun rewritePackageJsonFileDeps(
@@ -330,6 +353,7 @@ abstract class BuildVibeflyAgentTask @Inject constructor(
     private fun pruneHeavyOptionalRuntime(nodeModules: File) {
         if (!nodeModules.isDirectory) return
         // Keep @opentelemetry/* — pi-coding-agent imports it at boot.
+        // Keep provider SDKs (anthropic/openai/mistral/google/aws) — pi-ai static-imports them.
         val exact = listOf(
             "onnxruntime-node",
             "onnxruntime-web",
@@ -349,14 +373,242 @@ abstract class BuildVibeflyAgentTask @Inject constructor(
             "devtools-protocol",
         )
         for (name in exact) {
-            File(nodeModules, name).takeIf { it.exists() }?.deleteRecursively()
+            deletePackageEverywhere(nodeModules, name)
         }
-        File(nodeModules, "@puppeteer").takeIf { it.exists() }?.deleteRecursively()
-        File(nodeModules, "@img").takeIf { it.exists() }?.deleteRecursively()
-        nodeModules.listFiles()
-            ?.filter { it.name.startsWith("sherpa-onnx-") }
-            ?.forEach { it.deleteRecursively() }
+        deletePackageEverywhere(nodeModules, "@puppeteer")
+        deletePackageEverywhere(nodeModules, "@img")
+        deletePackageEverywhere(nodeModules, "@types")
+        nodeModules.walkTopDown()
+            .maxDepth(4)
+            .filter { it.isDirectory && it.name.startsWith("sherpa-onnx-") }
+            .toList()
+            .forEach { it.deleteRecursively() }
+        pruneForeignOptionalNatives(nodeModules)
         // Gradle Sync cannot follow dangling bin symlinks after prune; agent runs via `node dist/main.js`.
         File(nodeModules, ".bin").takeIf { it.exists() }?.deleteRecursively()
+    }
+
+    /**
+     * Drop optional native packages that cannot run on this build host.
+     * Note: Marketplace zip is currently host-platform for optional natives (pnpm only installs
+     * matching optionalDependencies). This only removes clearly foreign platform folders if present.
+     */
+    private fun pruneForeignOptionalNatives(nodeModules: File) {
+        val os = System.getProperty("os.name").lowercase()
+        val arch = System.getProperty("os.arch").lowercase()
+        val keepTokens = mutableListOf<String>()
+        when {
+            os.contains("mac") || os.contains("darwin") -> {
+                keepTokens += "darwin"
+                keepTokens += if (arch.contains("aarch64") || arch.contains("arm64")) "arm64" else "x64"
+            }
+            os.contains("win") -> {
+                keepTokens += "win32"
+                keepTokens += "windows"
+                keepTokens += "x64"
+            }
+            else -> {
+                keepTokens += "linux"
+                keepTokens += if (arch.contains("aarch64") || arch.contains("arm64")) "arm64" else "x64"
+            }
+        }
+        val platformMarkers = listOf(
+            "darwin", "linux", "win32", "windows", "android", "freebsd",
+            "arm64", "aarch64", "x64", "x86_64", "ia32", "armv7", "universal",
+        )
+        nodeModules.walkTopDown()
+            .maxDepth(6)
+            .filter { it.isDirectory }
+            .filter { dir ->
+                val n = dir.name.lowercase()
+                platformMarkers.any { marker -> n.contains(marker) } &&
+                    (n.contains("darwin") || n.contains("linux") || n.contains("win32") ||
+                        n.contains("windows") || n.contains("android"))
+            }
+            .toList()
+            .forEach { dir ->
+                val n = dir.name.lowercase()
+                val isCurrentOs = when {
+                    os.contains("mac") || os.contains("darwin") -> n.contains("darwin")
+                    os.contains("win") -> n.contains("win32") || n.contains("windows")
+                    else -> n.contains("linux")
+                }
+                if (!isCurrentOs) {
+                    dir.deleteRecursively()
+                    return@forEach
+                }
+                // Prefer arch-specific over universal when both exist for the same package family.
+                if (n.contains("universal") && keepTokens.any { it == "arm64" || it == "x64" }) {
+                    val siblingArch = dir.parentFile?.listFiles()?.any { sibling ->
+                        sibling.isDirectory &&
+                            sibling != dir &&
+                            sibling.name.lowercase().let { sn ->
+                                keepTokens.any { token -> sn.contains(token) } &&
+                                    !sn.contains("universal")
+                            }
+                    } == true
+                    if (siblingArch) {
+                        dir.deleteRecursively()
+                    }
+                }
+            }
+    }
+
+    private fun deletePackageEverywhere(nodeModules: File, packageName: String) {
+        if (packageName.startsWith("@") && !packageName.contains("/")) {
+            // Scoped root such as @types / @puppeteer
+            File(nodeModules, packageName).takeIf { it.exists() }?.deleteRecursively()
+            // pnpm virtual store uses both `types+…` and `@types+…` folder names.
+            val scope = packageName.removePrefix("@")
+            File(nodeModules, ".pnpm").listFiles()
+                ?.filter {
+                    it.isDirectory &&
+                        (it.name.startsWith("$scope+") || it.name.startsWith("$packageName+"))
+                }
+                ?.forEach { it.deleteRecursively() }
+            return
+        }
+        if (packageName.startsWith("@")) {
+            val slash = packageName.indexOf('/')
+            val scope = packageName.substring(0, slash)
+            val name = packageName.substring(slash + 1)
+            File(nodeModules, "$scope/$name").takeIf { it.exists() }?.deleteRecursively()
+            // pnpm: `scope+name@version` or `@scope+name@version`
+            val bare = "${scope.removePrefix("@")}+$name@"
+            val atPrefixed = "$scope+$name@"
+            File(nodeModules, ".pnpm").listFiles()
+                ?.filter {
+                    it.isDirectory &&
+                        (it.name.startsWith(bare) || it.name.startsWith(atPrefixed))
+                }
+                ?.forEach { it.deleteRecursively() }
+            return
+        }
+        File(nodeModules, packageName).takeIf { it.exists() }?.deleteRecursively()
+        File(nodeModules, ".pnpm").listFiles()
+            ?.filter { it.isDirectory && it.name.startsWith("$packageName@") }
+            ?.forEach { it.deleteRecursively() }
+        // Nested copies under other packages' node_modules.
+        nodeModules.walkTopDown()
+            .maxDepth(8)
+            .filter { it.isDirectory && it.name == packageName && it.parentFile?.name == "node_modules" }
+            .toList()
+            .forEach { it.deleteRecursively() }
+    }
+
+    /**
+     * Remove type defs, source maps, docs, tests, and published TS sources from the staged tree.
+     * Returns total bytes removed.
+     */
+    private fun stripNonRuntimeArtifacts(root: File): Long {
+        var removed = 0L
+        // Package-root marketing/demo trees. Nested runtime trees like yaml's `dist/doc/` are kept
+        // because they do not sit next to a package.json.
+        val packageRootJunkDirs = setOf("docs", "doc", "example", "examples", "website", "demo", "demos")
+        val skipDirNames = setOf(
+            "test", "tests", "testing", "__tests__",
+            ".github", "coverage", "benchmark", "benchmarks", "fixtures",
+        )
+        val skipFileNames = setOf(
+            "readme", "readme.md", "readme.markdown", "changelog", "changelog.md",
+            "history.md", "license", "license.md", "license.txt", "licence", "licence.md",
+            "contributing.md", "security.md", "code_of_conduct.md", "authors", "authors.md",
+        )
+        val files = root.walkTopDown().toList()
+        // Delete known non-runtime directories first (deepest first).
+        files
+            .asReversed()
+            .filter { it.isDirectory }
+            .forEach { dir ->
+                val rel = dir.relativeTo(root).path.replace('\\', '/')
+                if (!rel.contains("node_modules") && !rel.contains(".pnpm")) return@forEach
+                val lower = dir.name.lowercase()
+                val packageRootJunk =
+                    packageRootJunkDirs.contains(lower) &&
+                        File(dir.parentFile, "package.json").isFile
+                val namedJunk = skipDirNames.contains(lower)
+                if (!packageRootJunk && !namedJunk) return@forEach
+                // For test/coverage trees, keep if they only exist as runtime (rare).
+                if (namedJunk && !packageRootJunk &&
+                    dir.walkTopDown().any { f ->
+                        f.isFile && (
+                            f.name.endsWith(".node") || f.name.endsWith(".wasm")
+                            )
+                    }
+                ) {
+                    return@forEach
+                }
+                removed += directorySize(dir)
+                dir.deleteRecursively()
+            }
+        root.walkTopDown()
+            .filter { it.isFile }
+            .toList()
+            .forEach { file ->
+                val name = file.name
+                val lower = name.lowercase()
+                val rel = file.relativeTo(root).path.replace('\\', '/')
+                val underNodeModules = rel.contains("node_modules") || rel.contains(".pnpm")
+                val drop = when {
+                    name.endsWith(".map") -> true
+                    name.endsWith(".d.ts") || name.endsWith(".d.mts") || name.endsWith(".d.cts") -> true
+                    // Published package `src/**/*.ts` is not needed when compiled JS is present.
+                    // Never strip under package `dist/` (some ship .ts helpers) or yaml-like runtime trees.
+                    name.endsWith(".ts") && underNodeModules -> {
+                        val parent = file.parentFile?.name?.lowercase()
+                        parent != "dist" && (rel.contains("/src/") || rel.contains("\\src\\"))
+                    }
+                    lower.endsWith(".md") || lower.endsWith(".markdown") -> true
+                    skipFileNames.contains(lower) -> true
+                    name == "tsconfig.json" || (name.startsWith("tsconfig.") && name.endsWith(".json")) ->
+                        underNodeModules
+                    else -> false
+                }
+                if (drop) {
+                    removed += file.length()
+                    file.delete()
+                }
+            }
+        // Drop empty directories left behind.
+        root.walkBottomUp()
+            .filter { it.isDirectory && it != root && it.listFiles()?.isEmpty() == true }
+            .forEach { it.delete() }
+        return removed
+    }
+
+    private fun directorySize(dir: File): Long {
+        if (!dir.exists()) return 0L
+        // Do not follow symlinks — pnpm hoists packages as links into `.pnpm`, and following
+        // would double-count the same files.
+        var total = 0L
+        val stack = ArrayDeque<File>()
+        stack.add(dir)
+        while (stack.isNotEmpty()) {
+            val current = stack.removeLast()
+            val children = current.listFiles() ?: continue
+            for (child in children) {
+                val isLink = try {
+                    Files.isSymbolicLink(child.toPath())
+                } catch (_: Exception) {
+                    false
+                }
+                if (isLink) continue
+                if (child.isDirectory) {
+                    stack.add(child)
+                } else if (child.isFile) {
+                    total += child.length()
+                }
+            }
+        }
+        return total
+    }
+
+    private fun formatBytes(bytes: Long): String {
+        if (bytes < 1024) return "${bytes}B"
+        val kib = bytes / 1024.0
+        if (kib < 1024) return String.format("%.1fKB", kib)
+        val mib = kib / 1024.0
+        if (mib < 1024) return String.format("%.1fMB", mib)
+        return String.format("%.2fGB", mib / 1024.0)
     }
 }
