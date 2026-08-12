@@ -1,5 +1,4 @@
 import type {VibeflyCommitSettings, VibeflyModelPreferences, VibeflyUiSettings,} from "@vibefly/uiagent-shared"
-import {normalizeUiLocaleMode} from "../i18n"
 import {bundledCatalog, type BundledCatalog} from "./catalog"
 import type {ProviderSnapshot, ProvidersSnapshot} from "./providerSnapshots"
 
@@ -26,7 +25,6 @@ export type IdeSettings = {
 }
 
 export type SettingsState = {
-    settings: IdeSettings
     snapshot: ProvidersSnapshot | null
     catalog: BundledCatalog
     loadError: string | null
@@ -56,52 +54,12 @@ export function emptySettings(): IdeSettings {
     }
 }
 
-export function withProviders(
-    settings: IdeSettings,
-    patch: Partial<ProvidersForm>,
-): IdeSettings {
-    return {
-        ...settings,
-        providers: {...settings.providers, ...patch},
-    }
-}
-
-export function withCommit(settings: IdeSettings, patch: Partial<CommitForm>): IdeSettings {
-    return {
-        ...settings,
-        commit: {...settings.commit, ...patch},
-    }
-}
-
-export function withUi(settings: IdeSettings, patch: Partial<UiForm>): IdeSettings {
-    return {
-        ...settings,
-        ui: {
-            locale: normalizeUiLocaleMode(patch.locale ?? settings.ui.locale),
-        },
-    }
-}
-
-export function withModelPreferences(
-    settings: IdeSettings,
-    patch: Partial<ModelPreferences>,
-): IdeSettings {
-    return {
-        ...settings,
-        modelPreferences: {
-            recentModelSpecs: patch.recentModelSpecs ?? settings.modelPreferences.recentModelSpecs,
-            pinnedModelSpecs: patch.pinnedModelSpecs ?? settings.modelPreferences.pinnedModelSpecs,
-        },
-    }
-}
-
 export function snapshotProviders(snapshot: ProvidersSnapshot | null): ProviderSnapshot[] {
     return snapshot?.providers ?? []
 }
 
 export function initialState(): SettingsState {
     return {
-        settings: emptySettings(),
         snapshot: null,
         catalog: bundledCatalog,
         loadError: null,

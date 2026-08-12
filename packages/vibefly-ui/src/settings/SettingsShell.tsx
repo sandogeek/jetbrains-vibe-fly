@@ -16,7 +16,9 @@ import {applyJbTheme} from "../theme"
 import {CommitMessagePage} from "./CommitMessagePage"
 import {GeneralPage} from "./GeneralPage"
 import {ProvidersPage} from "./ProvidersPage"
-import {initialState, type SettingsState} from "./settingsStore"
+import {emptySettings, initialState, type SettingsState} from "./settingsStore"
+import {SettingsMutationQueue, type SettingsMutateOptions} from "./settingsMutationQueue"
+import {releaseSettingsShellOwnership} from "./settingsShellOwnership"
 import {UiSettingsRuntime, useUiSettingsView} from "./UiSettingsRuntime"
 import {UiProviderSettingsClient} from "./UiProviderSettingsClient"
 import {
@@ -50,15 +52,36 @@ export function SettingsShell() {
     const [ui2Host, setUi2Host] = useState<Ui2Host | null>(null)
     const [settingsStore, setSettingsStore] = useState<UiSettingsRuntime | null>(null)
     const settingsView = useUiSettingsView(settingsStore)
+    const settings = settingsView?.settings ?? emptySettings()
+    const loadError = settingsView?.diagnostics ?? state.loadError
     const loginHandlers = useRef<LoginHandlers | null>(null)
     const settingsRuntime = useRef<UiSettingsRuntime | null>(null)
     const providerClient = useRef<UiProviderSettingsClient | null>(null)
+    const mutationQueue = useRef<SettingsMutationQueue | null>(null)
 
     useEffect(() => {
         let cancelled = false
+        // Effect-local ownership. Shared refs/state are only cleared when they still
+        // point at these instances — required under StrictMode (setup → cleanup → setup)
+        // because queue.close() finishes asynchronously after the next setup.
+        let runtime: UiSettingsRuntime | null = null
+        let providers: UiProviderSettingsClient | null = null
+        let ui2HostInstance: Ui2Host | null = null
         let peerClose: (() => void) | undefined
         let unbindConsole: (() => void) | undefined
         let unsubscribeProviderRefresh: (() => void) | undefined
+        const queue = new SettingsMutationQueue(
+            () => runtime,
+            (error) => {
+                if (!cancelled) {
+                    setState((current) => ({
+                        ...current,
+                        status: error instanceof Error ? error.message : String(error),
+                    }))
+                }
+            },
+        )
+        mutationQueue.current = queue
         const host2Ui: Host2UiService = {
             async setStatus(message) {
                 if (!cancelled) setState((current) => ({...current, status: message}))
@@ -68,7 +91,7 @@ export function SettingsShell() {
             },
             async settingsChanged(scope, projectRoot, revision) {
                 try {
-                    await settingsRuntime.current?.notify(scope, projectRoot, revision)
+                    await runtime?.notify(scope, projectRoot, revision)
                 } catch (error) {
                     if (!cancelled) {
                         setState((current) => ({
@@ -94,39 +117,47 @@ export function SettingsShell() {
 
         const rpc = createSettingsUiRpc({host2Ui, host2UiSettings})
         if (rpc) {
+            ui2HostInstance = rpc.ui2Host
             setUi2Host(rpc.ui2Host)
             peerClose = () => rpc.peer.close()
             unbindConsole = bindConsoleToHost(rpc.ui2Host)
         }
 
         void (async () => {
-            setState((current) => ({...current, busy: true, loadError: null}))
+            if (!cancelled) setState((current) => ({...current, busy: true, loadError: null}))
             let loadError: string | null = null
             const host = rpc?.ui2Host ?? null
             const settingsHost = rpc?.ui2HostSettings ?? null
 
             if (host && settingsHost) {
-                const runtime = new UiSettingsRuntime(host)
-                settingsRuntime.current = runtime
-                setSettingsStore(runtime)
-                const providers = new UiProviderSettingsClient(settingsHost, runtime, state.catalog)
-                providerClient.current = providers
+                const nextRuntime = new UiSettingsRuntime(host)
+                const nextProviders = new UiProviderSettingsClient(settingsHost, nextRuntime, state.catalog)
+                // Install before awaits so Host settingsChanged can reach this effect's runtime.
+                runtime = nextRuntime
+                providers = nextProviders
+                if (!cancelled) {
+                    settingsRuntime.current = nextRuntime
+                    setSettingsStore(nextRuntime)
+                    providerClient.current = nextProviders
+                }
                 const refreshProviders = async () => {
-                    const refresh = await providers.refresh()
+                    const refresh = await nextProviders.refresh()
                     if (!refresh.ok) throw new Error(refresh.error ?? "Provider refresh failed")
                 }
                 try {
-                    const view = await runtime.start(false)
+                    const view = await nextRuntime.start(false)
+                    if (cancelled) return
                     applyUiLocale(view.settings.ui.locale)
                     loadError = view.diagnostics
-                    unsubscribeProviderRefresh = providers.watch((snapshot) => {
+                    unsubscribeProviderRefresh = nextProviders.watch((snapshot) => {
                         if (!cancelled) setState((current) => ({...current, snapshot}))
                     })
                 } catch (error) {
+                    if (cancelled) return
                     loadError = error instanceof Error ? error.message : String(error)
                 }
                 try {
-                    await refreshProviders()
+                    if (!cancelled) await refreshProviders()
                 } catch (error) {
                     loadError = loadError ?? (error instanceof Error ? error.message : String(error))
                 }
@@ -143,13 +174,28 @@ export function SettingsShell() {
 
         return () => {
             cancelled = true
-            peerClose?.()
-            unbindConsole?.()
+            // Sync teardown: safe under StrictMode because cleanup runs before the next setup.
             unsubscribeProviderRefresh?.()
-            settingsRuntime.current = null
-            setSettingsStore(null)
-            providerClient.current = null
-            setUi2Host(null)
+            unsubscribeProviderRefresh = undefined
+            unbindConsole?.()
+            unbindConsole = undefined
+            if (mutationQueue.current === queue) {
+                mutationQueue.current = null
+            }
+            // Flush this effect's queue, then close only its peer and drop shared ownership
+            // when identity still matches (do not wipe the remounted effect's runtime).
+            void queue.close().finally(() => {
+                peerClose?.()
+                releaseSettingsShellOwnership({
+                    runtime,
+                    providers,
+                    ui2Host: ui2HostInstance,
+                    settingsRuntime,
+                    providerClient,
+                    setSettingsStore,
+                    setUi2Host,
+                })
+            })
         }
     }, [])
 
@@ -158,30 +204,12 @@ export function SettingsShell() {
         applyUiLocale(settingsView.settings.ui.locale)
         setState((current) => ({
             ...current,
-            settings: settingsView.settings,
             loadError: settingsView.diagnostics,
         }))
     }, [settingsView])
 
-    const updateDraftSettings = (next: SettingsState["settings"]) => {
-        setState((current) => ({...current, settings: next}))
-    }
-
-    const stageSettings = (mutations: readonly SettingMutation[]) => {
-        settingsRuntime.current?.stage(mutations)
-    }
-
-    const saveSettings = async (mutations: readonly SettingMutation[]): Promise<void> => {
-        const runtime = settingsRuntime.current
-        if (!runtime) return
-        try {
-            await runtime.mutate(mutations)
-        } catch (error) {
-            setState((current) => ({
-                ...current,
-                status: error instanceof Error ? error.message : String(error),
-            }))
-        }
+    const onMutate = (mutations: readonly SettingMutation[], options?: SettingsMutateOptions) => {
+        mutationQueue.current?.enqueue(mutations, options)
     }
 
     const activePath = location.pathname
@@ -229,38 +257,33 @@ export function SettingsShell() {
                 </SidebarFooter>
             </Sidebar>
             <SidebarInset className="flex h-full min-h-0 flex-col overflow-hidden">
-                {state.loadError && <div
-                    className="border-b border-border bg-surface px-4 py-2 text-xs text-muted">{state.loadError}</div>}
+                {loadError && <div
+                    className="border-b border-border bg-surface px-4 py-2 text-xs text-muted">{loadError}</div>}
                 {showingCommit ? (
                     <CommitMessagePage
-                        settings={state.settings}
+                        settings={settings}
                         snapshot={state.snapshot}
                         catalog={state.catalog}
                         busy={state.busy}
-                        onSettings={updateDraftSettings}
-                        onDraft={stageSettings}
-                        onSave={saveSettings}
+                        onMutate={onMutate}
                     />
                 ) : showingGeneral ? (
                     <GeneralPage
-                        settings={state.settings}
+                        settings={settings}
                         busy={state.busy}
-                        onSettings={updateDraftSettings}
-                        onDraft={stageSettings}
-                        onSave={saveSettings}
+                        onMutate={onMutate}
                     />
                 ) : (
                     <ProvidersPage
                         ui2Host={ui2Host}
                         providerClient={providerClient.current}
-                        settings={state.settings}
+                        settings={settings}
                         snapshot={state.snapshot}
                         catalog={state.catalog}
                         busy={state.busy}
-                        onSettings={updateDraftSettings}
                         onBusy={(busy) => setState((current) => ({...current, busy}))}
                         onStatus={(status) => setState((current) => ({...current, status}))}
-                        onSave={saveSettings}
+                        onMutate={onMutate}
                         registerLoginHandlers={(handlers) => {
                             loginHandlers.current = handlers
                         }}

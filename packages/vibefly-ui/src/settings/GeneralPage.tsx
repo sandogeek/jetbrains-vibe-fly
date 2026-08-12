@@ -1,44 +1,20 @@
-import {useEffect, useRef} from "react"
-import {mergeSettingMutations, type SettingMutation, settingKeys, setSetting} from "@vibefly/uiagent-shared"
+import {type SettingMutation, settingKeys, setSetting} from "@vibefly/uiagent-shared"
 import {applyUiLocale, useAppTranslation} from "../i18n"
-import {type IdeSettings, type UiForm, withUi} from "./settingsStore"
+import {type IdeSettings, type UiForm} from "./settingsStore"
+import type {SettingsMutateOptions} from "./settingsMutationQueue"
 
 export type GeneralPageProps = {
     settings: IdeSettings
     busy: boolean
-    onSettings: (next: IdeSettings) => void
-    onDraft: (mutations: readonly SettingMutation[]) => void
-    onSave: (mutations: readonly SettingMutation[]) => Promise<void>
+    onMutate: (mutations: readonly SettingMutation[], options?: SettingsMutateOptions) => void
 }
 
 export function GeneralPage(props: GeneralPageProps) {
     const {t} = useAppTranslation(["settings"])
-    const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-    const pendingSave = useRef<SettingMutation[]>([])
-    const onSaveRef = useRef(props.onSave)
-    onSaveRef.current = props.onSave
-    useEffect(() => () => {
-        if (saveTimer.current) clearTimeout(saveTimer.current)
-        const patch = pendingSave.current
-        pendingSave.current = []
-        if (patch.length > 0) void onSaveRef.current(patch)
-    }, [])
     const locale = props.settings.ui?.locale ?? "follow_ide"
-    const debounceSave = (next: IdeSettings, mutations: readonly SettingMutation[]) => {
-        props.onDraft(mutations)
-        props.onSettings(next)
-        pendingSave.current = mergeSettingMutations(pendingSave.current, mutations)
-        if (saveTimer.current) clearTimeout(saveTimer.current)
-        saveTimer.current = setTimeout(() => {
-            saveTimer.current = undefined
-            const pending = pendingSave.current
-            pendingSave.current = []
-            if (pending.length > 0) void onSaveRef.current(pending)
-        }, 300)
-    }
     const onLocale = (value: UiForm["locale"]) => {
         applyUiLocale(value)
-        debounceSave(withUi(props.settings, {locale: value}), [setSetting(settingKeys.ui.locale, value)])
+        props.onMutate([setSetting(settingKeys.ui.locale, value)])
     }
     return (
         <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto p-4">

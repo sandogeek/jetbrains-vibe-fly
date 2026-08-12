@@ -24,7 +24,8 @@ import {
     primaryBadge
 } from "./providerLogic"
 import {description, displayName} from "./providerLabels"
-import {type IdeSettings, withModelPreferences, withProviders} from "./settingsStore"
+import {type IdeSettings} from "./settingsStore"
+import type {SettingsMutateOptions} from "./settingsMutationQueue"
 import type {ProviderSnapshot, ProvidersSnapshot} from "./providerSnapshots"
 import type {UiProviderSettingsClient} from "./UiProviderSettingsClient"
 
@@ -35,10 +36,9 @@ export type ProvidersPageProps = {
     snapshot: ProvidersSnapshot | null;
     catalog: BundledCatalog;
     busy: boolean;
-    onSettings: (next: IdeSettings) => void;
     onBusy: (busy: boolean) => void;
     onStatus: (msg: string | null) => void;
-    onSave: (mutations: readonly SettingMutation[]) => Promise<void>;
+    onMutate: (mutations: readonly SettingMutation[], options?: SettingsMutateOptions) => void;
     registerLoginHandlers?: (handlers: {
         onOpenUrl: (url: string, launchUrl: string | null) => void;
         onProgress: (message: string) => void;
@@ -82,21 +82,14 @@ export function ProvidersPage(props: ProvidersPageProps) {
     const classified = useMemo(() => classifyProviders(providers), [providers])
     const builtIn = useMemo(() => filterBuiltInProviders(classified.popular, search), [classified.popular, search])
     const defaultSpec = modelSpec(props.settings.providers?.defaultProvider ?? "", props.settings.providers?.defaultModel ?? "")
-    const scheduleSave = (next: IdeSettings, mutations: readonly SettingMutation[]) => {
-        props.onSettings(next);
-        void props.onSave(mutations)
-    }
     const onDefaultModel = (spec: string, pinned: string[], recent: string[]) => {
-        const {provider, model} = parseModelSpec(spec);
-        scheduleSave(withModelPreferences(withProviders(props.settings, {
-            defaultProvider: provider,
-            defaultModel: model
-        }), {pinnedModelSpecs: pinned, recentModelSpecs: recent}), [
+        const {provider, model} = parseModelSpec(spec)
+        props.onMutate([
             setSetting(settingKeys.defaultProvider, provider),
             setSetting(settingKeys.defaultModel, model),
             setSetting(settingKeys.modelPreferences.pinnedModelSpecs, [...pinned]),
             setSetting(settingKeys.modelPreferences.recentModelSpecs, [...recent]),
-        ])
+        ], {immediate: true})
     }
 
     const reload = async () => {
