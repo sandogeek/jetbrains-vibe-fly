@@ -15,7 +15,7 @@ import {
     updateJsonAtPath,
 } from "../src/settings/schema.js"
 import {settingKeys} from "../src/settings/keys.js"
-import {setSetting, unsetSetting} from "../src/settings/mutation.js"
+import {applySettingMutations, setSetting, unsetSetting} from "../src/settings/mutation.js"
 import {
     selectSetting,
     SettingsSyncClient,
@@ -626,12 +626,109 @@ describe("SettingsSyncClient cache and invalidation", () => {
     })
 })
 
+describe("settingKeys declaration tree", () => {
+    test("derives path, id, document, scopes and readLayer from nested properties", () => {
+        assert.deepEqual(settingKeys.defaultProvider, {
+            id: "settings:defaultProvider",
+            document: "settings",
+            path: ["defaultProvider"],
+            scopes: ["application", "project"],
+            readLayer: "effective",
+            decode: settingKeys.defaultProvider.decode,
+            encode: settingKeys.defaultProvider.encode,
+        })
+        assert.deepEqual(
+            {
+                id: settingKeys.commit.languageMode.id,
+                document: settingKeys.commit.languageMode.document,
+                path: [...settingKeys.commit.languageMode.path],
+                scopes: [...settingKeys.commit.languageMode.scopes],
+                readLayer: settingKeys.commit.languageMode.readLayer,
+            },
+            {
+                id: "vibefly:commit.languageMode",
+                document: "vibefly",
+                path: ["commit", "languageMode"],
+                scopes: ["application", "project"],
+                readLayer: "effective",
+            },
+        )
+        assert.deepEqual(
+            {
+                id: settingKeys.modelPreferences.recentModelSpecs.id,
+                document: settingKeys.modelPreferences.recentModelSpecs.document,
+                path: [...settingKeys.modelPreferences.recentModelSpecs.path],
+                scopes: [...settingKeys.modelPreferences.recentModelSpecs.scopes],
+                readLayer: settingKeys.modelPreferences.recentModelSpecs.readLayer,
+            },
+            {
+                id: "vibefly:modelPreferences.recentModelSpecs",
+                document: "vibefly",
+                path: ["modelPreferences", "recentModelSpecs"],
+                scopes: ["application"],
+                readLayer: "application",
+            },
+        )
+        assert.deepEqual(
+            {
+                id: settingKeys.ui.locale.id,
+                path: [...settingKeys.ui.locale.path],
+                readLayer: settingKeys.ui.locale.readLayer,
+            },
+            {
+                id: "vibefly:ui.locale",
+                path: ["ui", "locale"],
+                readLayer: "effective",
+            },
+        )
+        assert.equal(Object.isFrozen(settingKeys), true)
+        assert.equal(Object.isFrozen(settingKeys.commit), true)
+        assert.equal(Object.isFrozen(settingKeys.commit.languageMode), true)
+    })
+
+    test("encodes nested writes, application-only prefs, trimmed nulls and stable array fallbacks", () => {
+        const app = application("app-1", {}, {})
+        const written = applySettingMutations(app, [
+            setSetting(settingKeys.defaultProvider, "  "),
+            setSetting(settingKeys.defaultModel, "  gpt  "),
+            setSetting(settingKeys.commit.customPrompt, "hello"),
+            setSetting(settingKeys.modelPreferences.pinnedModelSpecs, ["openai/gpt"]),
+        ])
+        assert.deepEqual(JSON.parse(written.settingsJson), {
+            defaultProvider: null,
+            defaultModel: "gpt",
+        })
+        assert.deepEqual(JSON.parse(written.vibeflyJson), {
+            commit: {customPrompt: "hello"},
+            modelPreferences: {pinnedModelSpecs: ["openai/gpt"]},
+        })
+
+        assert.throws(
+            () => applySettingMutations(
+                project("proj-1"),
+                [setSetting(settingKeys.modelPreferences.recentModelSpecs, ["x"])],
+            ),
+            /cannot be written at project scope/,
+        )
+
+        assert.equal(settingKeys.ui.locale.decode(undefined), "follow_ide")
+        assert.equal(settingKeys.ui.locale.decode("nope"), "follow_ide")
+        assert.equal(settingKeys.commit.useCustomPrompt.decode(undefined), false)
+        assert.equal(settingKeys.commit.useCustomPrompt.decode("yes"), false)
+
+        const missingA = settingKeys.modelPreferences.recentModelSpecs.decode(undefined)
+        const missingB = settingKeys.modelPreferences.recentModelSpecs.decode(undefined)
+        assert.equal(Object.is(missingA, missingB), true)
+        assert.deepEqual(missingA, [])
+    })
+})
+
 describe("SettingsSyncClient mutations and typed keys", () => {
     test("queues notifications received before start and publishes selected values only when changed", async () => {
         const adapter = new MutableAdapter(application("app-1", {}, {ui: {locale: "en"}}))
         const client = new SettingsSyncClient(adapter)
         const locales: string[] = []
-        client.subscribe(selectSetting(settingKeys.uiLocale), (locale) => locales.push(locale))
+        client.subscribe(selectSetting(settingKeys.ui.locale), (locale) => locales.push(locale))
 
         adapter.applicationSnapshot = application("app-2", {}, {ui: {locale: "zh"}})
         await client.notify({scope: "application", projectRoot: null, revision: "app-2"})
@@ -665,7 +762,7 @@ describe("SettingsSyncClient mutations and typed keys", () => {
 
         const result = await client.mutate("application", [
             setSetting(settingKeys.defaultProvider, "openai"),
-            setSetting(settingKeys.commitCustomPrompt, "new"),
+            setSetting(settingKeys.commit.customPrompt, "new"),
         ])
 
         assert.equal(result.ok, true)
@@ -700,13 +797,13 @@ describe("SettingsSyncClient mutations and typed keys", () => {
         await client.start({hasProject: false})
 
         const result = await client.mutate("application", [
-            setSetting(settingKeys.uiLocale, "zh"),
+            setSetting(settingKeys.ui.locale, "zh"),
             unsetSetting(settingKeys.defaultProvider),
         ])
 
         assert.equal(result.attempts, 2)
         assert.deepEqual(JSON.parse(adapter.saves[1]!.settingsJson!), {future: "external"})
-        assert.equal(selectSetting(settingKeys.uiLocale)(client.getState()), "zh")
+        assert.equal(selectSetting(settingKeys.ui.locale)(client.getState()), "zh")
     })
 
     test("reports retry exhaustion after four conflicts", async () => {

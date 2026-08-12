@@ -94,8 +94,8 @@ export function ProvidersPage(props: ProvidersPageProps) {
         }), {pinnedModelSpecs: pinned, recentModelSpecs: recent}), [
             setSetting(settingKeys.defaultProvider, provider),
             setSetting(settingKeys.defaultModel, model),
-            setSetting(settingKeys.pinnedModelSpecs, [...pinned]),
-            setSetting(settingKeys.recentModelSpecs, [...recent]),
+            setSetting(settingKeys.modelPreferences.pinnedModelSpecs, [...pinned]),
+            setSetting(settingKeys.modelPreferences.recentModelSpecs, [...recent]),
         ])
     }
 

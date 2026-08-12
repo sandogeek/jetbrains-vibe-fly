@@ -9,28 +9,136 @@ import {
 export type SettingsDocument = "settings" | "vibefly"
 export type SettingReadLayer = "effective" | "application"
 
+export type SettingCodec<T> = {
+    readonly decode: (value: JsonValue | undefined) => T
+    readonly encode: (value: T) => JsonValue
+}
+
 export type SettingKey<T> = {
     readonly id: string
     readonly document: SettingsDocument
     readonly path: readonly string[]
     readonly scopes: readonly SettingsScope[]
     readonly readLayer: SettingReadLayer
-    readonly defaultValue: T
     readonly decode: (value: JsonValue | undefined) => T
     readonly encode: (value: T) => JsonValue
 }
 
 export type AnySettingKey = SettingKey<any>
 
-type SettingKeyOptions<T> = Omit<SettingKey<T>, "id"> & {id?: string}
+type SettingLeafDef<T = any> = {
+    readonly __leaf: true
+    readonly readLayer: SettingReadLayer
+    readonly scopes: readonly SettingsScope[]
+    readonly codec: SettingCodec<T>
+}
 
-export function defineSetting<T>(options: SettingKeyOptions<T>): SettingKey<T> {
+type SettingDefNode = SettingLeafDef | {readonly [key: string]: SettingDefNode}
+
+type InferSettingKeys<D> = D extends SettingLeafDef<infer T>
+    ? SettingKey<T>
+    : D extends Record<string, any>
+        ? {readonly [K in keyof D]: InferSettingKeys<D[K]>}
+        : never
+
+const EMPTY_STRING_ARRAY: readonly string[] = Object.freeze([])
+
+export function stringCodec(fallback = ""): SettingCodec<string> {
+    return {
+        decode: (value) => (typeof value === "string" ? value : fallback),
+        encode: (value) => value,
+    }
+}
+
+export function nullableTrimmedStringCodec(fallback = ""): SettingCodec<string> {
+    return {
+        decode: (value) => (typeof value === "string" ? value : fallback),
+        encode: (value) => value.trim() || null,
+    }
+}
+
+export function booleanCodec(fallback: boolean): SettingCodec<boolean> {
+    return {
+        decode: (value) => (typeof value === "boolean" ? value : fallback),
+        encode: (value) => value,
+    }
+}
+
+export function stringArrayCodec(): SettingCodec<string[]> {
+    return {
+        decode: (value) => {
+            if (!Array.isArray(value)) return EMPTY_STRING_ARRAY as string[]
+            return value.filter((item): item is string => typeof item === "string")
+        },
+        encode: (value) => [...value],
+    }
+}
+
+export function localeCodec(): SettingCodec<"follow_ide" | "en" | "zh"> {
+    return {
+        decode: (value) => (value === "en" || value === "zh" ? value : "follow_ide"),
+        encode: (value) => value,
+    }
+}
+
+export function effective<T>(codec: SettingCodec<T>): SettingLeafDef<T> {
     return Object.freeze({
-        ...options,
-        id: options.id ?? `${options.document}:${options.path.join(".")}`,
-        path: Object.freeze([...options.path]),
-        scopes: Object.freeze([...options.scopes]),
+        __leaf: true,
+        readLayer: "effective",
+        scopes: Object.freeze(["application", "project"] as const),
+        codec,
     })
+}
+
+export function application<T>(codec: SettingCodec<T>): SettingLeafDef<T> {
+    return Object.freeze({
+        __leaf: true,
+        readLayer: "application",
+        scopes: Object.freeze(["application"] as const),
+        codec,
+    })
+}
+
+function isLeaf(node: SettingDefNode): node is SettingLeafDef {
+    return (node as SettingLeafDef).__leaf === true
+}
+
+function buildSettingKey<T>(
+    document: SettingsDocument,
+    path: readonly string[],
+    leaf: SettingLeafDef<T>,
+): SettingKey<T> {
+    return Object.freeze({
+        id: `${document}:${path.join(".")}`,
+        document,
+        path: Object.freeze([...path]),
+        scopes: leaf.scopes,
+        readLayer: leaf.readLayer,
+        decode: leaf.codec.decode,
+        encode: leaf.codec.encode,
+    })
+}
+
+function buildTree(
+    document: SettingsDocument,
+    definition: SettingDefNode,
+    path: readonly string[],
+): unknown {
+    if (isLeaf(definition)) {
+        return buildSettingKey(document, path, definition)
+    }
+    const result: Record<string, unknown> = {}
+    for (const [key, child] of Object.entries(definition)) {
+        result[key] = buildTree(document, child, [...path, key])
+    }
+    return Object.freeze(result)
+}
+
+export function defineSettings<const D extends SettingDefNode>(
+    document: SettingsDocument,
+    definition: D,
+): InferSettingKeys<D> {
+    return buildTree(document, definition, []) as InferSettingKeys<D>
 }
 
 function atPath(value: JsonValue | undefined, path: readonly string[]): JsonValue | undefined {
@@ -51,56 +159,27 @@ export function readSettingFromSnapshot<T>(
     return key.decode(atPath(parseJsonObjectDocument(source, file).value, key.path))
 }
 
-const stringValue = (fallback = "") => (value: JsonValue | undefined): string =>
-    typeof value === "string" ? value : fallback
-const nullableTrimmedString = (value: string): JsonValue => value.trim() || null
-const booleanValue = (fallback: boolean) => (value: JsonValue | undefined): boolean =>
-    typeof value === "boolean" ? value : fallback
-const stringArrayValue = (value: JsonValue | undefined): string[] =>
-    Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []
-const cloneStrings = (value: string[]): JsonValue => [...value]
-
-const localeValue = (value: JsonValue | undefined): "follow_ide" | "en" | "zh" =>
-    value === "en" || value === "zh" ? value : "follow_ide"
-
-export const settingKeys = {
-    defaultProvider: defineSetting({
-        document: "settings", path: ["defaultProvider"], scopes: ["application", "project"],
-        readLayer: "effective", defaultValue: "", decode: stringValue(), encode: nullableTrimmedString,
+export const settingKeys = Object.freeze({
+    ...defineSettings("settings", {
+        defaultProvider: effective(nullableTrimmedStringCodec()),
+        defaultModel: effective(nullableTrimmedStringCodec()),
     }),
-    defaultModel: defineSetting({
-        document: "settings", path: ["defaultModel"], scopes: ["application", "project"],
-        readLayer: "effective", defaultValue: "", decode: stringValue(), encode: nullableTrimmedString,
+    ...defineSettings("vibefly", {
+        commit: {
+            languageMode: effective(localeCodec()),
+            commitModelSpec: effective(stringCodec()),
+            useCustomPrompt: effective(booleanCodec(false)),
+            customPrompt: effective(stringCodec()),
+        },
+        modelPreferences: {
+            recentModelSpecs: application(stringArrayCodec()),
+            pinnedModelSpecs: application(stringArrayCodec()),
+        },
+        ui: {
+            locale: effective(localeCodec()),
+        },
     }),
-    commitLanguageMode: defineSetting({
-        document: "vibefly", path: ["commit", "languageMode"], scopes: ["application", "project"],
-        readLayer: "effective", defaultValue: "follow_ide" as const, decode: localeValue, encode: (value) => value,
-    }),
-    commitModelSpec: defineSetting({
-        document: "vibefly", path: ["commit", "commitModelSpec"], scopes: ["application", "project"],
-        readLayer: "effective", defaultValue: "", decode: stringValue(), encode: (value) => value,
-    }),
-    commitUseCustomPrompt: defineSetting({
-        document: "vibefly", path: ["commit", "useCustomPrompt"], scopes: ["application", "project"],
-        readLayer: "effective", defaultValue: false, decode: booleanValue(false), encode: (value) => value,
-    }),
-    commitCustomPrompt: defineSetting({
-        document: "vibefly", path: ["commit", "customPrompt"], scopes: ["application", "project"],
-        readLayer: "effective", defaultValue: "", decode: stringValue(), encode: (value) => value,
-    }),
-    recentModelSpecs: defineSetting({
-        document: "vibefly", path: ["modelPreferences", "recentModelSpecs"], scopes: ["application"],
-        readLayer: "application", defaultValue: [] as string[], decode: stringArrayValue, encode: cloneStrings,
-    }),
-    pinnedModelSpecs: defineSetting({
-        document: "vibefly", path: ["modelPreferences", "pinnedModelSpecs"], scopes: ["application"],
-        readLayer: "application", defaultValue: [] as string[], decode: stringArrayValue, encode: cloneStrings,
-    }),
-    uiLocale: defineSetting({
-        document: "vibefly", path: ["ui", "locale"], scopes: ["application", "project"],
-        readLayer: "effective", defaultValue: "follow_ide" as const, decode: localeValue, encode: (value) => value,
-    }),
-} as const
+})
 
 export function cloneSettingValue<T>(value: T): T {
     if (value === undefined) return value

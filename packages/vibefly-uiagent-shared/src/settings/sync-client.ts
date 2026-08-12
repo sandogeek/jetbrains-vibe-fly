@@ -273,14 +273,14 @@ export function selectSetting<TSnapshot extends SafeSettingsSnapshot, TValue>(ke
             const file = key.document === "settings" ? "settings.json" : "settings.vibefly.json"
             let current: unknown = parseJsonObjectDocument(source, file).value
             for (const part of key.path) {
-                if (!current || typeof current !== "object" || Array.isArray(current)) return key.defaultValue
+                if (!current || typeof current !== "object" || Array.isArray(current)) return key.decode(undefined)
                 current = (current as Record<string, unknown>)[part]
             }
             return key.decode(current as never)
         }
         let current: unknown = key.document === "settings" ? state.effective.settings : state.effective.vibefly
         for (const part of key.path) {
-            if (!current || typeof current !== "object" || Array.isArray(current)) return key.defaultValue
+            if (!current || typeof current !== "object" || Array.isArray(current)) return key.decode(undefined)
             current = (current as Record<string, unknown>)[part]
         }
         return key.decode(current as never)

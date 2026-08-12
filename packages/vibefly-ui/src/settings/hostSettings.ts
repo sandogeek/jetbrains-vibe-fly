@@ -82,25 +82,25 @@ export function settingsFromState(state: SettingsSyncState<SafeSettingsSnapshot>
             defaultModel: selectSetting(settingKeys.defaultModel)(state),
         },
         commit: {
-            languageMode: selectSetting(settingKeys.commitLanguageMode)(state),
-            commitModelSpec: selectSetting(settingKeys.commitModelSpec)(state),
-            useCustomPrompt: selectSetting(settingKeys.commitUseCustomPrompt)(state),
-            customPrompt: selectSetting(settingKeys.commitCustomPrompt)(state),
+            languageMode: selectSetting(settingKeys.commit.languageMode)(state),
+            commitModelSpec: selectSetting(settingKeys.commit.commitModelSpec)(state),
+            useCustomPrompt: selectSetting(settingKeys.commit.useCustomPrompt)(state),
+            customPrompt: selectSetting(settingKeys.commit.customPrompt)(state),
         },
         modelPreferences: {
-            recentModelSpecs: [...selectSetting(settingKeys.recentModelSpecs)(state)],
-            pinnedModelSpecs: [...selectSetting(settingKeys.pinnedModelSpecs)(state)],
+            recentModelSpecs: [...selectSetting(settingKeys.modelPreferences.recentModelSpecs)(state)],
+            pinnedModelSpecs: [...selectSetting(settingKeys.modelPreferences.pinnedModelSpecs)(state)],
         },
         ui: {
-            locale: selectSetting(settingKeys.uiLocale)(state),
+            locale: selectSetting(settingKeys.ui.locale)(state),
         },
     }
 }
 
 export function modelPreferenceMutations(preferences: ModelPreferences): SettingMutation[] {
     return [
-        setSetting(settingKeys.recentModelSpecs, [...preferences.recentModelSpecs]),
-        setSetting(settingKeys.pinnedModelSpecs, [...preferences.pinnedModelSpecs]),
+        setSetting(settingKeys.modelPreferences.recentModelSpecs, [...preferences.recentModelSpecs]),
+        setSetting(settingKeys.modelPreferences.pinnedModelSpecs, [...preferences.pinnedModelSpecs]),
     ]
 }
 

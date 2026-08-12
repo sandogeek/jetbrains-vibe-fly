@@ -150,7 +150,7 @@ describe("UiSettingsRuntime", () => {
         await runtime.start(false)
 
         const saving = runtime.mutate([
-            setSetting(settingKeys.uiLocale, "zh"),
+            setSetting(settingKeys.ui.locale, "zh"),
             setSetting(settingKeys.defaultProvider, "openai"),
         ])
         expect(runtime.getView().settings).toMatchObject({
@@ -170,8 +170,8 @@ describe("UiSettingsRuntime", () => {
         const runtime = new UiSettingsRuntime(host.asHost())
         await runtime.start(false)
 
-        const first = runtime.mutate([setSetting(settingKeys.commitCustomPrompt, "first")])
-        const second = runtime.mutate([setSetting(settingKeys.commitCustomPrompt, "second")])
+        const first = runtime.mutate([setSetting(settingKeys.commit.customPrompt, "first")])
+        const second = runtime.mutate([setSetting(settingKeys.commit.customPrompt, "second")])
         await Promise.all([first, second])
 
         expect(runtime.getView().settings.commit.customPrompt).toBe("second")
@@ -184,7 +184,7 @@ describe("UiSettingsRuntime", () => {
         const runtime = new UiSettingsRuntime(host.asHost())
         await runtime.start(false)
 
-        const saving = runtime.mutate([unsetSetting(settingKeys.uiLocale)])
+        const saving = runtime.mutate([unsetSetting(settingKeys.ui.locale)])
         expect(runtime.getView().settings.ui.locale).toBe("follow_ide")
         await saving
 
@@ -195,7 +195,7 @@ describe("UiSettingsRuntime", () => {
         const host = new FakeHost()
         const runtime = new UiSettingsRuntime(host.asHost())
         await runtime.start(false)
-        runtime.stage([setSetting(settingKeys.uiLocale, "zh")])
+        runtime.stage([setSetting(settingKeys.ui.locale, "zh")])
 
         host.application = application(
             "app-external",

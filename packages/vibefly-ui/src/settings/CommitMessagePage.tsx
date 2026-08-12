@@ -49,9 +49,9 @@ export function CommitMessagePage(props: CommitMessagePageProps) {
         pinnedModelSpecs: pinned,
         recentModelSpecs: recent
     }), [
-        setSetting(settingKeys.commitModelSpec, spec),
-        setSetting(settingKeys.pinnedModelSpecs, [...pinned]),
-        setSetting(settingKeys.recentModelSpecs, [...recent]),
+        setSetting(settingKeys.commit.commitModelSpec, spec),
+        setSetting(settingKeys.modelPreferences.pinnedModelSpecs, [...pinned]),
+        setSetting(settingKeys.modelPreferences.recentModelSpecs, [...recent]),
     ])
     const languageMode = props.settings.commit?.languageMode ?? "follow_ide"
     return <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto p-4">
@@ -62,7 +62,7 @@ export function CommitMessagePage(props: CommitMessagePageProps) {
                 className="flex flex-wrap gap-2">{([["follow_ide", t("commit:followIde")], ["en", t("commit:english")], ["zh", t("commit:simplifiedChinese")]] as const).map(([value, label]) =>
                 <button key={value} type="button"
                         className={`rounded border px-3 py-1.5 text-sm ${languageMode === value ? "border-accent bg-surface text-fg" : "border-border text-muted"}`}
-                        onClick={() => debounceSave(withCommit(props.settings, {languageMode: value}), [setSetting(settingKeys.commitLanguageMode, value)])}>{label}</button>)}</div>
+                        onClick={() => debounceSave(withCommit(props.settings, {languageMode: value}), [setSetting(settingKeys.commit.languageMode, value)])}>{label}</button>)}</div>
         </section>
         <section><label className="mb-1 block text-xs text-muted">{t("commit:model")}</label><ModelPicker
             value={props.settings.commit?.commitModelSpec ?? ""} providers={providers} catalog={props.catalog}
@@ -73,12 +73,12 @@ export function CommitMessagePage(props: CommitMessagePageProps) {
             className="m-0 mt-1 text-[11px] text-muted">{t("commit:followDefaultHint")}</p></section>
         <section><label className="mb-2 flex items-center gap-2 text-sm text-fg"><input type="checkbox"
                                                                                         checked={Boolean(props.settings.commit?.useCustomPrompt)}
-                                                                                        onChange={(event) => debounceSave(withCommit(props.settings, {useCustomPrompt: event.currentTarget.checked}), [setSetting(settingKeys.commitUseCustomPrompt, event.currentTarget.checked)])}/>{t("commit:useCustomPrompt")}
+                                                                                        onChange={(event) => debounceSave(withCommit(props.settings, {useCustomPrompt: event.currentTarget.checked}), [setSetting(settingKeys.commit.useCustomPrompt, event.currentTarget.checked)])}/>{t("commit:useCustomPrompt")}
         </label><textarea
             className="h-40 w-full rounded border border-border bg-surface px-2 py-1.5 font-mono text-xs text-fg disabled:opacity-50"
             disabled={!props.settings.commit?.useCustomPrompt} value={props.settings.commit?.customPrompt ?? ""}
             placeholder={t("commit:customPromptPlaceholder")}
-            onChange={(event) => debounceSave(withCommit(props.settings, {customPrompt: event.currentTarget.value}), [setSetting(settingKeys.commitCustomPrompt, event.currentTarget.value)])}/>
+            onChange={(event) => debounceSave(withCommit(props.settings, {customPrompt: event.currentTarget.value}), [setSetting(settingKeys.commit.customPrompt, event.currentTarget.value)])}/>
         </section>
     </div>
 }

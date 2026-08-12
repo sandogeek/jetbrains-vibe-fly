@@ -38,7 +38,7 @@ export function GeneralPage(props: GeneralPageProps) {
     }
     const onLocale = (value: UiForm["locale"]) => {
         applyUiLocale(value)
-        debounceSave(withUi(props.settings, {locale: value}), [setSetting(settingKeys.uiLocale, value)])
+        debounceSave(withUi(props.settings, {locale: value}), [setSetting(settingKeys.ui.locale, value)])
     }
     return (
         <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto p-4">

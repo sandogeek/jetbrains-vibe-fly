@@ -8,7 +8,10 @@ import {
   type RpcService,
   type SimpleRpcPeer,
 } from "@sandogeek/simple-rpc"
-import type {Agent2Ui as Agent2UiContract, Ui2Agent as Ui2AgentContract,} from "./contracts.js"
+import type {
+  Ui2Agent as Ui2AgentContract,
+  Agent2Ui as Agent2UiContract,
+} from "./contracts.js"
 
 export const ui2Agent = defineRpcService("Ui2Agent", {
   "ping": rpcMethod<
