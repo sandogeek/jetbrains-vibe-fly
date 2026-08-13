@@ -17,17 +17,10 @@ English: [agent.en.md](./agent.en.md)
 
 ## 进程生命周期
 
-### 现状
-
 - `VibeflyAgentService`：`@Service(Service.Level.PROJECT)`， **每个 Project 一个** coding agent。
 - `VibeflyAgentProcess`：`ProcessBuilder` 拉起 Node；关闭时 `control.shutdown()`（短超时），再销毁进程。
 - 路径解析：`VibeflyAgentPaths`（Node 可执行文件、入口脚本）。
 - Agent 数据目录：`VibeflyAgentDirectory` → `~/.vibefly/<productCode 小写>/agent`。
-
-### 规划（尚未当作已实现）
-
-`docs/setting.md` 中描述过 **独立 settings agent**（IDE 启动后常驻）。当前实现仍是：设置相关
-Providers 操作走该 Tab 所属 Project 的 agent（`VibeflyAgentService.withControl`）。详见 [setting.md](./setting.md)。
 
 ## 入口与 I/O
 

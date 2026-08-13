@@ -26,7 +26,7 @@ Agent -> Host；不得为此引入 SimpleRpc 之外的第二套 RPC。
 - 设置页不再出现在 IDE Settings 对话框中。聊天页齿轮打开当前 Project 唯一的编辑器 Tab：每个 Project 缓存同一个 `LightVirtualFile`，重复打开只聚焦已有 Tab。关闭 Tab 时释放 RPC、Host 和浏览器。
 - 当前 UI 所有设置写入仍固定为 application scope。typed key 已记录合法 scope 并支持 `unset`，但本轮不展示 Global / Project 切换、继承来源或“恢复继承”入口。
 - Settings WebView 仍以 `hasProject: false` 启动（不展示 Project 覆盖或作用域切换）；Chat WebView 以 `hasProject: true` 启动。因此 locale 等 effective 字段可在聊天页读取 project 覆盖，pin / MRU 始终读取 application 层。
-- 设置 Tab 的 Host / Agent 操作显式绑定该 Tab 所属 Project，不再回退到“任取一个已打开 Project”。Provider 登录生命周期继续使用该 Project agent 的 `withControl` 和反向 RPC；没有迁移成独立 settings Agent。Provider 配置和 revision 收敛已进入统一 UI client。
+- 设置 Tab 的 Host / Agent 操作显式绑定该 Tab 所属 Project，不再回退到“任取一个已打开 Project”。Provider 登录生命周期使用该 Project agent 的 `withControl` 和反向 RPC。Provider 配置和 revision 收敛已进入统一 UI client。
 - 不读取或迁移旧 IDE XML settings；session / workspace 状态也不属于本设置系统。
 
 ## 文件与作用域
@@ -320,9 +320,9 @@ fallback。
 ## 本轮不包含
 
 - 不增加 Global / Project scope 切换、继承来源展示或恢复继承 UI。
-- 不迁移 Provider 登录生命周期；登录走当前 Project agent 的 `withControl`，反向 RPC 和取消流程保持现状。
+- Provider 登录走当前 Project agent 的 `withControl`，反向 RPC 和取消流程保持现状。
 - 不修改 Kotlin Host、SimpleRpc wire 契约、四文件格式、revision 算法或原子落盘协议。
-- 不新增独立 settings Agent，不迁移旧 XML 数据，也不让 UI 获得原始 `authJson`。
+- 不迁移旧 XML 数据，也不让 UI 获得原始 `authJson`。
 
 ## 验证场景
 
