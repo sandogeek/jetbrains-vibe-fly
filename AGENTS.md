@@ -56,27 +56,6 @@ Kotlin 包根：`com.github.sandogeek.jetbrainsvibefly`。
 
 自有包以 `vibefly-` 为前缀（npm：`@vibefly/*`，SimpleRpc：`@sandogeek/simple-rpc*`）。
 
-## 前置条件
-
-- JDK **21+**
-- Node.js **≥ 22**
-- pnpm **≥ 9**（根目录 `package.json` 的 `packageManager`；推荐 `corepack enable`）
-- 可访问 IntelliJ Platform 依赖（Gradle 拉取）
-
-## 改哪里
-
-| 目标                    | 从这里开始                                                                                                |
-|-------------------------|-----------------------------------------------------------------------------------------------------------|
-| 聊天 / 工具 UX          | `packages/vibefly-ui/src/`                                                                                |
-| Agent 会话、工具、pi 桥 | `packages/vibefly-agent/src/`（`main.ts`、`piRuntime.ts`、`chat*`、`ws.ts`）                              |
-| UI↔Agent RPC 形状       | `packages/vibefly-uiagent-shared/src/contracts.ts` → `pnpm --filter @vibefly/uiagent-shared run generate` |
-| Host↔UI RPC             | `packages/vibefly-jcef` + 重新生成 TS                                                                     |
-| Agent 进程生命周期      | `plugin/.../agent/VibeflyAgentService.kt`、`VibeflyAgentProcess.kt`                                       |
-| Tool Window             | `plugin/.../toolWindow/`                                                                                  |
-| 设置（宿主）            | `plugin/.../settings/`；UI 在 `packages/vibefly-ui/src/settings/`                                         |
-| Commit Message          | `plugin/.../commit/` + agent 的 `commitMessage.ts`                                                        |
-| SimpleRpc 核心          | `packages/vibefly-simplerpc/`                                                                             |
-
 ### RPC 契约编写（uiagent-shared）
 
 - 在 `contracts.ts` 中用抽象类 + `@rpcService()` / `@rpcId(n)` 定义服务。
@@ -118,3 +97,4 @@ Kotlin 包根：`com.github.sandogeek.jetbrainsvibefly`。
 - 不要把 UI↔Agent 契约写进 Kotlin。
 - 不要 force-push、改 git config，或在用户未要求时提交。
 - 不要在文档未写明时自创 Marketplace 发布流程（除 `buildPlugin` 外）。
+- 文档与代码间的对齐默认只改中文文档，只有明确需要修改英文文档的情况才同步英文文档。
