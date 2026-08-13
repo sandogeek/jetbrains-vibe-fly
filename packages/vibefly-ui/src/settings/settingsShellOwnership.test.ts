@@ -114,20 +114,20 @@ describe("SettingsShell ownership under StrictMode remount", () => {
     test("effect-local queue close flushes the old runtime, not the remounted one", async () => {
         type FakeRuntime = {
             staged: unknown[]
-            mutated: unknown[]
+            persisted: unknown[]
             stage: (ops: readonly unknown[]) => void
-            mutate: (ops: readonly unknown[]) => Promise<void>
+            persist: (ops: readonly unknown[]) => Promise<void>
         }
 
         function createFakeRuntime(): FakeRuntime {
             const runtime: FakeRuntime = {
                 staged: [],
-                mutated: [],
+                persisted: [],
                 stage(ops) {
                     runtime.staged.push(...ops)
                 },
-                async mutate(ops) {
-                    runtime.mutated.push(...ops)
+                async persist(ops) {
+                    runtime.persisted.push(...ops)
                 },
             }
             return runtime
@@ -157,14 +157,14 @@ describe("SettingsShell ownership under StrictMode remount", () => {
         // 用 effect 局部捕获关闭旧队列；remount 不得收到该 flush
         await queue1.close()
 
-        expect(runtime1!.mutated).toEqual([setSetting(settingKeys.ui.locale, "zh")])
-        expect(runtime2.mutated).toEqual([])
+        expect(runtime1!.persisted).toEqual([setSetting(settingKeys.ui.locale, "zh")])
+        expect(runtime2.persisted).toEqual([])
 
         // New queue still works independently
         // 新队列仍可独立工作
         queue2.enqueue([setSetting(settingKeys.ui.locale, "en")], {immediate: true})
         await queue2.flush()
-        expect(runtime2.mutated).toEqual([setSetting(settingKeys.ui.locale, "en")])
-        expect(runtime1!.mutated).toHaveLength(1)
+        expect(runtime2.persisted).toEqual([setSetting(settingKeys.ui.locale, "en")])
+        expect(runtime1!.persisted).toHaveLength(1)
     })
 })

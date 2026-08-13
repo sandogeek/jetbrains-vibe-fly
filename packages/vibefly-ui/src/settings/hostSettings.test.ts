@@ -208,4 +208,18 @@ describe("UiSettingsRuntime", () => {
             ui: {locale: "zh"},
         })
     })
+
+    test("persist writes without restaging, so the view stays host-backed until save returns", async () => {
+        const host = new FakeHost()
+        const runtime = new UiSettingsRuntime(host.asHost())
+        await runtime.start(false)
+
+        const saving = runtime.persist([setSetting(settingKeys.ui.locale, "zh")])
+        expect(runtime.getView().settings.ui.locale).toBe("follow_ide")
+        await saving
+
+        expect(host.saves).toHaveLength(1)
+        expect(JSON.parse(host.saves[0]!.vibeflyJson!)).toEqual({ui: {locale: "zh"}})
+        expect(runtime.getView().settings.ui.locale).toBe("zh")
+    })
 })

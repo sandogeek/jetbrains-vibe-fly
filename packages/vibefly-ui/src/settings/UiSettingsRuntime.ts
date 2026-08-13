@@ -86,16 +86,28 @@ export class UiSettingsRuntime {
     }
 
     /**
-     * Persist mutations to Host application scope, then clear matching draft entries.
-     * Fingerprint capture at send time avoids deleting a draft entry that a later
-     * edit overwrote while this save was in flight.
-     * 将变更持久化到 Host application 作用域，再清除匹配的草稿项。
-     * 在发送时捕获指纹，避免删除在本次保存飞行中被后续编辑覆盖的草稿项。
+     * Immediate-write entry for callers that do not go through SettingsMutationQueue
+     * (e.g. chat pin/MRU). Stages first so the view updates before the host save.
+     * 不走 SettingsMutationQueue 的立即写入入口（如聊天 pin/MRU）。
+     * 先 stage，保证视图在 Host 保存前更新。
      */
     mutate(operations: readonly SettingMutation[]): Promise<void> {
+        this.stage(operations)
+        return this.persist(operations)
+    }
+
+    /**
+     * Persist already-staged mutations to Host application scope, then clear
+     * matching draft entries. Does not call stage(); Queue stages on enqueue.
+     * Fingerprint capture at send time avoids deleting a draft entry that a later
+     * edit overwrote while this save was in flight.
+     * 将已暂存的变更持久化到 Host application 作用域，再清除匹配的草稿项。
+     * 不调用 stage()；Queue 在 enqueue 时已经 stage。
+     * 在发送时捕获指纹，避免删除在本次保存飞行中被后续编辑覆盖的草稿项。
+     */
+    persist(operations: readonly SettingMutation[]): Promise<void> {
         if (operations.length === 0) return Promise.resolve()
         const captured = new Map<string, string>()
-        this.stage(operations)
         for (const operation of operations) {
             const id = settingMutationId(operation)
             captured.set(id, operationFingerprint(operation))

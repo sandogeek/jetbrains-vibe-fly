@@ -9,9 +9,11 @@ const DEFAULT_DEBOUNCE_MS = 300
 
 /**
  * Single settings mutation scheduler for the settings shell.
- * Stages immediately for optimistic UI, debounces host saves, and flushes on close.
+ * Queue owns debounce, merge, in-flight ordering, and close flush.
+ * Runtime.stage() is optimistic UI; Runtime.persist() is the host write.
  * 设置壳的唯一设置变更调度器。
- * 立即 stage 以做乐观 UI，防抖写 Host，并在 close 时 flush。
+ * Queue 负责防抖、合并、飞行中写入排序和 close 冲刷。
+ * Runtime.stage() 做乐观 UI；Runtime.persist() 写 Host。
  */
 export class SettingsMutationQueue {
     readonly #runtime: () => UiSettingsRuntime | null
@@ -36,8 +38,8 @@ export class SettingsMutationQueue {
         if (this.#closed || mutations.length === 0) return
         const runtime = this.#runtime()
         if (!runtime) return
-        // Optimistic UI immediately; host save is debounced (or flushed now).
-        // 立即乐观更新 UI；写 Host 走防抖（或立即 flush）。
+        // Optimistic UI immediately; persist() is debounced (or flushed now).
+        // 立即乐观更新 UI；persist() 走防抖（或立即 flush）。
         runtime.stage(mutations)
         this.#pending = mergeSettingMutations(this.#pending, mutations)
         // immediate still goes through flush() so ordering vs an in-flight save is preserved.
@@ -54,10 +56,10 @@ export class SettingsMutationQueue {
     }
 
     /**
-     * Coalesce pending mutations into one host save.
+     * Coalesce pending mutations into one Runtime.persist() (no restage).
      * Reuses the in-flight promise when already flushing, then re-checks `#pending`
      * so mutations enqueued during the save are not dropped (tail recursion).
-     * 将待处理变更合并为一次 Host 保存。
+     * 将待处理变更合并为一次 Runtime.persist()（不再 stage）。
      * 若已在 flush，复用进行中的 promise，再重新检查 `#pending`，
      * 避免保存期间入队的变更被丢弃（尾递归）。
      */
@@ -77,7 +79,7 @@ export class SettingsMutationQueue {
         if (batch.length === 0) return Promise.resolve()
         const runtime = this.#runtime()
         if (!runtime) return Promise.resolve()
-        this.#flushing = runtime.mutate(batch).catch((error) => {
+        this.#flushing = runtime.persist(batch).catch((error) => {
             this.#onError(error)
         }).finally(() => {
             this.#flushing = null
