@@ -58,19 +58,18 @@ export class UiSettingsRuntime {
 
     readonly getSnapshot = (): UiSettingsView | undefined => this.#view
 
-    notify(scope: string, projectRoot: string | null, revision: string): Promise<void> {
+    async notify(scope: string, projectRoot: string | null, revision: string): Promise<void> {
         if (scope !== "application" && scope !== "project") return Promise.resolve()
-        return this.client.notify({scope, projectRoot, revision})
+        await this.client.notify({scope, projectRoot, revision})
     }
 
     /**
      * Returns true when local application revision converged to `revision` (conflict probe).
      * 当本地 application revision 已收敛到 `revision` 时返回 true（冲突探测）。
      */
-    alignApplicationRevision(revision: string): Promise<boolean> {
-        return this.client.syncTo("application", revision).then(
-            () => this.client.getSnapshot("application").revision === revision,
-        )
+    async alignApplicationRevision(revision: string): Promise<boolean> {
+        await this.client.syncTo("application", revision)
+        return this.client.getSnapshot("application").revision === revision
     }
 
     /**
@@ -105,7 +104,7 @@ export class UiSettingsRuntime {
      * 不调用 stage()；Queue 在 enqueue 时已经 stage。
      * 在发送时捕获指纹，避免删除在本次保存飞行中被后续编辑覆盖的草稿项。
      */
-    persist(operations: readonly SettingMutation[]): Promise<void> {
+    async persist(operations: readonly SettingMutation[]): Promise<void> {
         if (operations.length === 0) return Promise.resolve()
         const captured = new Map<string, string>()
         for (const operation of operations) {
