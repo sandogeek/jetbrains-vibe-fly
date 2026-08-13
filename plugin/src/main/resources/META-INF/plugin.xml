@@ -23,11 +23,8 @@
         <postStartupActivity implementation="com.github.sandogeek.jetbrainsvibefly.startup.MyProjectActivity" />
         <notificationGroup id="Vibe Fly" displayType="BALLOON"/>
 
-        <applicationConfigurable
-                parentId="tools"
-                id="vibefly.settings"
-                key="settings.vibefly"
-                instance="com.github.sandogeek.jetbrainsvibefly.settings.VibeflySettingsConfigurable"/>
+        <fileEditorProvider
+                implementation="com.github.sandogeek.jetbrainsvibefly.settings.VibeflySettingsFileEditorProvider"/>
     </extensions>
 
     <actions>

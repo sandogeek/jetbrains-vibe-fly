@@ -4,7 +4,7 @@ import com.github.sandogeek.jetbrainsvibefly.agent.VibeflyAgentService
 import com.github.sandogeek.jetbrainsvibefly.chat.ChatContextDeliveryService
 import com.github.sandogeek.jetbrainsvibefly.chat.ChatWorkspaceState
 import com.github.sandogeek.jetbrainsvibefly.settings.ProjectUi2Host
-import com.github.sandogeek.jetbrainsvibefly.settings.VibeflySettingsConfigurable
+import com.github.sandogeek.jetbrainsvibefly.settings.VibeflySettingsTabService
 import com.github.sandogeek.jetbrainsvibefly.util.Edt
 import com.github.sandogeek.vibefly.jcef.AgentOrigin
 import com.github.sandogeek.vibefly.jcef.VibeflyBrowserPanel
@@ -18,7 +18,6 @@ import com.intellij.openapi.fileChooser.FileChooser
 import com.intellij.openapi.fileChooser.FileChooserDescriptor
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
-import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.vcs.changes.ChangeListManager
@@ -97,8 +96,7 @@ class VibeflyToolWindowFactory : ToolWindowFactory {
             },
             openIdeSettingsHandler = {
                 Edt.run {
-                    ShowSettingsUtil.getInstance()
-                        .showSettingsDialog(project, VibeflySettingsConfigurable::class.java)
+                    VibeflySettingsTabService.getInstance(project).open()
                 }
             },
         )

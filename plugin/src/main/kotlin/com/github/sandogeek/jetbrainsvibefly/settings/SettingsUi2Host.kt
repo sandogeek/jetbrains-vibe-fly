@@ -17,7 +17,7 @@ import java.util.concurrent.atomic.AtomicReference
  * Login reverse-RPC is bridged via [Agent2HostBridge] + optional [Host2UiSettings].
  */
 class SettingsUi2Host(
-    private val project: Project? = null,
+    private val project: Project,
     private val host2UiProvider: () -> Host2Ui? = { null },
     private val host2UiSettingsProvider: () -> Host2UiSettings? = { null },
 ) : Ui2Host by Ui2HostImpl(), Ui2HostSettings, Disposable {
@@ -26,7 +26,7 @@ class SettingsUi2Host(
     private val activeControl = AtomicReference<Host2Agent?>(null)
     private val settingsNotificationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val boundProjectRoot = project
-        ?.takeUnless(Project::isDisposed)
+        .takeUnless(Project::isDisposed)
         ?.let(VibeflyProjectSettingsService::getInstance)
         ?.projectRoot
 

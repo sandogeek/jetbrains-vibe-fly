@@ -13,7 +13,6 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.project.ProjectManager
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -282,7 +281,7 @@ class VibeflyAgentService(private val project: Project) : Disposable {
          * Starts it on demand; never spawns a short-lived one-shot process.
          */
         fun <T> withControlForSettings(
-            project: Project? = null,
+            project: Project,
             timeoutMs: Long = DEFAULT_CONFIG_TIMEOUT_MS,
             operation: String = "settingsControl",
             block: suspend (Host2Agent) -> T,
@@ -291,8 +290,8 @@ class VibeflyAgentService(private val project: Project) : Disposable {
             val startedAt = System.nanoTime()
             fun elapsedMs(): Long = (System.nanoTime() - startedAt) / 1_000_000L
 
-            val target = resolveProject(project)
-                ?: error("No open project available for Host2Agent call ($operation)")
+            val target = project.takeUnless { it.isDisposed }
+                ?: error("Project is disposed for Host2Agent call ($operation)")
             val service = getInstance(target)
             log.info(
                 "$operation start request=$requestId source=project-agent " +
@@ -315,11 +314,6 @@ class VibeflyAgentService(private val project: Project) : Disposable {
                 )
                 throw e
             }
-        }
-
-        private fun resolveProject(preferred: Project?): Project? {
-            preferred?.takeUnless { it.isDisposed }?.let { return it }
-            return ProjectManager.getInstance().openProjects.firstOrNull { !it.isDisposed }
         }
 
     }

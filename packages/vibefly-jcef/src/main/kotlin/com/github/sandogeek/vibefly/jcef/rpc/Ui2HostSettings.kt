@@ -4,7 +4,7 @@ import com.github.sandogeek.simplerpc.annotation.RpcFun
 import com.github.sandogeek.simplerpc.annotation.TsCallKotlin
 
 /**
- * Settings-panel UI → Host methods (IDE Settings only).
+ * Settings-panel UI → Host methods (settings editor tab).
  * Wire service name: Ui2HostSettings.
  */
 @TsCallKotlin

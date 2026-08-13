@@ -48,7 +48,7 @@ interface Ui2HostChat {
     @RpcFun(9)
     suspend fun chatUiReady()
 
-    /** Open IDE Settings → Tools → Vibe Fly. */
+    /** Open the project-bound Vibe Fly settings editor tab. */
     @RpcFun(10)
     suspend fun openIdeSettings()
 }

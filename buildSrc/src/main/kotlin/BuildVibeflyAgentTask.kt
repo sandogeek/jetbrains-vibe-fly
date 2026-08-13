@@ -148,15 +148,31 @@ abstract class BuildVibeflyAgentTask @Inject constructor(
 
         // Hoisted layout so pruneHeavyOptionalRuntime can drop top-level optional heavies
         // the same way the previous npm staging did.
-        File(out, ".npmrc").writeText("node-linker=hoisted\n")
+        // pnpm 11 only reads auth/registry from .npmrc; nodeLinker lives in
+        // pnpm-workspace.yaml (or --config). A staged .npmrc is ignored.
+        val stagedWorkspace = File(out, "pnpm-workspace.yaml")
+        stagedWorkspace.writeText("nodeLinker: hoisted\n")
 
         logger.lifecycle("Installing production vibefly-agent runtime with {} ({})", node, pnpm)
         // Keep optional pi dependencies during install; heavy unused optionals are pruned below.
         // --ignore-workspace: staged tree lives under the monorepo; do not hoist into root workspace.
-        pnpmExec(out, pnpm, node, "install", "--prod", "--ignore-scripts", "--ignore-workspace")
+        pnpmExec(
+            out,
+            pnpm,
+            node,
+            "install",
+            "--prod",
+            "--ignore-scripts",
+            "--ignore-workspace",
+            "--config.nodeLinker=hoisted",
+        )
+        stagedWorkspace.delete()
 
         val nodeModules = File(out, "node_modules")
         pruneHeavyOptionalRuntime(nodeModules)
+        // prepareSandbox follows symbolic links and fails if prune left dangling
+        // pnpm links (e.g. protobufjs → @types/node after @types was dropped).
+        removeDanglingSymlinks(out)
         val strippedBytes = stripNonRuntimeArtifacts(out)
         val sizeBytes = directorySize(out)
         logger.lifecycle(
@@ -386,6 +402,28 @@ abstract class BuildVibeflyAgentTask @Inject constructor(
         pruneForeignOptionalNatives(nodeModules)
         // Gradle Sync cannot follow dangling bin symlinks after prune; agent runs via `node dist/main.js`.
         File(nodeModules, ".bin").takeIf { it.exists() }?.deleteRecursively()
+    }
+
+    /**
+     * pnpm prune leaves nested links whose targets were deleted (types, optional natives).
+     * Gradle Copy / prepareSandbox follows symbolic links and fails on dangling ones.
+     */
+    private fun removeDanglingSymlinks(root: File) {
+        if (!root.isDirectory) return
+        val dangling = ArrayDeque<java.nio.file.Path>()
+        Files.walk(root.toPath()).use { stream ->
+            stream.filter { Files.isSymbolicLink(it) && !Files.exists(it) }
+                .forEach { dangling.add(it) }
+        }
+        var removed = 0
+        for (path in dangling) {
+            if (Files.deleteIfExists(path)) {
+                removed++
+            }
+        }
+        if (removed > 0) {
+            logger.lifecycle("Removed {} dangling symlinks after prune", removed)
+        }
     }
 
     /**
