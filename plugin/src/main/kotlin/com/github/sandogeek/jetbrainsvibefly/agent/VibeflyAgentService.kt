@@ -268,53 +268,11 @@ class VibeflyAgentService(private val project: Project) : Disposable {
 
     companion object {
         private val log = logger<VibeflyAgentService>()
-        private val settingsControlSequence = AtomicLong()
 
         const val DEFAULT_COMMIT_MESSAGE_TIMEOUT_MS: Long = 90_000L
         const val DEFAULT_CONFIG_TIMEOUT_MS: Long = 60_000L
 
         fun getInstance(project: Project): VibeflyAgentService =
             project.getService(VibeflyAgentService::class.java)
-
-        /**
-         * Settings / Host2Agent control calls always use the current project's agent.
-         * Starts it on demand; never spawns a short-lived one-shot process.
-         */
-        fun <T> withControlForSettings(
-            project: Project,
-            timeoutMs: Long = DEFAULT_CONFIG_TIMEOUT_MS,
-            operation: String = "settingsControl",
-            block: suspend (Host2Agent) -> T,
-        ): T {
-            val requestId = settingsControlSequence.incrementAndGet()
-            val startedAt = System.nanoTime()
-            fun elapsedMs(): Long = (System.nanoTime() - startedAt) / 1_000_000L
-
-            val target = project.takeUnless { it.isDisposed }
-                ?: error("Project is disposed for Host2Agent call ($operation)")
-            val service = getInstance(target)
-            log.info(
-                "$operation start request=$requestId source=project-agent " +
-                    "project=${target.name}",
-            )
-            return try {
-                val value = runBlocking {
-                    service.withControl(timeoutMs = timeoutMs, block = block)
-                }
-                log.info(
-                    "$operation done request=$requestId source=project-agent " +
-                        "elapsedMs=${elapsedMs()}",
-                )
-                value
-            } catch (e: Exception) {
-                log.warn(
-                    "$operation failed request=$requestId source=project-agent " +
-                        "elapsedMs=${elapsedMs()}",
-                    e,
-                )
-                throw e
-            }
-        }
-
     }
 }

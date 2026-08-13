@@ -87,10 +87,8 @@ class SettingsUi2Host(
         val webUi = WebProviderLoginUi(host2UiSettingsProvider)
         return try {
             Agent2HostBridge.withUi(webUi) {
-                VibeflyAgentService.withControlForSettings(
-                    project = project,
+                VibeflyAgentService.getInstance(project).withControl(
                     timeoutMs = LOGIN_TIMEOUT_MS,
-                    operation = "loginProvider",
                 ) { control ->
                     activeControl.set(control)
                     try {
@@ -121,10 +119,7 @@ class SettingsUi2Host(
 
     override suspend fun logoutProvider(request: ProviderLogoutRequest): ProviderLogoutResult {
         return try {
-            VibeflyAgentService.withControlForSettings(
-                project = project,
-                operation = "logoutProvider",
-            ) { control ->
+            VibeflyAgentService.getInstance(project).withControl { control ->
                 control.logoutProvider(request)
             }.withHostSnapshot()
         } catch (e: Exception) {

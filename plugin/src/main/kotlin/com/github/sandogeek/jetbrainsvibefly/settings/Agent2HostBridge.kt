@@ -18,7 +18,7 @@ object Agent2HostBridge {
     private val activeUi = AtomicReference<ProviderLoginUi?>(null)
     private val commitProgress = AtomicReference<CommitMessageProgressListener?>(null)
 
-    fun <T> withUi(ui: ProviderLoginUi, block: () -> T): T {
+    suspend fun <T> withUi(ui: ProviderLoginUi, block: suspend () -> T): T {
         val prev = activeUi.getAndSet(ui)
         try {
             return block()

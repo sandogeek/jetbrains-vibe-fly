@@ -26,8 +26,8 @@ English: [agent.en.md](./agent.en.md)
 
 ### 规划（尚未当作已实现）
 
-`docs/setting.md` 中描述过 **独立 settings agent**（IDE 启动后常驻，不依赖 `withControlForSettings`）。当前实现仍是：设置相关
-Providers 操作 **借用某个 project agent**（`withControlForSettings`）。详见 [setting.md](./setting.md)。
+`docs/setting.md` 中描述过 **独立 settings agent**（IDE 启动后常驻）。当前实现仍是：设置相关
+Providers 操作走该 Tab 所属 Project 的 agent（`VibeflyAgentService.withControl`）。详见 [setting.md](./setting.md)。
 
 ## 入口与 I/O
 

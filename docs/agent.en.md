@@ -25,7 +25,7 @@ The Agent is a **Node.js child process** started by the plugin, embedding the [p
 
 ### Planned (not yet treated as implemented)
 
-`docs/setting.md` describes a **standalone settings agent** (stays up after IDE start, not dependent on `withControlForSettings`). Today, settings-related Providers work still **borrows a project agent** (`withControlForSettings`). See [setting.en.md](./setting.en.md).
+`docs/setting.md` describes a **standalone settings agent** (stays up after IDE start). Today, settings-related Providers operations still use the settings tab's project agent (`VibeflyAgentService.withControl`). See [setting.en.md](./setting.en.md).
 
 ## Entry & I/O
 

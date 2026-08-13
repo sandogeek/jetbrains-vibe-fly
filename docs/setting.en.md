@@ -22,7 +22,7 @@ UI → Agent business contracts still live only in `packages/vibefly-uiagent-sha
 - Settings and chat pages consume Host snapshots through the same UI runtime; Agent consumes trusted snapshots through the same shared sync core.
 - All current UI settings writes are fixed to application scope. Typed keys already record legal scopes and support `unset`, but this round does not show Global / Project switching, inheritance source, or “restore inheritance” entry points.
 - Settings WebView starts with `hasProject: false`; Chat WebView with `hasProject: true`. Effective fields such as locale can therefore read project overrides on the chat page; pin / MRU always read the application layer.
-- Provider login lifecycle still uses `withControlForSettings` and reverse RPC; it has not moved to a standalone settings Agent. Provider config and revision convergence are already on the unified UI client.
+- Provider login lifecycle still uses the settings tab's project agent `withControl` and reverse RPC; it has not moved to a standalone settings Agent. Provider config and revision convergence are already on the unified UI client.
 - No read or migration of old IDE XML settings; session / workspace state is also outside this system.
 
 ## Files and scopes
@@ -289,7 +289,7 @@ No migration from IDE XML settings. Host runtime only recognizes JSON files; old
 ## Out of scope this round
 
 - No Global / Project scope switch UI, inheritance source display, or restore-inheritance UI.
-- No migration of Provider login lifecycle; `withControlForSettings`, login reverse RPC, and cancel flow stay as-is.
+- No migration of Provider login lifecycle; login uses the current project agent's `withControl`, and reverse RPC plus cancel stay as-is.
 - No changes to Kotlin Host, SimpleRpc wire contracts, four-file format, revision algorithm, or atomic write protocol.
 - No standalone settings Agent, no old XML migration, and no raw `authJson` for the UI.
 

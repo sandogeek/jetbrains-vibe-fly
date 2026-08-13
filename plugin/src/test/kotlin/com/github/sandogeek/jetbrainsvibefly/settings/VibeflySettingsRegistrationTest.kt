@@ -1,5 +1,6 @@
 package com.github.sandogeek.jetbrainsvibefly.settings
 
+import com.intellij.icons.AllIcons
 import com.intellij.openapi.fileEditor.FileEditorPolicy
 import com.intellij.openapi.fileTypes.UnknownFileType
 import com.intellij.testFramework.LightVirtualFile
@@ -31,6 +32,8 @@ class VibeflySettingsRegistrationTest {
         val text = pluginXml.readText()
         assertTrue(text.contains("fileEditorProvider"))
         assertTrue(text.contains("VibeflySettingsFileEditorProvider"))
+        assertTrue(text.contains("<fileType name=\"VibeflySettings\""))
+        assertTrue(text.contains("com.github.sandogeek.jetbrainsvibefly.settings.VibeflySettingsFileType"))
         assertFalse(text.contains("applicationConfigurable"))
         assertFalse(text.contains("id=\"vibefly.settings\""))
         assertFalse(text.contains("VibeflySettingsConfigurable"))
@@ -50,6 +53,16 @@ class VibeflySettingsRegistrationTest {
         val otherFile = LightVirtualFile("notes.txt", UnknownFileType.INSTANCE, "")
         assertTrue(VibeflySettingsVirtualFile.isSettingsFile(settingsFile))
         assertFalse(VibeflySettingsVirtualFile.isSettingsFile(otherFile))
+    }
+
+    @Test
+    fun testSettingsVirtualFileUsesDedicatedFileTypeIcon() {
+        val settingsFile = VibeflySettingsVirtualFile()
+        assertSame(VibeflySettingsFileType, settingsFile.fileType)
+        assertEquals(VibeflySettingsFileType.NAME, settingsFile.fileType.name)
+        assertEquals(AllIcons.General.Settings, settingsFile.fileType.icon)
+        assertTrue(VibeflySettingsFileType.isMyFileType(settingsFile))
+        assertFalse(VibeflySettingsFileType.isMyFileType(LightVirtualFile("notes.txt")))
     }
 
     @Test
