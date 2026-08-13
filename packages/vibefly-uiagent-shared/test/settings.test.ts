@@ -14,10 +14,16 @@ import {
     type SettingsChanged,
     updateJsonAtPath,
 } from "../src/settings/schema.js"
-import {readSettingFromSnapshot, settingKeys} from "../src/settings/keys.js"
+import {
+    defaultSettingValues,
+    readSettingFromSnapshot,
+    settingKeys,
+    type SettingValuesOf,
+} from "../src/settings/keys.js"
 import {applySettingMutations, setSetting, unsetSetting} from "../src/settings/mutation.js"
 import {
     selectSetting,
+    selectSettings,
     SettingsSyncClient,
     type SettingsDocumentSaveRequest,
     type SettingsSaveOutcome,
@@ -781,6 +787,105 @@ describe("settingKeys declaration tree", () => {
         )
         const missingFallback = settingKeys.modelPreferences.pinnedModelSpecs.decode(undefined)
         assert.equal(Object.is(rejectedFallback, missingFallback), true)
+    })
+})
+
+describe("setting key tree value projection", () => {
+    test("builds mutable defaults from decode fallbacks without sharing frozen arrays", () => {
+        const defaults = defaultSettingValues(settingKeys)
+        assert.deepEqual(defaults, {
+            defaultProvider: "",
+            defaultModel: "",
+            commit: {
+                languageMode: "follow_ide",
+                commitModelSpec: "",
+                useCustomPrompt: false,
+                customPrompt: "",
+            },
+            modelPreferences: {
+                recentModelSpecs: [],
+                pinnedModelSpecs: [],
+            },
+            ui: {locale: "follow_ide"},
+        })
+
+        const frozenFallback = settingKeys.modelPreferences.recentModelSpecs.decode(undefined)
+        assert.equal(Object.isFrozen(frozenFallback), true)
+        assert.equal(Object.is(defaults.modelPreferences.recentModelSpecs, frozenFallback), false)
+        defaults.modelPreferences.recentModelSpecs.push("mutated")
+        assert.deepEqual(settingKeys.modelPreferences.recentModelSpecs.decode(undefined), [])
+        assert.deepEqual(defaultSettingValues(settingKeys.modelPreferences).recentModelSpecs, [])
+
+        type ExpectedCommit = {
+            languageMode: "follow_ide" | "en" | "zh"
+            commitModelSpec: string
+            useCustomPrompt: boolean
+            customPrompt: string
+        }
+        type AssertEqual<Left, Right> =
+            (<Type>() => Type extends Left ? 1 : 2) extends (<Type>() => Type extends Right ? 1 : 2)
+                ? true
+                : false
+        const commitTypesMatch: AssertEqual<SettingValuesOf<typeof settingKeys.commit>, ExpectedCommit> = true
+        assert.equal(commitTypesMatch, true)
+    })
+
+    test("selects a remapped key tree while keeping per-leaf read layers", async () => {
+        const adapter = new MutableAdapter(
+            application(
+                "app-1",
+                {defaultProvider: "application-provider"},
+                {
+                    modelPreferences: {
+                        pinnedModelSpecs: ["application/pinned"],
+                        recentModelSpecs: ["application/recent"],
+                    },
+                    ui: {locale: "en"},
+                },
+            ),
+            project(
+                "project-1",
+                {defaultModel: "project-model"},
+                {
+                    modelPreferences: {
+                        pinnedModelSpecs: ["project/pinned"],
+                        recentModelSpecs: ["project/recent"],
+                    },
+                    ui: {locale: "zh"},
+                },
+            ),
+        )
+        const client = new SettingsSyncClient(adapter)
+        const state = await client.start({hasProject: true})
+        const selected = selectSettings({
+            providers: {
+                defaultProvider: settingKeys.defaultProvider,
+                defaultModel: settingKeys.defaultModel,
+            },
+            commit: settingKeys.commit,
+            modelPreferences: settingKeys.modelPreferences,
+            ui: settingKeys.ui,
+        })(state)
+
+        assert.deepEqual(selected, {
+            providers: {defaultProvider: "application-provider", defaultModel: "project-model"},
+            commit: {
+                languageMode: "follow_ide",
+                commitModelSpec: "",
+                useCustomPrompt: false,
+                customPrompt: "",
+            },
+            modelPreferences: {
+                pinnedModelSpecs: ["application/pinned"],
+                recentModelSpecs: ["application/recent"],
+            },
+            ui: {locale: "zh"},
+        })
+        selected.modelPreferences.pinnedModelSpecs.push("mutated")
+        assert.deepEqual(
+            selectSetting(settingKeys.modelPreferences.pinnedModelSpecs)(state),
+            ["application/pinned"],
+        )
     })
 })
 

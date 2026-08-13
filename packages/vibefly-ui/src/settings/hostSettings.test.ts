@@ -140,6 +140,10 @@ describe("UI settings projection", () => {
             },
             ui: {locale: "zh"},
         })
+
+        const projected = settingsFromState(state)
+        projected.modelPreferences.pinnedModelSpecs.push("mutated")
+        expect(settingsFromState(state).modelPreferences.pinnedModelSpecs).toEqual(["application/pinned"])
     })
 })
 

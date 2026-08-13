@@ -35,6 +35,17 @@ export type SettingKey<T> = {
 
 export type AnySettingKey = SettingKey<any>
 
+/**
+ * Map a `SettingKey<T>` tree to a required, non-null value tree.
+ * Structural `readonly` is stripped; leaf value types are kept as-is.
+ * 将 `SettingKey<T>` 树映射为必填、非空的值树。去掉结构层 readonly，叶子值类型保持不变。
+ */
+export type SettingValuesOf<TTree> = TTree extends SettingKey<infer TValue>
+    ? TValue
+    : TTree extends object
+        ? {-readonly [TKey in keyof TTree]-?: SettingValuesOf<TTree[TKey]>}
+        : never
+
 type ManagedValue<TRule> = TRule extends {readonly __managed: {readonly fallback: infer TValue}}
     ? TValue
     : never
@@ -139,4 +150,41 @@ export const settingKeys = Object.freeze({
 export function cloneSettingValue<T>(value: T): T {
     if (value === undefined) return value
     return cloneJsonValue(value as JsonValue) as T
+}
+
+function isSettingKey(value: unknown): value is AnySettingKey {
+    return Boolean(
+        value
+        && typeof value === "object"
+        && typeof (value as AnySettingKey).decode === "function"
+        && typeof (value as AnySettingKey).encode === "function"
+        && Array.isArray((value as AnySettingKey).path)
+        && typeof (value as AnySettingKey).id === "string",
+    )
+}
+
+/**
+ * Project a key tree into values, cloning each leaf so frozen decode fallbacks stay internal.
+ * 将 key 树投影为值树，并深拷贝每个叶子，避免把冻结的 decode fallback 暴露出去。
+ */
+export function projectSettingValues<TTree>(
+    tree: TTree,
+    readValue: <TValue>(key: SettingKey<TValue>) => TValue,
+): SettingValuesOf<TTree> {
+    if (isSettingKey(tree)) {
+        return cloneSettingValue(readValue(tree)) as SettingValuesOf<TTree>
+    }
+    if (!tree || typeof tree !== "object") {
+        throw new Error("Expected a setting key or key tree")
+    }
+    const projected: Record<string, unknown> = {}
+    for (const [name, node] of Object.entries(tree)) {
+        projected[name] = projectSettingValues(node, readValue)
+    }
+    return projected as SettingValuesOf<TTree>
+}
+
+/** Build defaults from `key.decode(undefined)` as a mutable deep copy. */
+export function defaultSettingValues<TTree>(tree: TTree): SettingValuesOf<TTree> {
+    return projectSettingValues(tree, (key) => key.decode(undefined))
 }

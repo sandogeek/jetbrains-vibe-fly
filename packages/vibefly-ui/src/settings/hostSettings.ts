@@ -1,6 +1,6 @@
 import {
-    selectSetting,
     type SafeSettingsSnapshot,
+    selectSettings,
     type SettingMutation,
     settingKeys,
     type SettingsChanged,
@@ -10,7 +10,7 @@ import {
     setSetting,
 } from "@vibefly/uiagent-shared"
 import type {UiSettingsSnapshot} from "../generated/rpc"
-import {type IdeSettings, type ModelPreferences} from "./settingsStore"
+import {ideSettingKeys, type IdeSettings, type ModelPreferences} from "./settingsStore"
 
 const SETTINGS_FILES = new Set<string>([
     "settings.json",
@@ -79,25 +79,7 @@ export function settingsChanged(
 }
 
 export function settingsFromState(state: SettingsSyncState<SafeSettingsSnapshot>): IdeSettings {
-    return {
-        providers: {
-            defaultProvider: selectSetting(settingKeys.defaultProvider)(state),
-            defaultModel: selectSetting(settingKeys.defaultModel)(state),
-        },
-        commit: {
-            languageMode: selectSetting(settingKeys.commit.languageMode)(state),
-            commitModelSpec: selectSetting(settingKeys.commit.commitModelSpec)(state),
-            useCustomPrompt: selectSetting(settingKeys.commit.useCustomPrompt)(state),
-            customPrompt: selectSetting(settingKeys.commit.customPrompt)(state),
-        },
-        modelPreferences: {
-            recentModelSpecs: [...selectSetting(settingKeys.modelPreferences.recentModelSpecs)(state)],
-            pinnedModelSpecs: [...selectSetting(settingKeys.modelPreferences.pinnedModelSpecs)(state)],
-        },
-        ui: {
-            locale: selectSetting(settingKeys.ui.locale)(state),
-        },
-    }
+    return selectSettings(ideSettingKeys)(state)
 }
 
 export function modelPreferenceMutations(preferences: ModelPreferences): SettingMutation[] {

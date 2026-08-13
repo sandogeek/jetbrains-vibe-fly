@@ -6,7 +6,7 @@ import {
     type SettingsChanged,
     type SettingsScope,
 } from "./schema.js"
-import type {SettingKey} from "./keys.js"
+import {projectSettingValues, type SettingKey, type SettingValuesOf} from "./keys.js"
 import {applySettingMutations, type SettingMutation} from "./mutation.js"
 
 export type SettingsDocumentSaveRequest = {
@@ -284,5 +284,11 @@ export function selectSetting<TSnapshot extends SafeSettingsSnapshot, TValue>(ke
             current = (current as Record<string, unknown>)[part]
         }
         return key.decode(current as never)
+    }
+}
+
+export function selectSettings<TSnapshot extends SafeSettingsSnapshot, TTree>(tree: TTree) {
+    return (state: SettingsSyncState<TSnapshot>): SettingValuesOf<TTree> => {
+        return projectSettingValues(tree, (key) => selectSetting(key)(state))
     }
 }

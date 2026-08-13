@@ -1,34 +1,23 @@
-import type {VibeflyCommitSettings, VibeflyModelPreferences, VibeflyUiSettings,} from "@vibefly/uiagent-shared"
+import {defaultSettingValues, settingKeys, type SettingValuesOf} from "@vibefly/uiagent-shared"
 import {bundledCatalog, type BundledCatalog} from "./catalog"
 import type {ProviderSnapshot, ProvidersSnapshot} from "./providerSnapshots"
 
 /**
- * Drop JsonObject index signature; make known keys required and non-null for form state.
- * 去掉 JsonObject 索引签名；将已知键设为必填且非空，供表单状态使用。
+ * Unique UI grouping of typed keys. View-model types and defaults are derived from this tree.
+ * 唯一的 UI key 映射树。视图模型类型与默认值都从这棵树推导。
  */
-type FormOf<T> = {
-    [K in keyof T as string extends K ? never : K]-?: Exclude<T[K], null | undefined>
-}
+export const ideSettingKeys = {
+    providers: {
+        defaultProvider: settingKeys.defaultProvider,
+        defaultModel: settingKeys.defaultModel,
+    },
+    commit: settingKeys.commit,
+    modelPreferences: settingKeys.modelPreferences,
+    ui: settingKeys.ui,
+} as const
 
-/**
- * Pi settings.json fields edited in the providers UI.
- * Providers UI 中编辑的 Pi settings.json 字段。
- */
-export type ProvidersForm = {
-    defaultProvider: string
-    defaultModel: string
-}
-
-export type CommitForm = FormOf<VibeflyCommitSettings>
-export type ModelPreferences = FormOf<VibeflyModelPreferences>
-export type UiForm = FormOf<VibeflyUiSettings>
-
-export type IdeSettings = {
-    providers: ProvidersForm
-    commit: CommitForm
-    modelPreferences: ModelPreferences
-    ui: UiForm
-}
+export type IdeSettings = SettingValuesOf<typeof ideSettingKeys>
+export type ModelPreferences = IdeSettings["modelPreferences"]
 
 export type SettingsState = {
     snapshot: ProvidersSnapshot | null
@@ -39,25 +28,7 @@ export type SettingsState = {
 }
 
 export function emptySettings(): IdeSettings {
-    return {
-        providers: {
-            defaultProvider: "",
-            defaultModel: "",
-        },
-        commit: {
-            languageMode: "follow_ide",
-            commitModelSpec: "",
-            useCustomPrompt: false,
-            customPrompt: "",
-        },
-        modelPreferences: {
-            recentModelSpecs: [],
-            pinnedModelSpecs: [],
-        },
-        ui: {
-            locale: "follow_ide",
-        },
-    }
+    return defaultSettingValues(ideSettingKeys)
 }
 
 export function snapshotProviders(snapshot: ProvidersSnapshot | null): ProviderSnapshot[] {

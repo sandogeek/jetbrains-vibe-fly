@@ -1,6 +1,6 @@
 import {type SettingMutation, settingKeys, setSetting} from "@vibefly/uiagent-shared"
 import {applyUiLocale, useAppTranslation} from "../i18n"
-import {type IdeSettings, type UiForm} from "./settingsStore"
+import {type IdeSettings} from "./settingsStore"
 import type {SettingsMutateOptions} from "./settingsMutationQueue"
 
 export type GeneralPageProps = {
@@ -12,7 +12,7 @@ export type GeneralPageProps = {
 export function GeneralPage(props: GeneralPageProps) {
     const {t} = useAppTranslation(["settings"])
     const locale = props.settings.ui?.locale ?? "follow_ide"
-    const onLocale = (value: UiForm["locale"]) => {
+    const onLocale = (value: IdeSettings["ui"]["locale"]) => {
         applyUiLocale(value)
         props.onMutate([setSetting(settingKeys.ui.locale, value)])
     }
