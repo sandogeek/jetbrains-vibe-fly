@@ -5,6 +5,8 @@
 
 相关文档：[architecture.md](./architecture.md)、[rpc.md](./rpc.md)、[agent.md](./agent.md)。
 
+English: [chat-messages.en.md](./chat-messages.en.md)
+
 ## 1. 三阶段流水线
 
 ```text

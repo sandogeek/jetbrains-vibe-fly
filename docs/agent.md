@@ -3,6 +3,8 @@
 Agent 是插件拉起的 **Node.js 子进程**，内嵌 [pi](https://github.com/earendil-works/pi) 编码会话引擎。包：
 `packages/vibefly-agent`（`@vibefly/agent`）。
 
+English: [agent.en.md](./agent.en.md)
+
 ## 职责边界
 
 | 面     | 协议                         | 做什么                                                               |

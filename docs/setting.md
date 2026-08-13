@@ -2,6 +2,8 @@
 
 本文描述当前设置系统及设置消费层的实现边界。Host 集中落盘、四文件布局、revision 协议和凭据隔离已经落地；本文同时标明本轮未提供的产品能力。
 
+English: [setting.en.md](./setting.en.md)
+
 ## 目标与约束
 
 1. Host 是 application / project 配置文件的唯一落盘方，并持有两个作用域的内存快照。

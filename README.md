@@ -4,6 +4,8 @@
 
 ![Build](https://github.com/sandogeek/jetbrains-vibe-fly/workflows/Build/badge.svg)
 
+English: [README.en.md](./README.en.md)
+
 基于 [pi](https://github.com/earendil-works/pi) 引擎，在 IDE 内提供聊天式编码助手：多会话对话、代码上下文注入、分级工具审批，以及 AI 生成 Commit Message。
 
 ## 功能
@@ -132,9 +134,9 @@ classpath scheme（`http://vibefly/`）无法代理 WebSocket，开发时让 JCE
 
 ### 文档
 
-- [docs/](./docs/README.md) — 架构、开发、RPC、Agent、设置
-- [packages/vibefly-agent](./packages/vibefly-agent/README.md)
-- [packages/vibefly-ui](./packages/vibefly-ui/README.md)
+- [docs/](./docs/README.md) — 架构、开发、RPC、Agent、设置（[English](./docs/README.en.md)）
+- [packages/vibefly-agent](./packages/vibefly-agent/README.md) · [English](./packages/vibefly-agent/README.en.md)
+- [packages/vibefly-ui](./packages/vibefly-ui/README.md) · [English](./packages/vibefly-ui/README.en.md)
 - [packages/vibefly-uiagent-shared](./packages/vibefly-uiagent-shared/README.md) · [中文](./packages/vibefly-uiagent-shared/README.zh-CN.md)
 - [packages/vibefly-simplerpc/SimpleRpc.md](./packages/vibefly-simplerpc/SimpleRpc.md)
 

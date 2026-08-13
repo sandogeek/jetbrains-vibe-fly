@@ -64,6 +64,8 @@ export function SettingsShell() {
         // Effect-local ownership. Shared refs/state are only cleared when they still
         // point at these instances — required under StrictMode (setup → cleanup → setup)
         // because queue.close() finishes asynchronously after the next setup.
+        // Effect 局部所有权。共享 ref/state 仅在仍指向这些实例时才清除——
+        // StrictMode（setup → cleanup → setup）下必需，因为 queue.close() 在下次 setup 之后才异步结束。
         let runtime: UiSettingsRuntime | null = null
         let providers: UiProviderSettingsClient | null = null
         let ui2HostInstance: Ui2Host | null = null
@@ -133,6 +135,7 @@ export function SettingsShell() {
                 const nextRuntime = new UiSettingsRuntime(host)
                 const nextProviders = new UiProviderSettingsClient(settingsHost, nextRuntime, state.catalog)
                 // Install before awaits so Host settingsChanged can reach this effect's runtime.
+                // 在 await 之前安装，以便 Host 的 settingsChanged 能到达本 effect 的 runtime。
                 runtime = nextRuntime
                 providers = nextProviders
                 if (!cancelled) {
@@ -175,6 +178,7 @@ export function SettingsShell() {
         return () => {
             cancelled = true
             // Sync teardown: safe under StrictMode because cleanup runs before the next setup.
+            // 同步拆除：StrictMode 下安全，因为 cleanup 在下次 setup 之前执行。
             unsubscribeProviderRefresh?.()
             unsubscribeProviderRefresh = undefined
             unbindConsole?.()
@@ -184,6 +188,8 @@ export function SettingsShell() {
             }
             // Flush this effect's queue, then close only its peer and drop shared ownership
             // when identity still matches (do not wipe the remounted effect's runtime).
+            // 冲刷本 effect 的队列，再仅关闭其 peer，并在身份仍匹配时放弃共享所有权
+            // （不要抹掉已 remount 的 effect 的 runtime）。
             void queue.close().finally(() => {
                 peerClose?.()
                 releaseSettingsShellOwnership({

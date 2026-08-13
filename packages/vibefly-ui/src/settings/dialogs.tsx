@@ -124,6 +124,7 @@ export function CustomProviderDialog({existing, catalogIds, existingCustomIds, o
             return
         }
         // advanced → basic: if JSON is dirty, try to parse into draft
+        // 高级 → 基础：若 JSON 已脏，尝试解析回草稿
         if (jsonDirty) {
             const validated = validateConfigJson(jsonText)
             if (!validated.ok) {

@@ -1,5 +1,7 @@
 # 开发指南
 
+English: [development.en.md](./development.en.md)
+
 ## 前置条件
 
 - JDK **21+**

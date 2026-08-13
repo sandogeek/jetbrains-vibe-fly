@@ -63,14 +63,20 @@ export class UiSettingsRuntime {
         return this.client.notify({scope, projectRoot, revision})
     }
 
-    /** Returns true when local application revision converged to `revision` (conflict probe). */
+    /**
+     * Returns true when local application revision converged to `revision` (conflict probe).
+     * 当本地 application revision 已收敛到 `revision` 时返回 true（冲突探测）。
+     */
     alignApplicationRevision(revision: string): Promise<boolean> {
         return this.client.syncTo("application", revision).then(
             () => this.client.getSnapshot("application").revision === revision,
         )
     }
 
-    /** Apply mutations to the local draft only (optimistic UI, no host write). */
+    /**
+     * Apply mutations to the local draft only (optimistic UI, no host write).
+     * 仅将变更应用到本地草稿（乐观 UI，不写 Host）。
+     */
     stage(operations: readonly SettingMutation[]): void {
         for (const operation of operations) {
             const id = settingMutationId(operation)
@@ -83,6 +89,8 @@ export class UiSettingsRuntime {
      * Persist mutations to Host application scope, then clear matching draft entries.
      * Fingerprint capture at send time avoids deleting a draft entry that a later
      * edit overwrote while this save was in flight.
+     * 将变更持久化到 Host application 作用域，再清除匹配的草稿项。
+     * 在发送时捕获指纹，避免删除在本次保存飞行中被后续编辑覆盖的草稿项。
      */
     mutate(operations: readonly SettingMutation[]): Promise<void> {
         if (operations.length === 0) return Promise.resolve()
@@ -93,6 +101,7 @@ export class UiSettingsRuntime {
             captured.set(id, operationFingerprint(operation))
         }
         // Settings shell always saves application scope (project overrides are separate).
+        // 设置壳始终保存 application 作用域（项目级覆盖另行处理）。
         return this.client.mutate("application", operations).then((result) => {
             if (!result.ok) throw new Error(result.error ?? "Settings save failed")
             for (const [id, fingerprint] of captured) {
@@ -110,7 +119,10 @@ export class UiSettingsRuntime {
         })
     }
 
-    /** Recompute view from host state + in-memory draft overlay. */
+    /**
+     * Recompute view from host state + in-memory draft overlay.
+     * 根据 Host 状态 + 内存草稿叠加层重新计算视图。
+     */
     #updateView(state: SettingsSyncState<SafeSettingsSnapshot>): void {
         const documents = applySettingMutations(state.application, [...this.#draft.values()])
         const application = {
@@ -135,7 +147,10 @@ export class UiSettingsRuntime {
 const subscribeUnavailable = () => () => undefined
 const snapshotUnavailable = () => undefined
 
-/** React projection over the same runtime used by imperative Host notifications. */
+/**
+ * React projection over the same runtime used by imperative Host notifications.
+ * 同一 Runtime 的 React 投影，与命令式 Host 通知共用实例。
+ */
 export function useUiSettingsView(
     runtime: UiSettingsRuntime | null,
 ): UiSettingsView | undefined {

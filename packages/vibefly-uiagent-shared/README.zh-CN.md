@@ -1,5 +1,7 @@
 # UI-Agent 共享契约
 
+中文 | [English](./README.md)
+
 RPC 契约以抽象类的形式编写在 `src/contracts.ts` 中。
 用 `@rpcService()` 标记每个服务，并用稳定的 `@rpcId(...)` 标记每个方法：
 

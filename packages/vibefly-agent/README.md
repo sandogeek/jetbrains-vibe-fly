@@ -1,5 +1,7 @@
 # @vibefly/agent
 
+中文 | [English](./README.en.md)
+
 Vibe Fly Node agent：对接 [pi](https://github.com/earendil-works/pi)（`@earendil-works/pi-coding-agent`），经 SimpleRpc stdio 与 JVM 插件通信。
 
 ## 职责

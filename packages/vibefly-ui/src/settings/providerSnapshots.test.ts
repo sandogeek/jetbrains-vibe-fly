@@ -88,6 +88,7 @@ describe("mergeProvidersSnapshot", () => {
         expect(custom?.configJson).toContain("X-A")
         expect(custom?.baseUrl).toBe("https://user:password@example.com/v1?token=secret")
         // auth.json contents are never in the RPC snapshot
+        // auth.json 内容从不出现在 RPC snapshot 中
         const serialized = JSON.stringify(snapshot)
         expect(serialized).not.toContain("super-secret-from-auth")
     })

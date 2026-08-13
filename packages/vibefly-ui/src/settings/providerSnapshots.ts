@@ -43,7 +43,10 @@ function runtimeSnapshot(
     }
 }
 
-/** Merge immutable generated metadata with mutable state returned by RPC. */
+/**
+ * Merge immutable generated metadata with mutable state returned by RPC.
+ * 将不可变的生成元数据与 RPC 返回的可变状态合并。
+ */
 export function mergeProvidersSnapshot(
     snapshot: RpcProvidersSnapshot | null | undefined,
     catalog: BundledCatalog,

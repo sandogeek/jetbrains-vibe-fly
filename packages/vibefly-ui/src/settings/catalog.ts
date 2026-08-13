@@ -33,6 +33,7 @@ const EMPTY: BundledCatalog = {
 }
 
 // PackedModel tuple: [id, name, flags, contextWindow, inputCost, outputCost]
+// PackedModel 元组：[id, name, flags, contextWindow, inputCost, outputCost]
 const MFLAG_VISION = 1
 const MFLAG_REASONING = 2
 const MFLAG_TOOLS_UNSUPPORTED = 4
@@ -59,6 +60,7 @@ function indexCatalog(raw: {
   const providerRank = new Map<string, number>()
   providerOrder.forEach((id, i) => providerRank.set(id, i))
   // Providers missing from providerOrder get stable ranks after the ordered list.
+  // 未出现在 providerOrder 中的 Provider 在有序列表之后获得稳定 rank。
   for (const p of providers) {
     if (!providerRank.has(p.id)) {
       providerRank.set(p.id, providerOrder.length + providerRank.size)
@@ -67,7 +69,10 @@ function indexCatalog(raw: {
   return {providerOrder, providers, providerRank}
 }
 
-/** Immutable provider metadata compiled into the UI bundle (no model rows). */
+/**
+ * Immutable provider metadata compiled into the UI bundle (no model rows).
+ * 编译进 UI bundle 的不可变 Provider 元数据（不含模型行）。
+ */
 export const bundledCatalog = indexCatalog(generatedCatalog)
 
 export function providerRank(catalog: BundledCatalog, providerId: string): number {
@@ -81,7 +86,10 @@ export function catalogProviderIds(catalog: BundledCatalog): Set<string> {
 const modelCache = new Map<string, CatalogModel[]>()
 const modelInflight = new Map<string, Promise<CatalogModel[]>>()
 
-/** Load packed models for one catalog provider (Vite-split chunk). Cached. */
+/**
+ * Load packed models for one catalog provider (Vite-split chunk). Cached.
+ * 加载单个 catalog Provider 的打包模型（Vite 分包）。带缓存。
+ */
 export function loadCatalogModels(providerId: string): Promise<CatalogModel[]> {
   const cached = modelCache.get(providerId)
   if (cached) return Promise.resolve(cached)
@@ -111,7 +119,10 @@ export function loadCatalogModels(providerId: string): Promise<CatalogModel[]> {
   return pending
 }
 
-/** Load models for the given provider ids (typically connected catalog providers). */
+/**
+ * Load models for the given provider ids (typically connected catalog providers).
+ * 按给定 Provider id 加载模型（通常为已连接的 catalog Provider）。
+ */
 export async function loadCatalogModelsForProviders(
     providerIds: readonly string[],
 ): Promise<Map<string, CatalogModel[]>> {

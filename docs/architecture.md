@@ -2,6 +2,8 @@
 
 口号： *Vibe coding on the fly*。基于 [pi](https://github.com/earendil-works/pi) 引擎的 JetBrains IDE 优先 vibe coding 插件。
 
+English: [architecture.en.md](./architecture.en.md)
+
 ## 总览
 
 ```text

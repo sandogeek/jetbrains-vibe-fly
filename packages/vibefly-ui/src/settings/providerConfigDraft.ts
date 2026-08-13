@@ -1,4 +1,7 @@
-/** Full Provider entry draft: Basic form state ↔ Advanced JSON. */
+/**
+ * Full Provider entry draft: Basic form state ↔ Advanced JSON.
+ * 完整 Provider 条目草稿：基础表单状态 ↔ 高级 JSON。
+ */
 
 export const API_PRESETS = [
     "openai-completions",
@@ -26,7 +29,10 @@ export type ModelConfigDraft = {
     headers: Record<string, string>
     compat: Record<string, unknown> | null
     thinkingLevelMap: Record<string, unknown> | null
-    /** Unknown model-level fields preserved on round-trip. */
+    /**
+     * Unknown model-level fields preserved on round-trip.
+     * 往返时保留的未知模型级字段。
+     */
     extra: Record<string, unknown>
 }
 
@@ -37,7 +43,10 @@ export type ProviderConfigDraft = {
     headers: Record<string, string>
     compat: Record<string, unknown> | null
     models: ModelConfigDraft[]
-    /** Unknown provider-level fields (including apiKey, modelOverrides, name, …). */
+    /**
+     * Unknown provider-level fields (including apiKey, modelOverrides, name, …).
+     * 未知 Provider 级字段（含 apiKey、modelOverrides、name 等）。
+     */
     extra: Record<string, unknown>
 }
 
@@ -327,7 +336,10 @@ export type ParsedProviderModel = {
     api: string | null
 }
 
-/** Extract model list from a provider configJson for pickers / list views. */
+/**
+ * Extract model list from a provider configJson for pickers / list views.
+ * 从 Provider 的 configJson 提取模型列表，供选择器 / 列表视图使用。
+ */
 export function modelsFromConfigJson(configJson: string | null | undefined): ParsedProviderModel[] {
     if (!configJson?.trim()) return []
     try {

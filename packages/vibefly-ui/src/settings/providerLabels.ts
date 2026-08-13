@@ -1,4 +1,7 @@
-/** Display names aligned with ProviderUiHelpers (Kotlin). */
+/**
+ * Display names aligned with ProviderUiHelpers (Kotlin).
+ * 与 ProviderUiHelpers（Kotlin）对齐的显示名。
+ */
 const DISPLAY_NAMES: Record<string, string> = {
     openai: "OpenAI",
     anthropic: "Anthropic",
@@ -28,7 +31,10 @@ const DISPLAY_NAMES: Record<string, string> = {
     "kimi-coding": "Kimi Coding",
 }
 
-/** English strings aligned with VibeflyBundle.properties provider.description.* */
+/**
+ * English strings aligned with VibeflyBundle.properties provider.description.*
+ * 与 VibeflyBundle.properties 中 provider.description.* 对齐的英文字符串。
+ */
 const DESCRIPTIONS: Record<string, string> = {
     openai: "GPT models via OpenAI API",
     anthropic: "Direct access to Claude models",

@@ -8,7 +8,10 @@ export type ClassifiedProviders = {
     popular: ProviderSnapshot[]
 }
 
-/** Connected = usable for default model / agent traffic. */
+/**
+ * Connected = usable for default model / agent traffic.
+ * 已连接 = 可用于默认模型 / Agent 流量。
+ */
 export function isConnected(snap: ProviderSnapshot): boolean {
     if (!snap.isCatalog) return true
     const cred = snap.credential

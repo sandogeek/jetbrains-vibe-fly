@@ -44,7 +44,10 @@ function safeDiagnostics(raw: UiSettingsSnapshot["diagnostics"]): SettingsDiagno
     return diagnostics
 }
 
-/** Normalize the WebView-safe wire projection without exposing agent-only documents. */
+/**
+ * Normalize the WebView-safe wire projection without exposing agent-only documents.
+ * 规范化 WebView 安全的线传投影，不暴露仅 Agent 可见的文档。
+ */
 export function safeUiSettingsSnapshot(raw: UiSettingsSnapshot): SafeSettingsSnapshot {
     const common = {
         settingsJson: normalizeJsonObjectDocument(raw.settingsJson),

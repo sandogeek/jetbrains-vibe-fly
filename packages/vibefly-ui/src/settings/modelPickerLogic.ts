@@ -252,7 +252,10 @@ export function buildEntries(
     return out
 }
 
-/** Connected catalog provider ids that need a dynamic model chunk. */
+/**
+ * Connected catalog provider ids that need a dynamic model chunk.
+ * 需要动态模型分包的已连接 catalog Provider id。
+ */
 export function connectedCatalogProviderIds(providers: ProviderSnapshot[]): string[] {
     return classifyProviders(providers)
         .connected.filter((snap) => snap.isCatalog)
@@ -314,7 +317,10 @@ export function tokenizeQuery(query: string): QueryToken[] {
     return out
 }
 
-/** Match score tiers: exact 100, prefix 60, word-boundary 40, substring 20. */
+/**
+ * Match score tiers: exact 100, prefix 60, word-boundary 40, substring 20.
+ * 匹配分数档：精确 100、前缀 60、词边界 40、子串 20。
+ */
 function matchField(field: string, token: string): number | null {
     if (!token) return 100
     if (field === token) return 100
@@ -369,14 +375,20 @@ export function scoreEntry(entry: ModelPickerEntry, tokens: QueryToken[]): numbe
     return total
 }
 
-/** Substring match against EN/ZH labels for the synthetic "Follow default model" row. */
+/**
+ * Substring match against EN/ZH labels for the synthetic "Follow default model" row.
+ * 对合成「跟随默认模型」行的中英文标签做子串匹配。
+ */
 function matchesFollowDefault(tokens: QueryToken[]): boolean {
     if (tokens.length === 0) return true
     const labels = ["follow", "default", "model", "follow default model", "跟随", "默认", "默认模型", "跟随默认模型"]
     return tokens.every((t) => labels.some((label) => label.includes(t.raw)))
 }
 
-/** Substring match against EN/ZH labels for the synthetic "No default model" row. */
+/**
+ * Substring match against EN/ZH labels for the synthetic "No default model" row.
+ * 对合成「无默认模型」行的中英文标签做子串匹配。
+ */
 function matchesNoDefault(tokens: QueryToken[]): boolean {
     if (tokens.length === 0) return true
     const labels = ["none", "no default", "no default model", "无默认", "无默认模型", "清除"]
@@ -572,7 +584,10 @@ export function listProviders(entries: ModelPickerEntry[]): ProviderOption[] {
         .map((e) => ({id: e.providerId, label: e.providerLabel}))
 }
 
-/** Local MRU update (cap 8, dedupe front). */
+/**
+ * Local MRU update (cap 8, dedupe front).
+ * 本地 MRU 更新（上限 8，去重并置前）。
+ */
 export function recordUsed(recent: string[], spec: string): string[] {
     const key = spec.trim()
     if (!key) return recent

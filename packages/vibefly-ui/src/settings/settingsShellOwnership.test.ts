@@ -25,6 +25,9 @@ function createStateSlot<T>(initial: T): {
  * Models StrictMode mount lifecycle for the settings shell:
  * setup → cleanup (async queue.close finally) → setup.
  * The old finally must not clear the remounted effect's runtime / host.
+ * 模拟设置壳在 StrictMode 下的挂载生命周期：
+ * setup → cleanup（异步 queue.close finally）→ setup。
+ * 旧的 finally 不得清除已 remount 的 effect 的 runtime / host。
  */
 describe("SettingsShell ownership under StrictMode remount", () => {
     test("async cleanup from first mount does not wipe second mount ownership", async () => {
@@ -34,6 +37,7 @@ describe("SettingsShell ownership under StrictMode remount", () => {
         const ui2Host = createStateSlot<Ui2Host | null>(null)
 
         // Mount 1 setup
+        // 第一次挂载 setup
         const runtime1 = {id: "runtime-1"} as unknown as UiSettingsRuntime
         const providers1 = {id: "providers-1"} as unknown as UiProviderSettingsClient
         const host1 = {id: "host-1"} as unknown as Ui2Host
@@ -43,6 +47,7 @@ describe("SettingsShell ownership under StrictMode remount", () => {
         ui2Host.set(host1)
 
         // Mount 1 cleanup schedules async ownership release (after queue.close)
+        // 第一次挂载 cleanup 调度异步所有权释放（queue.close 之后）
         let peer1Closed = false
         const closeMount1 = Promise.resolve().then(() => {
             peer1Closed = true
@@ -58,6 +63,7 @@ describe("SettingsShell ownership under StrictMode remount", () => {
         })
 
         // Mount 2 setup (StrictMode remount) — installs before mount1 finally
+        // 第二次挂载 setup（StrictMode remount）——在 mount1 finally 之前安装
         const runtime2 = {id: "runtime-2"} as unknown as UiSettingsRuntime
         const providers2 = {id: "providers-2"} as unknown as UiProviderSettingsClient
         const host2 = {id: "host-2"} as unknown as Ui2Host
@@ -128,6 +134,7 @@ describe("SettingsShell ownership under StrictMode remount", () => {
         }
 
         // Mount 1: local runtime + queue (mirrors SettingsShell effect locals)
+        // 第一次挂载：局部 runtime + 队列（镜像 SettingsShell effect 局部变量）
         let runtime1: FakeRuntime | null = createFakeRuntime()
         const queue1 = new SettingsMutationQueue(
             () => runtime1 as unknown as UiSettingsRuntime | null,
@@ -137,6 +144,7 @@ describe("SettingsShell ownership under StrictMode remount", () => {
         queue1.enqueue([setSetting(settingKeys.ui.locale, "zh")])
 
         // Mount 1 cleanup + Mount 2 setup (StrictMode)
+        // 第一次 cleanup + 第二次 setup（StrictMode）
         const runtime2 = createFakeRuntime()
         let runtime2Local: FakeRuntime | null = runtime2
         const queue2 = new SettingsMutationQueue(
@@ -146,12 +154,14 @@ describe("SettingsShell ownership under StrictMode remount", () => {
         )
 
         // Close old queue with effect-local capture; remount must not receive the flush
+        // 用 effect 局部捕获关闭旧队列；remount 不得收到该 flush
         await queue1.close()
 
         expect(runtime1!.mutated).toEqual([setSetting(settingKeys.ui.locale, "zh")])
         expect(runtime2.mutated).toEqual([])
 
         // New queue still works independently
+        // 新队列仍可独立工作
         queue2.enqueue([setSetting(settingKeys.ui.locale, "en")], {immediate: true})
         await queue2.flush()
         expect(runtime2.mutated).toEqual([setSetting(settingKeys.ui.locale, "en")])

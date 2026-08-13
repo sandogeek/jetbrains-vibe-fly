@@ -10,6 +10,8 @@ const DEFAULT_DEBOUNCE_MS = 300
 /**
  * Single settings mutation scheduler for the settings shell.
  * Stages immediately for optimistic UI, debounces host saves, and flushes on close.
+ * 设置壳的唯一设置变更调度器。
+ * 立即 stage 以做乐观 UI，防抖写 Host，并在 close 时 flush。
  */
 export class SettingsMutationQueue {
     readonly #runtime: () => UiSettingsRuntime | null
@@ -35,9 +37,11 @@ export class SettingsMutationQueue {
         const runtime = this.#runtime()
         if (!runtime) return
         // Optimistic UI immediately; host save is debounced (or flushed now).
+        // 立即乐观更新 UI；写 Host 走防抖（或立即 flush）。
         runtime.stage(mutations)
         this.#pending = mergeSettingMutations(this.#pending, mutations)
         // immediate still goes through flush() so ordering vs an in-flight save is preserved.
+        // immediate 仍走 flush()，以保持与进行中保存的顺序。
         if (options?.immediate) {
             void this.flush()
             return
@@ -53,6 +57,9 @@ export class SettingsMutationQueue {
      * Coalesce pending mutations into one host save.
      * Reuses the in-flight promise when already flushing, then re-checks `#pending`
      * so mutations enqueued during the save are not dropped (tail recursion).
+     * 将待处理变更合并为一次 Host 保存。
+     * 若已在 flush，复用进行中的 promise，再重新检查 `#pending`，
+     * 避免保存期间入队的变更被丢弃（尾递归）。
      */
     flush(): Promise<void> {
         if (this.#timer) {

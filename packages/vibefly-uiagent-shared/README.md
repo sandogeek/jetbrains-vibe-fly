@@ -1,5 +1,7 @@
 # UI-Agent shared contracts
 
+English | [中文](./README.zh-CN.md)
+
 RPC contracts are authored as abstract classes in `src/contracts.ts`.
 Mark each service with `@rpcService()` and each method with a stable `@rpcId(...)`:
 

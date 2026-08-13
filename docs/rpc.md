@@ -2,6 +2,8 @@
 
 所有跨进程 / 跨 WebView 通信统一走 **SimpleRpc**（`packages/vibefly-simplerpc`），不另起第二套 RPC 栈。
 
+English: [rpc.en.md](./rpc.en.md)
+
 服务名约定： **`Caller2Callee`**（如 `Ui2Host`、`Host2Ui`、`Ui2Agent`、`Agent2Ui`、`Host2Agent`）。
 
 ## 通道对照

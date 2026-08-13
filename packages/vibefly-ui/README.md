@@ -1,5 +1,7 @@
 # @vibefly/ui
 
+中文 | [English](./README.en.md)
+
 Vibe Fly WebView 前端（Vite + React + assistant-ui + Streamdown + Tailwind CSS v4）。
 
 构建产物由 `vibefly-jcef` 的自定义 Scheme（`http://vibefly/`）从 classpath 提供给 JCEF，保留 Vite 默认多 chunk / 代码分割，无需 singlefile 内联。

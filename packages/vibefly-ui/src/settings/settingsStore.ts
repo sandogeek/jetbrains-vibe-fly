@@ -2,12 +2,18 @@ import type {VibeflyCommitSettings, VibeflyModelPreferences, VibeflyUiSettings,}
 import {bundledCatalog, type BundledCatalog} from "./catalog"
 import type {ProviderSnapshot, ProvidersSnapshot} from "./providerSnapshots"
 
-/** Drop JsonObject index signature; make known keys required and non-null for form state. */
+/**
+ * Drop JsonObject index signature; make known keys required and non-null for form state.
+ * 去掉 JsonObject 索引签名；将已知键设为必填且非空，供表单状态使用。
+ */
 type FormOf<T> = {
     [K in keyof T as string extends K ? never : K]-?: Exclude<T[K], null | undefined>
 }
 
-/** Pi settings.json fields edited in the providers UI. */
+/**
+ * Pi settings.json fields edited in the providers UI.
+ * Providers UI 中编辑的 Pi settings.json 字段。
+ */
 export type ProvidersForm = {
     defaultProvider: string
     defaultModel: string

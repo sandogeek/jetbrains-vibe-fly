@@ -23,15 +23,30 @@ export type GatedProviderResult<T> = T & {
  * Provider RPCs return a settings `revision` + optional snapshot. Before publishing
  * to listeners we align the local SettingsSyncClient to that revision so the UI
  * never shows provider data against a stale application document.
+ *
+ * 带 revision 门控快照投递的 Host Provider 配置客户端。
+ *
+ * Provider RPC 返回设置 `revision` + 可选 snapshot。发布给监听者之前，
+ * 先将本地 SettingsSyncClient 对齐到该 revision，避免 UI 在过期的
+ * application 文档上展示 Provider 数据。
  */
 export class UiProviderSettingsClient {
     readonly #listeners = new Set<(snapshot: ProvidersSnapshot | null) => void>()
-    /** Baseline used to ignore the subscribe callback's initial/same-revision fire. */
+    /**
+     * Baseline used to ignore the subscribe callback's initial/same-revision fire.
+     * 基线 revision，用于忽略 subscribe 回调的初次/同 revision 触发。
+     */
     #lastApplicationRevision?: string
     #refreshing?: Promise<void>
-    /** Nested count of in-flight `#gate` calls (read-side lock over invalidations). */
+    /**
+     * Nested count of in-flight `#gate` calls (read-side lock over invalidations).
+     * 进行中的 `#gate` 嵌套计数（读侧对失效的锁）。
+     */
     #aligning = 0
-    /** Set when an application revision change arrives while `#aligning > 0`. */
+    /**
+     * Set when an application revision change arrives while `#aligning > 0`.
+     * 在 `#aligning > 0` 期间若收到 application revision 变更则置位。
+     */
     #invalidationDuringAlign = false
 
     constructor(
@@ -40,10 +55,14 @@ export class UiProviderSettingsClient {
         private readonly catalog: BundledCatalog,
     ) {}
 
-    /** Own application invalidation → Provider refresh and merged snapshot publication. */
+    /**
+     * Own application invalidation → Provider refresh and merged snapshot publication.
+     * 订阅 application 失效 → 刷新 Provider 并发布合并后的 snapshot。
+     */
     watch(listener: (snapshot: ProvidersSnapshot | null) => void): () => void {
         this.#listeners.add(listener)
         // Snapshot the revision we already know; only later *changes* schedule refresh.
+        // 记录当前已知 revision；仅后续 *变化* 才调度 refresh。
         this.#lastApplicationRevision = this.settings.client.getSnapshot("application").revision
         const unsubscribe = this.settings.client.subscribe(
             (state) => state.application.revision,
@@ -52,6 +71,8 @@ export class UiProviderSettingsClient {
                 this.#lastApplicationRevision = revision
                 // Defer refresh until the active gate finishes — it may already carry
                 // a converged snapshot, making an immediate refresh redundant or racy.
+                // 推迟到当前 gate 结束后再 refresh——gate 可能已带收敛 snapshot，
+                // 立即 refresh 会多余或产生竞态。
                 if (this.#aligning > 0) {
                     this.#invalidationDuringAlign = true
                     return
@@ -75,6 +96,9 @@ export class UiProviderSettingsClient {
      * On conflict, advance `expectedRevision` from the host response when align
      * succeeded, otherwise re-read the local application revision and retry.
      * Exhausted retries surface conflict without a snapshot (caller must refresh).
+     * 带 revision 重放的乐观并发 patch。
+     * 冲突时：若 align 成功则用 Host 响应推进 `expectedRevision`，否则重读本地
+     * application revision 再重试。重试耗尽则返回无 snapshot 的冲突（调用方须 refresh）。
      */
     async applyPatch(
         providers: ProviderPatch[],
@@ -119,6 +143,9 @@ export class UiProviderSettingsClient {
      * snapshot only when alignment succeeded. Nested calls share one invalidation
      * flag: deferred refresh runs after the outermost gate if no snapshot was
      * accepted and the result is not a conflict (conflicts are replayed by applyPatch).
+     * 将本地设置对齐到 `result.revision`，仅在对齐成功时发布与 catalog 合并的 snapshot。
+     * 嵌套调用共享一个失效标志：最外层 gate 结束后，若未接受 snapshot 且结果非冲突，
+     * 则执行延迟 refresh（冲突由 applyPatch 重放）。
      */
     async #gate<T extends {
         revision?: string | null
@@ -145,6 +172,8 @@ export class UiProviderSettingsClient {
                 this.#invalidationDuringAlign = false
                 // A returned snapshot already represents the converged revision.
                 // Conflicting patch responses are immediately replayed by applyPatch.
+                // 返回的 snapshot 已代表收敛后的 revision。
+                // 冲突的 patch 响应由 applyPatch 立即重放。
                 if (!snapshotAccepted && !("conflict" in result && result.conflict)) {
                     this.#scheduleRefresh()
                 }
@@ -153,7 +182,10 @@ export class UiProviderSettingsClient {
         return {...result, currentRevision, safeSnapshot}
     }
 
-    /** Single-flight: concurrent invalidations collapse into one in-flight refresh. */
+    /**
+     * Single-flight: concurrent invalidations collapse into one in-flight refresh.
+     * 单飞：并发失效合并为一次进行中的 refresh。
+     */
     #scheduleRefresh(): void {
         if (this.#refreshing) return
         this.#refreshing = this.refresh().then(() => undefined).catch(() => undefined).finally(() => {
