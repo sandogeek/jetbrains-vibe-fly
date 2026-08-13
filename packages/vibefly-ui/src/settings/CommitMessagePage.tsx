@@ -39,21 +39,27 @@ export function CommitMessagePage(props: CommitMessagePageProps) {
                         className={`rounded border px-3 py-1.5 text-sm ${languageMode === value ? "border-accent bg-surface text-fg" : "border-border text-muted"}`}
                         onClick={() => props.onMutate([setSetting(settingKeys.commit.languageMode, value)])}>{label}</button>)}</div>
         </section>
-        <section><label className="mb-1 block text-xs text-muted">{t("commit:model")}</label><ModelPicker
-            value={props.settings.commit?.commitModelSpec ?? ""} providers={providers} catalog={props.catalog}
-            pinnedSpecs={props.settings.modelPreferences?.pinnedModelSpecs ?? []}
-            recentSpecs={props.settings.modelPreferences?.recentModelSpecs ?? []} allowFollowDefault
-            ariaLabel={t("commit:model")} followDefaultSpec={defaultModelSpec}
-            onConfigureProviders={() => navigate("/settings/providers")} disabled={props.busy} onChange={onModel}/><p
-            className="m-0 mt-1 text-[11px] text-muted">{t("commit:followDefaultHint")}</p></section>
-        <section><label className="mb-2 flex items-center gap-2 text-sm text-fg"><input type="checkbox"
-                                                                                        checked={Boolean(props.settings.commit?.useCustomPrompt)}
-                                                                                        onChange={(event) => props.onMutate([setSetting(settingKeys.commit.useCustomPrompt, event.currentTarget.checked)])}/>{t("commit:useCustomPrompt")}
-        </label><textarea
-            className="h-40 w-full rounded border border-border bg-surface px-2 py-1.5 font-mono text-xs text-fg disabled:opacity-50"
-            disabled={!props.settings.commit?.useCustomPrompt} value={props.settings.commit?.customPrompt ?? ""}
-            placeholder={t("commit:customPromptPlaceholder")}
-            onChange={(event) => props.onMutate([setSetting(settingKeys.commit.customPrompt, event.currentTarget.value)])}/>
+        <section><label className="mb-1 block text-xs text-muted">{t("commit:model")}</label>
+            <ModelPicker
+                value={props.settings.commit?.commitModelSpec ?? ""} providers={providers} catalog={props.catalog}
+                pinnedSpecs={props.settings.modelPreferences?.pinnedModelSpecs ?? []}
+                recentSpecs={props.settings.modelPreferences?.recentModelSpecs ?? []} allowFollowDefault
+                ariaLabel={t("commit:model")} followDefaultSpec={defaultModelSpec}
+                onConfigureProviders={() => navigate("/settings/providers")} disabled={props.busy} onChange={onModel}/>
+            <p className="m-0 mt-1 text-[11px] text-muted">{t("commit:followDefaultHint")}</p>
+        </section>
+        <section>
+            <label className="mb-2 flex items-center gap-2 text-sm text-fg">
+                <input type="checkbox"
+                       checked={Boolean(props.settings.commit?.useCustomPrompt)}
+                       onChange={(event) => props.onMutate([setSetting(settingKeys.commit.useCustomPrompt, event.currentTarget.checked)])}/>
+                {t("commit:useCustomPrompt")}
+            </label>
+            <textarea
+                className="h-40 w-full rounded border border-border bg-surface px-2 py-1.5 font-mono text-xs text-fg disabled:opacity-50"
+                disabled={!props.settings.commit?.useCustomPrompt} value={props.settings.commit?.customPrompt ?? ""}
+                placeholder={t("commit:customPromptPlaceholder")}
+                onChange={(event) => props.onMutate([setSetting(settingKeys.commit.customPrompt, event.currentTarget.value)])}/>
         </section>
     </div>
 }
