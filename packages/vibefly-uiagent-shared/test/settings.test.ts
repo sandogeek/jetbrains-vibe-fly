@@ -14,7 +14,7 @@ import {
     type SettingsChanged,
     updateJsonAtPath,
 } from "../src/settings/schema.js"
-import {settingKeys} from "../src/settings/keys.js"
+import {readSettingFromSnapshot, settingKeys} from "../src/settings/keys.js"
 import {applySettingMutations, setSetting, unsetSetting} from "../src/settings/mutation.js"
 import {
     selectSetting,
@@ -684,6 +684,19 @@ describe("settingKeys declaration tree", () => {
         assert.equal(Object.isFrozen(settingKeys), true)
         assert.equal(Object.isFrozen(settingKeys.commit), true)
         assert.equal(Object.isFrozen(settingKeys.commit.languageMode), true)
+        assert.deepEqual(Object.keys(settingKeys).sort(), [
+            "commit",
+            "defaultModel",
+            "defaultProvider",
+            "modelPreferences",
+            "ui",
+        ])
+        assert.deepEqual(Object.keys(settingKeys.commit).sort(), [
+            "commitModelSpec",
+            "customPrompt",
+            "languageMode",
+            "useCustomPrompt",
+        ])
     })
 
     test("encodes nested writes, application-only prefs, trimmed nulls and stable array fallbacks", () => {
@@ -720,6 +733,54 @@ describe("settingKeys declaration tree", () => {
         const missingB = settingKeys.modelPreferences.recentModelSpecs.decode(undefined)
         assert.equal(Object.is(missingA, missingB), true)
         assert.deepEqual(missingA, [])
+    })
+
+    test("schema parse and key decode share locale, boolean, null and mixed-array fallbacks", () => {
+        const parsed = parseVibeflySettingsJson(JSON.stringify({
+            ui: {locale: "nope"},
+            commit: {useCustomPrompt: "yes", languageMode: null},
+            modelPreferences: {pinnedModelSpecs: ["openai/gpt", 42]},
+        }))
+        assert.deepEqual(parsed.value, {
+            commit: {languageMode: null},
+            modelPreferences: {},
+            ui: {},
+        })
+
+        assert.equal(settingKeys.ui.locale.decode("nope"), "follow_ide")
+        assert.equal(settingKeys.ui.locale.decode(null), "follow_ide")
+        assert.equal(settingKeys.ui.locale.decode("zh"), "zh")
+        assert.equal(settingKeys.commit.useCustomPrompt.decode("yes"), false)
+        assert.equal(settingKeys.commit.useCustomPrompt.decode(null), false)
+        assert.equal(settingKeys.commit.useCustomPrompt.decode(true), true)
+        assert.equal(settingKeys.commit.languageMode.decode(null), "follow_ide")
+        assert.deepEqual(
+            settingKeys.modelPreferences.pinnedModelSpecs.decode(["openai/gpt", 42]),
+            [],
+        )
+        assert.deepEqual(
+            settingKeys.modelPreferences.pinnedModelSpecs.decode(["openai/gpt"]),
+            ["openai/gpt"],
+        )
+
+        const snapshot = application("app-1", {}, parsed.value)
+        assert.equal(readSettingFromSnapshot(snapshot, settingKeys.ui.locale), "follow_ide")
+        assert.equal(readSettingFromSnapshot(snapshot, settingKeys.commit.useCustomPrompt), false)
+        assert.equal(readSettingFromSnapshot(snapshot, settingKeys.commit.languageMode), "follow_ide")
+        assert.deepEqual(
+            readSettingFromSnapshot(snapshot, settingKeys.modelPreferences.pinnedModelSpecs),
+            [],
+        )
+
+        const rejected = parseVibeflySettingsJson(JSON.stringify({
+            modelPreferences: {pinnedModelSpecs: ["openai/gpt", 42]},
+        }))
+        assert.equal(rejected.value.modelPreferences?.pinnedModelSpecs, undefined)
+        const rejectedFallback = settingKeys.modelPreferences.pinnedModelSpecs.decode(
+            ["openai/gpt", 42],
+        )
+        const missingFallback = settingKeys.modelPreferences.pinnedModelSpecs.decode(undefined)
+        assert.equal(Object.is(rejectedFallback, missingFallback), true)
     })
 })
 

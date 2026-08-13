@@ -1,4 +1,17 @@
 import {
+    type ObjectRule,
+    type SchemaRule,
+    type SchemaShape,
+    validateRule,
+} from "../json-schema.js"
+import {
+    isTaggedRule,
+    PI_SETTINGS_SHAPE,
+    type SettingReadLayer,
+    type TaggedRule,
+    VIBEFLY_SETTINGS_SHAPE,
+} from "./definition.js"
+import {
     cloneJsonValue,
     type JsonValue,
     parseJsonObjectDocument,
@@ -6,13 +19,9 @@ import {
     type SettingsScope,
 } from "./schema.js"
 
-export type SettingsDocument = "settings" | "vibefly"
-export type SettingReadLayer = "effective" | "application"
+export type {SettingReadLayer} from "./definition.js"
 
-export type SettingCodec<T> = {
-    readonly decode: (value: JsonValue | undefined) => T
-    readonly encode: (value: T) => JsonValue
-}
+export type SettingsDocument = "settings" | "vibefly"
 
 export type SettingKey<T> = {
     readonly id: string
@@ -26,119 +35,82 @@ export type SettingKey<T> = {
 
 export type AnySettingKey = SettingKey<any>
 
-type SettingLeafDef<T = any> = {
-    readonly __leaf: true
-    readonly readLayer: SettingReadLayer
-    readonly scopes: readonly SettingsScope[]
-    readonly codec: SettingCodec<T>
+type ManagedValue<TRule> = TRule extends {readonly __managed: {readonly fallback: infer TValue}}
+    ? TValue
+    : never
+
+type IsManaged<TRule> = TRule extends {readonly __managed: unknown} ? true : false
+
+type HasManagedDescendant<TRule> =
+    IsManaged<TRule> extends true
+        ? true
+        : TRule extends ObjectRule<infer TShape>
+            ? true extends {
+                [TKey in keyof TShape]: HasManagedDescendant<TShape[TKey]>
+            }[keyof TShape]
+                ? true
+                : false
+            : false
+
+type InferSettingKeys<TShape> = {
+    readonly [TKey in keyof TShape as HasManagedDescendant<TShape[TKey]> extends true
+        ? TKey
+        : never]: InferSettingNode<TShape[TKey]>
 }
 
-type SettingDefNode = SettingLeafDef | {readonly [key: string]: SettingDefNode}
+type InferSettingNode<TRule> =
+    IsManaged<TRule> extends true
+        ? SettingKey<ManagedValue<TRule>>
+        : TRule extends ObjectRule<infer TShape>
+            ? InferSettingKeys<TShape>
+            : never
 
-type InferSettingKeys<D> = D extends SettingLeafDef<infer T>
-    ? SettingKey<T>
-    : D extends Record<string, any>
-        ? {readonly [K in keyof D]: InferSettingKeys<D[K]>}
-        : never
-
-const EMPTY_STRING_ARRAY: readonly string[] = Object.freeze([])
-
-export function stringCodec(fallback = ""): SettingCodec<string> {
-    return {
-        decode: (value) => (typeof value === "string" ? value : fallback),
-        encode: (value) => value,
-    }
+function decodeWithRule<T>(rule: SchemaRule, fallback: T, value: JsonValue | undefined): T {
+    if (value === undefined || value === null) return fallback
+    const candidate = cloneJsonValue(value)
+    if (!validateRule(candidate, rule, "$", [])) return fallback
+    return candidate as T
 }
 
-export function nullableTrimmedStringCodec(fallback = ""): SettingCodec<string> {
-    return {
-        decode: (value) => (typeof value === "string" ? value : fallback),
-        encode: (value) => value.trim() || null,
-    }
-}
-
-export function booleanCodec(fallback: boolean): SettingCodec<boolean> {
-    return {
-        decode: (value) => (typeof value === "boolean" ? value : fallback),
-        encode: (value) => value,
-    }
-}
-
-export function stringArrayCodec(): SettingCodec<string[]> {
-    return {
-        decode: (value) => {
-            if (!Array.isArray(value)) return EMPTY_STRING_ARRAY as string[]
-            return value.filter((item): item is string => typeof item === "string")
-        },
-        encode: (value) => [...value],
-    }
-}
-
-export function localeCodec(): SettingCodec<"follow_ide" | "en" | "zh"> {
-    return {
-        decode: (value) => (value === "en" || value === "zh" ? value : "follow_ide"),
-        encode: (value) => value,
-    }
-}
-
-export function effective<T>(codec: SettingCodec<T>): SettingLeafDef<T> {
-    return Object.freeze({
-        __leaf: true,
-        readLayer: "effective",
-        scopes: Object.freeze(["application", "project"] as const),
-        codec,
-    })
-}
-
-export function application<T>(codec: SettingCodec<T>): SettingLeafDef<T> {
-    return Object.freeze({
-        __leaf: true,
-        readLayer: "application",
-        scopes: Object.freeze(["application"] as const),
-        codec,
-    })
-}
-
-function isLeaf(node: SettingDefNode): node is SettingLeafDef {
-    return (node as SettingLeafDef).__leaf === true
+function identityEncode<T>(value: T): JsonValue {
+    return value as JsonValue
 }
 
 function buildSettingKey<T>(
     document: SettingsDocument,
     path: readonly string[],
-    leaf: SettingLeafDef<T>,
+    rule: TaggedRule,
 ): SettingKey<T> {
+    const meta = rule.__managed
     return Object.freeze({
         id: `${document}:${path.join(".")}`,
         document,
         path: Object.freeze([...path]),
-        scopes: leaf.scopes,
-        readLayer: leaf.readLayer,
-        decode: leaf.codec.decode,
-        encode: leaf.codec.encode,
+        scopes: meta.scopes,
+        readLayer: meta.readLayer,
+        decode: (value: JsonValue | undefined) => decodeWithRule(rule, meta.fallback, value) as T,
+        encode: (meta.encode as ((value: T) => JsonValue) | undefined) ?? identityEncode,
     })
 }
 
-function buildTree(
+function collectSettingKeys(
     document: SettingsDocument,
-    definition: SettingDefNode,
-    path: readonly string[],
-): unknown {
-    if (isLeaf(definition)) {
-        return buildSettingKey(document, path, definition)
-    }
+    shape: SchemaShape,
+    path: readonly string[] = [],
+): Record<string, unknown> {
     const result: Record<string, unknown> = {}
-    for (const [key, child] of Object.entries(definition)) {
-        result[key] = buildTree(document, child, [...path, key])
+    for (const [key, rule] of Object.entries(shape)) {
+        const childPath = [...path, key]
+        if (isTaggedRule(rule)) {
+            result[key] = buildSettingKey(document, childPath, rule)
+            continue
+        }
+        if (rule.kind === "object") {
+            const nested = collectSettingKeys(document, rule.shape, childPath)
+            if (Object.keys(nested).length > 0) result[key] = nested
+        }
     }
     return Object.freeze(result)
-}
-
-export function defineSettings<const D extends SettingDefNode>(
-    document: SettingsDocument,
-    definition: D,
-): InferSettingKeys<D> {
-    return buildTree(document, definition, []) as InferSettingKeys<D>
 }
 
 function atPath(value: JsonValue | undefined, path: readonly string[]): JsonValue | undefined {
@@ -160,26 +132,9 @@ export function readSettingFromSnapshot<T>(
 }
 
 export const settingKeys = Object.freeze({
-    ...defineSettings("settings", {
-        defaultProvider: effective(nullableTrimmedStringCodec()),
-        defaultModel: effective(nullableTrimmedStringCodec()),
-    }),
-    ...defineSettings("vibefly", {
-        commit: {
-            languageMode: effective(localeCodec()),
-            commitModelSpec: effective(stringCodec()),
-            useCustomPrompt: effective(booleanCodec(false)),
-            customPrompt: effective(stringCodec()),
-        },
-        modelPreferences: {
-            recentModelSpecs: application(stringArrayCodec()),
-            pinnedModelSpecs: application(stringArrayCodec()),
-        },
-        ui: {
-            locale: effective(localeCodec()),
-        },
-    }),
-})
+    ...collectSettingKeys("settings", PI_SETTINGS_SHAPE),
+    ...collectSettingKeys("vibefly", VIBEFLY_SETTINGS_SHAPE),
+}) as InferSettingKeys<typeof PI_SETTINGS_SHAPE> & InferSettingKeys<typeof VIBEFLY_SETTINGS_SHAPE>
 
 export function cloneSettingValue<T>(value: T): T {
     if (value === undefined) return value

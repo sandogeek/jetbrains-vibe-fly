@@ -245,6 +245,7 @@ project 的消费者。
 `packages/vibefly-uiagent-shared/src/settings/` 将设置 schema、typed keys、semantic mutation 和同步 client 分开维护。这些逻辑不依赖浏览器、Node 文件系统或 Kotlin：
 
 - `settings.json`、`settings.vibefly.json`、`models.json` 和 `auth.json` 的 TypeScript schema 与运行时校验。
+- `definition.ts` 中的单一 shape：schema 解析与 typed keys 共用 `PI_SETTINGS_SHAPE` / `VIBEFLY_SETTINGS_SHAPE`。
 - application / project object deep merge。
 - `models.json` / `auth.json` 的 application-only 约束和无合并语义。
 - 原始快照、opaque revision 和 effective revision 管理。
@@ -257,6 +258,8 @@ project 的消费者。
 同 scope 的 fetch/save 串行，不同 scope 可并行。`mutate()` 在目标原始层按 typed key 重放语义操作，一次请求可同时保存 settings/vibefly 文档并保留未知键；冲突时拉取最新层并重放，最多四次。保存成功后仍拉取 Host 权威快照，不在客户端伪造 revision。selector 只有选中值变化时才通知，因此 diagnostics-only revision 不会触发无关消费方。
 
 当前 typed keys 包括默认 Provider/Model、Commit Message 四个字段、pin/MRU 和 UI locale。默认模型、Commit 和 locale 从 effective 层读取；pin/MRU 固定从 application 层读取。key 同时声明合法写入 scope 和 `unset` 语义，为后续恢复继承保留基础。
+
+托管字段用非破坏性 tagged rule 包装现有 `SchemaRule`，元数据只有 `readLayer`、`scopes`、`fallback` 和可选 `encode`；值类型继续由 `InferRule` 推断。keys 层递归进入 object rule，只为 tagged 字段生成 `SettingKey`（自动推导 `path` / `id` / `document`）。Pi 全量 schema 保持完整，仅 `defaultProvider`、`defaultModel` 带 typed-key 元数据。schema 解析与 key decode 使用同一规则；混合非法字符串数组按 `STRING_ARRAY_RULE` 的 reject 语义回退为空数组，不再由 key 单独过滤。
 
 ## UI 流程
 

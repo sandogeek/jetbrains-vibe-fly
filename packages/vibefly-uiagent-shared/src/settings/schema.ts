@@ -1,32 +1,36 @@
 /**
- * 设置域：Pi / Vibe Fly 文档 shape、应用+项目合并、快照缓存与失效协调。
+ * 设置域：解析 / 类型推断 / effective merge、快照缓存与失效协调。
+ * 文档 shape 与 managed-field 元数据见 definition.ts。
  * JSON 工具见 json.ts；通用 schema 见 json-schema.ts。本文件再导出二者以保持原有导入路径。
  */
 import {cloneJsonValue, deepMergeJsonObjects, type JsonObject,} from "../json.js"
 import {
-    arrayRule,
-    BOOLEAN_RULE,
-    enumRule,
     type InferRule,
-    NON_NEGATIVE_NUMBER_RULE,
-    objectRule,
-    optional,
     parseAndValidateObject,
     parseJsonObject,
-    required,
     type SchemaDiagnostic,
     type SchemaObject,
-    type SchemaShape,
     type SchemaValidationResult,
     type StrictObject,
-    strictObjectRule,
-    type StrictShape,
-    STRING_ARRAY_RULE,
-    STRING_ARRAY_VALUE_RULE,
-    STRING_RULE,
-    unionRule,
-    valueRule,
 } from "../json-schema.js"
+import {
+    PACKAGE_SOURCE_RULE,
+    PI_BRANCH_SUMMARY_RULE,
+    PI_COMPACTION_RULE,
+    PI_IMAGE_RULE,
+    PI_MARKDOWN_RULE,
+    PI_PACKAGE_SETTINGS_SHAPE,
+    PI_RETRY_PROVIDER_RULE,
+    PI_RETRY_RULE,
+    PI_SETTINGS_SHAPE,
+    PI_TERMINAL_RULE,
+    PI_THINKING_BUDGETS_RULE,
+    PI_WARNING_RULE,
+    VIBEFLY_COMMIT_RULE,
+    VIBEFLY_MODEL_PREFERENCES_RULE,
+    VIBEFLY_SETTINGS_SHAPE,
+    VIBEFLY_UI_RULE,
+} from "./definition.js"
 
 export type {
     JsonObject,
@@ -175,193 +179,8 @@ export function parseJsonObjectDocument(
     return toSettingsResult(file, parseJsonObject(source))
 }
 
-// --- Pi settings.json ---
-
-const PI_PACKAGE_SETTINGS_SHAPE = {
-    source: required(STRING_RULE),
-    autoload: optional(BOOLEAN_RULE),
-    extensions: optional(STRING_ARRAY_VALUE_RULE),
-    skills: optional(STRING_ARRAY_VALUE_RULE),
-    prompts: optional(STRING_ARRAY_VALUE_RULE),
-    themes: optional(STRING_ARRAY_VALUE_RULE),
-} satisfies StrictShape
-
 export type PiPackageSettings = StrictObject<typeof PI_PACKAGE_SETTINGS_SHAPE>
-
-const PACKAGE_SOURCE_OBJECT_RULE = strictObjectRule(
-    PI_PACKAGE_SETTINGS_SHAPE,
-    "a package source object",
-)
-const PACKAGE_SOURCE_RULE = unionRule(
-    [STRING_RULE, PACKAGE_SOURCE_OBJECT_RULE] as const,
-    "a string or package source object",
-)
-
 export type PiPackageSource = InferRule<typeof PACKAGE_SOURCE_RULE>
-
-const PI_RETRY_PROVIDER_RULE = objectRule({
-    timeoutMs: NON_NEGATIVE_NUMBER_RULE,
-    maxRetries: NON_NEGATIVE_NUMBER_RULE,
-    maxRetryDelayMs: NON_NEGATIVE_NUMBER_RULE,
-})
-
-const PI_RETRY_RULE = objectRule({
-    enabled: BOOLEAN_RULE,
-    maxRetries: NON_NEGATIVE_NUMBER_RULE,
-    baseDelayMs: NON_NEGATIVE_NUMBER_RULE,
-    provider: PI_RETRY_PROVIDER_RULE,
-})
-
-const PI_COMPACTION_RULE = objectRule({
-    enabled: BOOLEAN_RULE,
-    reserveTokens: NON_NEGATIVE_NUMBER_RULE,
-    keepRecentTokens: NON_NEGATIVE_NUMBER_RULE,
-})
-
-const PI_BRANCH_SUMMARY_RULE = objectRule({
-    reserveTokens: NON_NEGATIVE_NUMBER_RULE,
-    skipPrompt: BOOLEAN_RULE,
-})
-
-const PI_TERMINAL_RULE = objectRule({
-    showImages: BOOLEAN_RULE,
-    imageWidthCells: NON_NEGATIVE_NUMBER_RULE,
-    clearOnShrink: BOOLEAN_RULE,
-    showTerminalProgress: BOOLEAN_RULE,
-})
-
-const PI_IMAGE_RULE = objectRule({
-    autoResize: BOOLEAN_RULE,
-    blockImages: BOOLEAN_RULE,
-})
-
-const PI_THINKING_BUDGETS_RULE = objectRule({
-    minimal: NON_NEGATIVE_NUMBER_RULE,
-    low: NON_NEGATIVE_NUMBER_RULE,
-    medium: NON_NEGATIVE_NUMBER_RULE,
-    high: NON_NEGATIVE_NUMBER_RULE,
-})
-
-const PI_MARKDOWN_RULE = objectRule({
-    codeBlockIndent: STRING_RULE,
-})
-
-const PI_WARNING_RULE = objectRule({
-    anthropicExtraUsage: BOOLEAN_RULE,
-})
-
-// 非法 package 项过滤掉，避免一条坏配置拖垮整个列表
-const PACKAGE_SOURCES_RULE = arrayRule(
-    PACKAGE_SOURCE_RULE,
-    "an array of package sources",
-    "filter",
-)
-const OUTPUT_PAD_RULE = valueRule<0 | 1>(
-    "0 or 1",
-    (value): value is 0 | 1 => value === 0 || value === 1,
-)
-const THINKING_LEVEL_RULE = enumRule(
-    ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const,
-    "a supported thinking level",
-)
-const TRANSPORT_RULE = enumRule(
-    ["auto", "sse", "websocket", "websocket-cached"] as const,
-    "auto, sse, websocket, or websocket-cached",
-)
-const QUEUE_MODE_RULE = enumRule(
-    ["all", "one-at-a-time"] as const,
-    "a supported queue mode",
-)
-const PROJECT_TRUST_RULE = enumRule(
-    ["ask", "always", "never"] as const,
-    "ask, always, or never",
-)
-const DOUBLE_ESCAPE_ACTION_RULE = enumRule(
-    ["fork", "tree", "none"] as const,
-    "fork, tree, or none",
-)
-const TREE_FILTER_MODE_RULE = enumRule(
-    ["default", "no-tools", "user-only", "labeled-only", "all"] as const,
-    "a supported tree filter mode",
-)
-
-const PI_SETTINGS_SHAPE = {
-    lastChangelogVersion: STRING_RULE,
-    defaultProvider: STRING_RULE,
-    defaultModel: STRING_RULE,
-    theme: STRING_RULE,
-    externalEditor: STRING_RULE,
-    shellPath: STRING_RULE,
-    shellCommandPrefix: STRING_RULE,
-    trackingId: STRING_RULE,
-    sessionDir: STRING_RULE,
-    httpProxy: STRING_RULE,
-    hideThinkingBlock: BOOLEAN_RULE,
-    showCacheMissNotices: BOOLEAN_RULE,
-    quietStartup: BOOLEAN_RULE,
-    collapseChangelog: BOOLEAN_RULE,
-    enableInstallTelemetry: BOOLEAN_RULE,
-    enableAnalytics: BOOLEAN_RULE,
-    enableSkillCommands: BOOLEAN_RULE,
-    showHardwareCursor: BOOLEAN_RULE,
-    editorPaddingX: NON_NEGATIVE_NUMBER_RULE,
-    autocompleteMaxVisible: NON_NEGATIVE_NUMBER_RULE,
-    httpIdleTimeoutMs: NON_NEGATIVE_NUMBER_RULE,
-    websocketConnectTimeoutMs: NON_NEGATIVE_NUMBER_RULE,
-    extensions: STRING_ARRAY_RULE,
-    skills: STRING_ARRAY_RULE,
-    prompts: STRING_ARRAY_RULE,
-    themes: STRING_ARRAY_RULE,
-    npmCommand: STRING_ARRAY_RULE,
-    enabledModels: STRING_ARRAY_RULE,
-    defaultThinkingLevel: THINKING_LEVEL_RULE,
-    transport: TRANSPORT_RULE,
-    steeringMode: QUEUE_MODE_RULE,
-    followUpMode: QUEUE_MODE_RULE,
-    defaultProjectTrust: PROJECT_TRUST_RULE,
-    doubleEscapeAction: DOUBLE_ESCAPE_ACTION_RULE,
-    treeFilterMode: TREE_FILTER_MODE_RULE,
-    packages: PACKAGE_SOURCES_RULE,
-    outputPad: OUTPUT_PAD_RULE,
-    compaction: PI_COMPACTION_RULE,
-    branchSummary: PI_BRANCH_SUMMARY_RULE,
-    retry: PI_RETRY_RULE,
-    terminal: PI_TERMINAL_RULE,
-    images: PI_IMAGE_RULE,
-    thinkingBudgets: PI_THINKING_BUDGETS_RULE,
-    markdown: PI_MARKDOWN_RULE,
-    warnings: PI_WARNING_RULE,
-} satisfies SchemaShape
-
-// --- settings.vibefly.json ---
-
-const LOCALE_MODE_RULE = enumRule(
-    ["follow_ide", "en", "zh"] as const,
-    "follow_ide, en, or zh",
-)
-
-const VIBEFLY_COMMIT_RULE = objectRule({
-    languageMode: LOCALE_MODE_RULE,
-    commitModelSpec: STRING_RULE,
-    useCustomPrompt: BOOLEAN_RULE,
-    customPrompt: STRING_RULE,
-})
-
-const VIBEFLY_MODEL_PREFERENCES_RULE = objectRule({
-    recentModelSpecs: STRING_ARRAY_RULE,
-    pinnedModelSpecs: STRING_ARRAY_RULE,
-})
-
-const VIBEFLY_UI_RULE = objectRule({
-    locale: LOCALE_MODE_RULE,
-})
-
-const VIBEFLY_SETTINGS_SHAPE = {
-    commit: VIBEFLY_COMMIT_RULE,
-    modelPreferences: VIBEFLY_MODEL_PREFERENCES_RULE,
-    ui: VIBEFLY_UI_RULE,
-} satisfies SchemaShape
-
 export type PiCompactionSettings = InferRule<typeof PI_COMPACTION_RULE>
 export type PiRetryProviderSettings = InferRule<typeof PI_RETRY_PROVIDER_RULE>
 export type PiRetrySettings = InferRule<typeof PI_RETRY_RULE>
