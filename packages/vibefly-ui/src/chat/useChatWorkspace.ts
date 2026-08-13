@@ -1,5 +1,5 @@
 import type {ChatContextItem, ChatModelOption, Ui2Agent} from "@vibefly/uiagent-shared"
-import {useCallback, useMemo, useRef, useState, type MutableRefObject} from "react"
+import {useCallback, useMemo, useRef, useState, type RefObject} from "react"
 
 import type {Ui2HostChat} from "../generated/rpc"
 import {log} from "../log"
@@ -15,12 +15,12 @@ function errorText(error: unknown): string {
 
 export function useChatWorkspace(options: {
   activeId: string
-  agentRef: MutableRefObject<Ui2Agent | null>
-  offlineRef: MutableRefObject<boolean>
-  hostChatRef: MutableRefObject<Ui2HostChat | null>
-  hostRef: MutableRefObject<{openExternalUrl: (url: string) => Promise<void> | void} | null>
-  tabsRef: MutableRefObject<ChatTab[]>
-  activeIdRef: MutableRefObject<string>
+  agentRef: RefObject<Ui2Agent | null>
+  offlineRef: RefObject<boolean>
+  hostChatRef: RefObject<Ui2HostChat | null>
+  hostRef: RefObject<{openExternalUrl: (url: string) => Promise<void> | void} | null>
+  tabsRef: RefObject<ChatTab[]>
+  activeIdRef: RefObject<string>
   setError: (error: string | null) => void
 }) {
   const {
