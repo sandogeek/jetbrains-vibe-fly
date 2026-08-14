@@ -1,7 +1,7 @@
 import {describe, test} from "node:test"
 import {expect} from "expect"
 import type {
-    ProvidersPatchRequest,
+    CustomProviderMutationRequest,
     ProvidersPatchResult,
     ProvidersRefreshResult,
     SettingsSaveRequest,
@@ -43,20 +43,26 @@ class FakeSettingsHost {
 class FakeProviderHost {
     refreshResult: ProvidersRefreshResult = {ok: true}
     refreshCalls = 0
-    readonly patchRequests: Array<{request: ProvidersPatchRequest; revision: string}> = []
+    readonly mutationRequests: Array<{request: CustomProviderMutationRequest; revision: string}> = []
     patchImpl: (revision: string) => Promise<ProvidersPatchResult> = async () => ({ok: true})
+    readonly apiKeyRequests: Array<{providerId: string; apiKey: string}> = []
 
     async refreshProviders(): Promise<ProvidersRefreshResult> {
         this.refreshCalls += 1
         return structuredClone(this.refreshResult)
     }
 
-    async applyProvidersPatch(
-        request: ProvidersPatchRequest,
+    async mutateCustomProvider(
+        request: CustomProviderMutationRequest,
         expectedRevision: string,
     ): Promise<ProvidersPatchResult> {
-        this.patchRequests.push({request: structuredClone(request), revision: expectedRevision})
+        this.mutationRequests.push({request: structuredClone(request), revision: expectedRevision})
         return this.patchImpl(expectedRevision)
+    }
+
+    async setProviderApiKey(request: {providerId: string; apiKey: string}): Promise<ProvidersPatchResult> {
+        this.apiKeyRequests.push(structuredClone(request))
+        return {ok: true, revision: "app-2", snapshot: {providers: [{id: request.providerId}]}}
     }
 
     asHost(): Ui2HostSettings {
@@ -140,14 +146,20 @@ describe("UiProviderSettingsClient", () => {
         }
         const client = new UiProviderSettingsClient(providerHost.asHost(), settings, emptyCatalog)
 
-        const result = await client.applyPatch([{id: "custom", configJson: "{}"}])
+        const result = await client.saveCustomProvider({id: "custom", configJson: "{}"})
 
         expect(result.ok).toBe(true)
         expect(result.safeSnapshot?.providers).toHaveLength(1)
-        expect(providerHost.patchRequests.map((request) => request.revision)).toEqual([
+        expect(providerHost.mutationRequests.map((request) => request.revision)).toEqual([
             "app-1",
             "app-2",
         ])
+        expect(providerHost.mutationRequests[0]?.request).toEqual({
+            id: "custom",
+            configJson: "{}",
+            apiKey: null,
+            remove: false,
+        })
     })
 
     test("replays against a newer authoritative revision than the conflict response", async () => {
@@ -166,12 +178,31 @@ describe("UiProviderSettingsClient", () => {
         }
         const client = new UiProviderSettingsClient(providerHost.asHost(), settings, emptyCatalog)
 
-        const result = await client.applyPatch([{id: "custom", remove: true}])
+        const result = await client.deleteCustomProvider("custom")
 
         expect(result.ok).toBe(true)
-        expect(providerHost.patchRequests.map((request) => request.revision)).toEqual([
+        expect(providerHost.mutationRequests.map((request) => request.revision)).toEqual([
             "app-1",
             "app-3",
         ])
+        expect(providerHost.mutationRequests[0]?.request).toEqual({
+            id: "custom",
+            remove: true,
+        })
+    })
+
+    test("setApiKey does not replay conflicts in the UI client", async () => {
+        const settingsHost = new FakeSettingsHost()
+        const settings = new UiSettingsRuntime(settingsHost.asHost())
+        await settings.start(false)
+        const providerHost = new FakeProviderHost()
+        settingsHost.application = application("app-2")
+        const client = new UiProviderSettingsClient(providerHost.asHost(), settings, emptyCatalog)
+
+        const result = await client.setApiKey("openai", "sk-test")
+
+        expect(result.ok).toBe(true)
+        expect(providerHost.apiKeyRequests).toEqual([{providerId: "openai", apiKey: "sk-test"}])
+        expect(providerHost.mutationRequests).toHaveLength(0)
     })
 })

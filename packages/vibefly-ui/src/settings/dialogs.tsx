@@ -75,6 +75,8 @@ export function ConnectDialog({snapshot, editMode, onClose}: ConnectDialogProps)
         onCancel={() => onClose({kind: "cancel"})}>
         {snapshot.supportsLogin &&
             <DialogDescription className="mb-3 text-xs">{t("dialogs:loginHint")}</DialogDescription>}
+        {snapshot.credential?.hasOAuth &&
+            <p className="m-0 mb-3 text-xs text-muted">{t("dialogs:disconnectBeforeApiKeyHint")}</p>}
         <TextField className="mb-2" value={apiKey}
                    onChange={setApiKey}><TextFieldLabel>{t("dialogs:apiKey")}</TextFieldLabel><TextFieldInput
             type="password" placeholder={t("dialogs:keepExistingKey")}/></TextField>

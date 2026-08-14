@@ -57,7 +57,7 @@ English: [rpc.en.md](./rpc.en.md)
 
 | 方向         | 示例                                                                                                                 |
 |--------------|----------------------------------------------------------------------------------------------------------------------|
-| Host → Agent | `openWebSocketSession`、`shutdown`、`generateCommitMessage`、`getProvidersSnapshot`、`applyProvidersPatch`、登录相关 |
+| Host → Agent | `openWebSocketSession`、`shutdown`、`generateCommitMessage`、`getProvidersSnapshot(modelsJson, authJson)`、`applyProvidersPatch(request, modelsJson)`、`setProviderApiKey`、`mutateCustomProvider`、登录相关 |
 | Agent → Host | 控制面回调（若有）                                                                                                   |
 
 **stdio 约定**：

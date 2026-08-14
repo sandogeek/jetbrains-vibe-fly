@@ -26,10 +26,13 @@ interface Host2Agent {
     suspend fun settingsChanged(scope: String, projectRoot: String?, revision: String)
 
     @RpcFun(5)
-    suspend fun getProvidersSnapshot(): ProvidersSnapshot
+    suspend fun getProvidersSnapshot(modelsJson: String, authJson: String): ProvidersSnapshot
 
     @RpcFun(6)
-    suspend fun applyProvidersPatch(request: ProvidersPatchRequest): ProvidersPatchResult
+    suspend fun applyProvidersPatch(
+        request: ProvidersPatchRequest,
+        modelsJson: String,
+    ): ModelsDocumentPatchResult
 
     /** OAuth / API-key login providers from the pi registry (same as `/login`). */
     @RpcFun(7)
@@ -49,4 +52,16 @@ interface Host2Agent {
     /** Abort in-flight [loginProvider] (dialog cancel). */
     @RpcFun(10)
     suspend fun cancelProviderLogin()
+
+    /** Set or replace an API key through the Host-backed credential store. */
+    @RpcFun(11)
+    suspend fun setProviderApiKey(request: ProviderApiKeyRequest): ProviderApiKeyResult
+
+    /** Pure custom-provider transform over Host-supplied models.json and auth.json. */
+    @RpcFun(12)
+    suspend fun mutateCustomProvider(
+        request: CustomProviderMutationRequest,
+        modelsJson: String,
+        authJson: String,
+    ): ProviderDocumentsPatchResult
 }

@@ -27,6 +27,7 @@ Agent -> Host；不得为此引入 SimpleRpc 之外的第二套 RPC。
 - 当前 UI 所有设置写入仍固定为 application scope。typed key 已记录合法 scope 并支持 `unset`，但本轮不展示 Global / Project 切换、继承来源或“恢复继承”入口。
 - Settings WebView 仍以 `hasProject: false` 启动（不展示 Project 覆盖或作用域切换）；Chat WebView 以 `hasProject: true` 启动。因此 locale 等 effective 字段可在聊天页读取 project 覆盖，pin / MRU 始终读取 application 层。
 - 设置 Tab 的 Host / Agent 操作显式绑定该 Tab 所属 Project，不再回退到“任取一个已打开 Project”。Provider 登录生命周期使用该 Project agent 的 `withControl` 和反向 RPC。Provider 配置和 revision 收敛已进入统一 UI client。
+  Provider 文档解析、校验、patch 与脱敏 snapshot 由该 Project Agent 计算；Host 传入权威 `modelsJson` / `authJson` 并原子落盘。Provider 页面因此依赖当前 Project Agent。
 - 不读取或迁移旧 IDE XML settings；session / workspace 状态也不属于本设置系统。
 
 ## 文件与作用域
@@ -184,7 +185,13 @@ Host 始终保留每个文件最后一次成功解析的内容：
 Ui2Host.getSettingsSnapshot(scope) -> UiSettingsSnapshot
 Ui2Host.saveSettings(request) -> SettingsSaveResult
 Ui2HostSettings.applyProvidersPatch(request, expectedRevision) -> ProvidersPatchResult
+Ui2HostSettings.setProviderApiKey(request) -> ProvidersPatchResult
+Ui2HostSettings.mutateCustomProvider(request, expectedRevision) -> ProvidersPatchResult
 
+Host2Agent.getProvidersSnapshot(modelsJson, authJson) -> ProvidersSnapshot
+Host2Agent.applyProvidersPatch(request, modelsJson) -> ModelsDocumentPatchResult
+Host2Agent.setProviderApiKey(request) -> ProviderApiKeyResult
+Host2Agent.mutateCustomProvider(request, modelsJson, authJson) -> ProviderDocumentsPatchResult
 Agent2Host.getSettingsSnapshot(scope) -> AgentSettingsSnapshot
 Agent2Host.saveAuth(request) -> SettingsSaveResult
 ```
@@ -206,6 +213,9 @@ type SettingsSaveRequest = {
 `UiSettingsSnapshot` 和 `SettingsSaveRequest` 都不能包含原始 `modelsJson` 或 `authJson`。UI 通过 Providers RPC 读取完整
 Provider entry（`configJson`）与鉴权状态；Provider 编辑使用带 `expectedRevision` 的 patch，其中
 `ProviderPatch.configJson` 整条目替换 `models.json.providers[id]`（非字段合并），未知键按调用方提供的 JSON 原样保留。
+`applyProvidersPatch` 只修改 `models.json`。API Key 走 `setProviderApiKey`（Agent credential store → `saveAuth`）；
+自定义 Provider 配置与可选 API Key 走 `mutateCustomProvider`，由 Host 一次原子写入 `models.json` / `auth.json`。
+OAuth 登录、取消和登出仍是独立控制面命令，不进入 typed settings mutation。已有 OAuth 会话时设置 API Key 会被拒绝，需先 Disconnect。
 `UiSettingsSnapshot` 的 `settingsJson` / `vibeflyJson` 与磁盘原始文档一致（无字段投影）；
 `SettingsSaveRequest` 对提供的文档做整文件替换（省略的文件不变）。`AgentSettingsSnapshot` 在受信任的本机 stdio 控制面上传输完整
 application 四文件和 project 两文件。
@@ -221,8 +231,9 @@ provider 级修改后重试，不能用旧整文件覆盖其他 Agent 同时写�
 - project scope 但会话无合法打开 project：拒绝请求。
 - project scope 的 Providers patch，或任何 UI 请求包含原始 `modelsJson` / `authJson`：拒绝请求。
 
-除 `Agent2Host.saveAuth` 外，Agent 是配置只读消费者。所有文件最终都由 Host 使用统一锁和原子写协议落盘；Agent 的 pi
-storage、model registry 和 credential store 不直接写文件。
+除 `Agent2Host.saveAuth` 外，Agent 不直接写设置文件。Provider 编辑由 Agent 对 Host 传入的权威文档做纯变换，再由 Host
+一次原子保存 `models.json` / `auth.json`；Agent 不得在 patch RPC 内反向 fetch/save，也不得新增分开的 `saveModels`。
+认证**状态**属于 Settings 存储体系（`auth.json` + application revision）；认证**流程**属于 Provider auth 控制面。
 
 ### 失效通知
 
@@ -253,7 +264,7 @@ project 的消费者。
 - 保留未知键的不可变更新辅助函数。
 - diagnostics 聚合。
 
-核心 API 是 `SettingsSyncClient<TSnapshot>` 和 `SettingsSyncAdapter<TSnapshot>`。adapter 提供 `fetch(scope)`，可写消费者再提供 `save(request)`；UI adapter 调用 `Ui2Host` 并使用安全投影，Agent adapter 调用 `Agent2Host` 并使用完整投影。两边复用 revision、缓存和合并行为，但不会新增 UI <-> Agent 设置 RPC。`modelsJson`、`authJson`、credential helper 只从 `@vibefly/uiagent-shared/agent` 导出，不会进入 WebView root bundle。
+核心 API 是 `SettingsSyncClient<TSnapshot>` 和 `SettingsSyncAdapter<TSnapshot>`。adapter 提供 `fetch(scope)`，可写消费者再提供 `save(request)`；UI adapter 调用 `Ui2Host` 并使用安全投影，Agent adapter 调用 `Agent2Host` 并使用完整投影。两边复用 revision、缓存和合并行为，但不会新增 UI <-> Agent 设置 RPC。`modelsJson`、`authJson`、credential helper 以及 Provider 文档 snapshot/patch 只从 `@vibefly/uiagent-shared/agent` 导出，不会进入 WebView root bundle。
 
 同 scope 的 fetch/save 串行，不同 scope 可并行。`mutate()` 在目标原始层按 typed key 重放语义操作，一次请求可同时保存 settings/vibefly 文档并保留未知键；冲突时拉取最新层并重放，最多四次。保存成功后仍拉取 Host 权威快照，不在客户端伪造 revision。selector 只有选中值变化时才通知，因此 diagnostics-only revision 不会触发无关消费方。
 
@@ -281,7 +292,7 @@ project 的消费者。
 
 General / Commit 页面仍使用 300ms debounce 并在卸载时 flush；Provider 默认模型以及聊天 pin/MRU 立即进入 runtime 的统一保存队列。`IdeSettings` 只是 typed keys 投影得到的视图模型，不再负责 JSON path 或 revision retry。
 
-`UiProviderSettingsClient` 统一 Provider refresh、patch、login/logout 后的 application revision 对齐。Provider patch 最多冲突重放四次；login/logout 不自动重试。只有 settings client 已收敛到 RPC 返回 revision 时才接受其 Provider snapshot，application 失效后由 SettingsShell 的单一订阅触发合并刷新。
+`UiProviderSettingsClient` 统一 Provider refresh、API Key、自定义 Provider mutation、login/logout 后的 application revision 对齐。自定义 Provider mutation 最多冲突重放四次；API Key / login / logout 不由 UI 自动重试（credential store 内部最多重放五次）。只有 settings client 已收敛到 RPC 返回 revision 时才接受其 Provider snapshot，application 失效后由 SettingsShell 的单一订阅触发合并刷新。
 
 ## Agent 与 pi 热重载
 
@@ -325,7 +336,8 @@ fallback。
 
 - 不增加 Global / Project scope 切换、继承来源展示或恢复继承 UI。
 - Provider 登录走当前 Project agent 的 `withControl`，反向 RPC 和取消流程保持现状。
-- 不修改 Kotlin Host、SimpleRpc wire 契约、四文件格式、revision 算法或原子落盘协议。
+- 不修改四文件格式、revision 算法或原子落盘协议。Host2Agent Provider RPC 改为文档纯变换，Ui2HostSettings WebView 契约保持不变。
+  `applyProvidersPatch` 现在只变换 `models.json`；凭据写入走独立认证命令。
 - 不迁移旧 XML 数据，也不让 UI 获得原始 `authJson`。
 
 ## 验证场景

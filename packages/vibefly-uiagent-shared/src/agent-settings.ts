@@ -180,3 +180,25 @@ export function deleteCredential(
 ): CredentialMap {
     return updateCredential(credentials, providerId, () => undefined)
 }
+
+export {
+    applyProviderApiKey,
+    applyProviderConfigPatch,
+    mutateCustomProviderDocuments,
+    nextApiKeyCredential,
+    OAUTH_API_KEY_CONFLICT_ERROR,
+    snapshotProviders,
+} from "./provider-settings.js"
+export type {
+    CustomProviderMutation,
+    PatchedProviderDocuments,
+    PatchedAuthDocument,
+    PatchedModelsDocument,
+    ProviderApiKeyMutation,
+    ProviderCredentialOrigin,
+    ProviderCredentialStatus,
+    ProviderPatch,
+    ProviderRuntimeSnapshot,
+    ProvidersPatchRequest,
+    ProvidersSnapshot,
+} from "./provider-settings.js"

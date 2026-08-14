@@ -12,6 +12,7 @@
   "disconnectConfirm": "Disconnect {{name}}? This removes stored API keys and OAuth sessions from Vibe Fly's auth.json.",
   "deleteConfirm": "Delete custom provider \"{{id}}\"? This removes it from models.json and clears its API key.",
   "saveFailed": "Failed to save provider config",
+  "disconnectBeforeApiKey": "Disconnect this provider before setting an API key",
   "logoutFailed": "Logout failed",
   "loginFailed": "Login failed",
   "loginSuccess": "Login successful",

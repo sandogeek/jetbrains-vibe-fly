@@ -22,7 +22,7 @@ UI → Agent business contracts still live only in `packages/vibefly-uiagent-sha
 - Settings and chat pages consume Host snapshots through the same UI runtime; Agent consumes trusted snapshots through the same shared sync core.
 - All current UI settings writes are fixed to application scope. Typed keys already record legal scopes and support `unset`, but this round does not show Global / Project switching, inheritance source, or “restore inheritance” entry points.
 - Settings WebView starts with `hasProject: false`; Chat WebView with `hasProject: true`. Effective fields such as locale can therefore read project overrides on the chat page; pin / MRU always read the application layer.
-- Provider login lifecycle uses the settings tab's project agent `withControl` and reverse RPC. Provider config and revision convergence are already on the unified UI client.
+- Provider login lifecycle uses the settings tab's project agent `withControl` and reverse RPC. Provider config and revision convergence are already on the unified UI client. Provider document parse/validate/patch and redacted snapshots are computed by that project Agent; Host passes authoritative `modelsJson` / `authJson` and writes them atomically. The Providers page therefore depends on the current project Agent.
 - No read or migration of old IDE XML settings; session / workspace state is also outside this system.
 
 ## Files and scopes
@@ -169,6 +169,8 @@ Ui2Host.getSettingsSnapshot(scope) -> UiSettingsSnapshot
 Ui2Host.saveSettings(request) -> SettingsSaveResult
 Ui2HostSettings.applyProvidersPatch(request, expectedRevision) -> ProvidersPatchResult
 
+Host2Agent.getProvidersSnapshot(modelsJson, authJson) -> ProvidersSnapshot
+Host2Agent.applyProvidersPatch(request, modelsJson, authJson) -> ProviderDocumentsPatchResult
 Agent2Host.getSettingsSnapshot(scope) -> AgentSettingsSnapshot
 Agent2Host.saveAuth(request) -> SettingsSaveResult
 ```
@@ -190,7 +192,7 @@ Neither `UiSettingsSnapshot` nor `SettingsSaveRequest` may contain raw `modelsJs
 
 When the Agent logs in, logs out, or refreshes credentials, the Host-backed credential adapter uses dedicated `Agent2Host.saveAuth`, which allows only application scope, `authJson`, and `expectedRevision`. On conflict the adapter re-fetches the latest application snapshot, replays the provider-level change on the latest credentials map, and retries—never overwriting concurrent credential writes with a stale whole file.
 
-Except for `Agent2Host.saveAuth`, the Agent is a read-only config consumer. All files are ultimately written by Host under the unified lock and atomic-write protocol; Agent’s pi storage, model registry, and credential store never write files directly.
+Except for `Agent2Host.saveAuth`, the Agent does not write settings files. Provider edits are a pure transform over Host-supplied authoritative documents; Host then atomically saves `models.json` / `auth.json`. The Agent must not fetch or save inside the patch RPC, and must not add a separate `saveModels` API.
 
 Under lock, Host compares `expectedRevision` to the current scope revision:
 
@@ -224,7 +226,7 @@ Any application file change must fan out to all settings panels, chat panels, an
 - Immutable update helpers that preserve unknown keys.
 - Diagnostics aggregation.
 
-Core APIs are `SettingsSyncClient<TSnapshot>` and `SettingsSyncAdapter<TSnapshot>`. Adapters provide `fetch(scope)`; writable consumers also provide `save(request)`. The UI adapter calls `Ui2Host` with the safe projection; the Agent adapter calls `Agent2Host` with the full projection. Both reuse revision, cache, and merge behavior without adding UI ↔ Agent settings RPC. `modelsJson`, `authJson`, and credential helpers export only from `@vibefly/uiagent-shared/agent` and never enter the WebView root bundle.
+Core APIs are `SettingsSyncClient<TSnapshot>` and `SettingsSyncAdapter<TSnapshot>`. Adapters provide `fetch(scope)`; writable consumers also provide `save(request)`. The UI adapter calls `Ui2Host` with the safe projection; the Agent adapter calls `Agent2Host` with the full projection. Both reuse revision, cache, and merge behavior without adding UI ↔ Agent settings RPC. `modelsJson`, `authJson`, credential helpers, and Provider document snapshot/patch APIs export only from `@vibefly/uiagent-shared/agent` and never enter the WebView root bundle.
 
 Same-scope fetch/save is serial; different scopes may run in parallel. `mutate()` replays semantic ops on the target raw layer by typed key; one request can save settings/vibefly together while preserving unknown keys; on conflict it re-fetches and replays up to four times. After a successful save it still fetches Host’s authoritative snapshot and never fabricates revision client-side. Selectors notify only when the selected value changes, so diagnostics-only revisions do not wake unrelated consumers.
 
@@ -290,7 +292,7 @@ No migration from IDE XML settings. Host runtime only recognizes JSON files; old
 
 - No Global / Project scope switch UI, inheritance source display, or restore-inheritance UI.
 - Provider login uses the current project agent's `withControl`; reverse RPC and cancel stay as-is.
-- No changes to Kotlin Host, SimpleRpc wire contracts, four-file format, revision algorithm, or atomic write protocol.
+- No changes to the four-file format, revision algorithm, or atomic write protocol. Host2Agent Provider RPCs are now document-only transforms; the Ui2HostSettings WebView contract is unchanged.
 - No old XML migration, and no raw `authJson` for the UI.
 
 ## Verification scenarios

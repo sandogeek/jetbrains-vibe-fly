@@ -24,8 +24,9 @@ import {
 import {log} from "./log.js"
 import {ChatSessionRegistry} from "./chatSessionRegistry.js"
 import {applyAgentDirFromEnv, clearPiRuntimeCache, getPiRuntime} from "./piRuntime.js"
-import {getProvidersSnapshot, rejectAgentProviderPatch,} from "./providerConfig.js"
+import {applyProviderConfigDocumentsPatch, getProvidersSnapshot, mutateCustomProviderDocumentsPatch} from "./providerConfig.js"
 import {cancelActiveLogin, getLoginProviders, loginProvider, logoutProvider,} from "./providerLogin.js"
+import {setProviderApiKey} from "./providerCredentials.js"
 import {createAgentWsServer, createTicketStore, isValidOrigin,} from "./ws.js"
 import {HostSettingsRuntime} from "./hostSettings.js"
 
@@ -115,11 +116,11 @@ async function main(): Promise<void> {
     settingsChanged(scope: string, projectRoot: string | null, revision: string) {
       return hostSettings.handleSettingsChanged(scope, projectRoot, revision)
     },
-    async getProvidersSnapshot() {
-      return getProvidersSnapshot(piRuntime)
+    getProvidersSnapshot(modelsJson: string, authJson: string) {
+      return getProvidersSnapshot(modelsJson, authJson)
     },
-    async applyProvidersPatch() {
-      return rejectAgentProviderPatch()
+    applyProvidersPatch(request, modelsJson: string) {
+      return applyProviderConfigDocumentsPatch(request, modelsJson)
     },
     async getLoginProviders() {
       return getLoginProviders(piRuntime)
@@ -132,6 +133,12 @@ async function main(): Promise<void> {
     },
     cancelProviderLogin() {
       cancelActiveLogin()
+    },
+    async setProviderApiKey(request) {
+      return setProviderApiKey(request, piRuntime)
+    },
+    mutateCustomProvider(request, modelsJson: string, authJson: string) {
+      return mutateCustomProviderDocumentsPatch(request, modelsJson, authJson)
     },
   }
   wsServer.setSessionFactory((wsPeer) => {

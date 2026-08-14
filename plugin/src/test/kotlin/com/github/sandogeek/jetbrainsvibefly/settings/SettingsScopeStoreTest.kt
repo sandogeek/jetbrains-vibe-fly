@@ -62,6 +62,63 @@ class SettingsScopeStoreTest {
     }
 
     @Test
+    fun `models and auth save uses one revision`() {
+        val directory = newDirectory("provider-documents")
+        var changes = 0
+        SettingsScopeStore(
+            scope = SETTINGS_SCOPE_APPLICATION,
+            projectRoot = null,
+            directory = directory,
+            allowedDocuments = setOf(SettingsDocument.MODELS, SettingsDocument.AUTH),
+            ownerOnlyDirectory = true,
+            watcherEnabled = false,
+            onChanged = { changes += 1 },
+        ).use { store ->
+            val initial = store.snapshot()
+            val saved = store.saveDocuments(
+                mapOf(
+                    SettingsDocument.MODELS to """{"providers":{"private":{"baseUrl":"https://a","api":"openai-completions","models":[{"id":"m"}]}}}""",
+                    SettingsDocument.AUTH to """{"private":{"type":"api_key","key":"secret"}}""",
+                ),
+                initial.revision,
+            )
+            assertTrue(saved.ok)
+            assertNotEquals(initial.revision, saved.snapshot.revision)
+            assertEquals(1, changes)
+            assertTrue(Files.readString(directory.resolve("models.json")).contains("private"))
+            assertTrue(Files.readString(directory.resolve("auth.json")).contains("secret"))
+        }
+    }
+
+    @Test
+    fun `models-only save leaves auth file unchanged`() {
+        val directory = newDirectory("models-only")
+        Files.writeString(directory.resolve("auth.json"), """{"private":{"type":"api_key","key":"secret"}}""")
+        SettingsScopeStore(
+            scope = SETTINGS_SCOPE_APPLICATION,
+            projectRoot = null,
+            directory = directory,
+            allowedDocuments = setOf(SettingsDocument.MODELS, SettingsDocument.AUTH),
+            ownerOnlyDirectory = true,
+            watcherEnabled = false,
+        ).use { store ->
+            val initial = store.snapshot()
+            val saved = store.saveDocuments(
+                mapOf(
+                    SettingsDocument.MODELS to """{"providers":{"private":{"baseUrl":"https://a","api":"openai-completions","models":[{"id":"m"}]}}}""",
+                ),
+                initial.revision,
+            )
+            assertTrue(saved.ok)
+            assertTrue(Files.readString(directory.resolve("models.json")).contains("private"))
+            assertEquals(
+                """{"private":{"type":"api_key","key":"secret"}}""",
+                Files.readString(directory.resolve("auth.json")),
+            )
+        }
+    }
+
+    @Test
     fun `invalid external JSON preserves last valid content and only changes revision once`() {
         val directory = newDirectory("last-valid")
         val settingsPath = directory.resolve("settings.json")

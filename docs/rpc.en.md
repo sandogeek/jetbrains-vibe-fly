@@ -57,7 +57,7 @@ Typical RPC (code is source of truth):
 
 | Direction | Examples |
 | --- | --- |
-| Host → Agent | `openWebSocketSession`, `shutdown`, `generateCommitMessage`, `getProvidersSnapshot`, `applyProvidersPatch`, login-related |
+| Host → Agent | `openWebSocketSession`, `shutdown`, `generateCommitMessage`, `getProvidersSnapshot(modelsJson, authJson)`, `applyProvidersPatch(request, modelsJson, authJson)`, login-related |
 | Agent → Host | Control-plane callbacks (if any) |
 
 **stdio rules**:

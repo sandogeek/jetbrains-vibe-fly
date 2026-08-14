@@ -651,4 +651,41 @@ describe("HostCredentialStore", () => {
             key: "new",
         })
     })
+
+    test("API key mutation refuses an OAuth session after a concurrent login conflict", async () => {
+        const host = new FakeHost()
+        host.application = applicationSnapshot("rev-1", {
+            authJson: JSON.stringify({
+                target: {type: "api_key", key: "old"},
+                other: {type: "api_key", key: "keep"},
+            }),
+        })
+        let saveAttempt = 0
+        host.save = async () => {
+            saveAttempt += 1
+            if (saveAttempt === 1) {
+                host.application = applicationSnapshot("rev-2", {
+                    authJson: JSON.stringify({
+                        target: {type: "oauth", access: "token"},
+                        other: {type: "api_key", key: "keep"},
+                    }),
+                })
+                return {ok: false, conflict: true, revision: "rev-2"}
+            }
+            return {ok: true, revision: "rev-3"}
+        }
+        const store = new HostCredentialStore(host)
+        await store.replace(host.application.authJson!, host.application.revision)
+
+        await expect(store.modify("target", async (current) => {
+            if (current?.type === "oauth") {
+                throw new Error("Disconnect this provider before setting an API key")
+            }
+            return {type: "api_key", key: "new"}
+        })).rejects.toThrow("Disconnect this provider before setting an API key")
+
+        expect(host.saves).toHaveLength(1)
+        expect(await store.read("target")).toEqual({type: "oauth", access: "token"})
+        expect(await store.read("other")).toEqual({type: "api_key", key: "keep"})
+    })
 })

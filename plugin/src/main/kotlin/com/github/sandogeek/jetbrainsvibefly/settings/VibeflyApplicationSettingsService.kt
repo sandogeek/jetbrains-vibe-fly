@@ -42,51 +42,24 @@ class VibeflyApplicationSettingsService : Disposable {
     }
 
     internal fun saveAuth(request: AuthSaveRequest): SettingsSaveResult =
-        store.saveDocuments(
-            updates = mapOf(SettingsDocument.AUTH to request.authJson),
+        saveProviderDocuments(
+            modelsJson = null,
+            authJson = request.authJson,
             expectedRevision = request.expectedRevision,
-        ).toRpcResult()
+        )
 
-    internal fun applyProvidersPatch(
-        request: ProvidersPatchRequest,
+    internal fun saveProviderDocuments(
+        modelsJson: String?,
+        authJson: String?,
         expectedRevision: String,
-    ): ProvidersPatchResult {
-        val current = snapshot(refresh = true)
-        if (current.revision != expectedRevision) {
-            return ProvidersPatchResult(
-                ok = false,
-                error = "Settings revision conflict",
-                snapshot = ProviderSettingsJson.snapshot(current),
-                revision = current.revision,
-                conflict = true,
-            )
-        }
-
-        val patched = try {
-            ProviderSettingsJson.applyPatch(current, request)
-        } catch (error: Exception) {
-            return ProvidersPatchResult(
-                ok = false,
-                error = error.message ?: "Invalid provider patch",
-                snapshot = ProviderSettingsJson.snapshot(current),
-                revision = current.revision,
-            )
-        }
-        val result = store.saveDocuments(
+    ): SettingsSaveResult =
+        store.saveDocuments(
             updates = buildMap {
-                if (patched.modelsChanged) put(SettingsDocument.MODELS, patched.modelsJson)
-                if (patched.authChanged) put(SettingsDocument.AUTH, patched.authJson)
+                modelsJson?.let { put(SettingsDocument.MODELS, it) }
+                authJson?.let { put(SettingsDocument.AUTH, it) }
             },
             expectedRevision = expectedRevision,
-        )
-        return ProvidersPatchResult(
-            ok = result.ok,
-            error = result.error,
-            snapshot = ProviderSettingsJson.snapshot(result.snapshot),
-            revision = result.snapshot.revision,
-            conflict = result.conflict,
-        )
-    }
+        ).toRpcResult()
 
     override fun dispose() {
         store.close()

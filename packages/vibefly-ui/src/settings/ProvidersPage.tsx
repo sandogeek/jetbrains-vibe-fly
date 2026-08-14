@@ -1,8 +1,8 @@
 import {useEffect, useMemo, useState} from "react"
 import {type SettingMutation, settingKeys, setSetting} from "@vibefly/uiagent-shared"
-import {useAppTranslation} from "../i18n"
+import {type Translator, useAppTranslation} from "../i18n"
 
-import type {CredentialAction, ProviderPatch, Ui2Host} from "../generated/rpc"
+import type {Ui2Host} from "../generated/rpc"
 import type {BundledCatalog} from "./catalog"
 import {catalogProviderIds} from "./catalog"
 import {
@@ -107,16 +107,18 @@ export function ProvidersPage(props: ProvidersPageProps) {
             props.onBusy(false)
         }
     }
-    const applyPatch = async (providersPatch: ProviderPatch[], credentials: CredentialAction[] = []) => {
+    const runProviderMutation = async (
+        mutate: () => Promise<{ok: boolean; error?: string | null}>,
+    ) => {
         if (!props.providerClient) return props.onStatus(t("settings:hostUnavailableShort"))
         props.onBusy(true);
         props.onStatus(null)
         try {
-            const result = await props.providerClient.applyPatch(providersPatch, credentials)
+            const result = await mutate()
             if (result.ok) {
                 return
             }
-            props.onStatus(result.error ?? t("providers:saveFailed"))
+            props.onStatus(formatProviderError(result.error, t("providers:saveFailed"), t))
         } catch (error) {
             props.onStatus(error instanceof Error ? error.message : String(error))
         } finally {
@@ -157,20 +159,26 @@ export function ProvidersPage(props: ProvidersPageProps) {
             setDialog({kind: "none"})
         }
     }
-    const onConnectResult = async (snap: ProviderSnapshot, result: ConnectResult, edit: boolean) => {
+    const onConnectResult = async (snap: ProviderSnapshot, result: ConnectResult) => {
         setDialog({kind: "none"});
         if (result.kind === "cancel") return;
         if (result.kind === "login") return runLogin(snap);
         const key = result.apiKey.trim();
-        if (key && (!edit || key)) await applyPatch([], [{provider: snap.id, action: "set", apiKey: key}])
+        if (!key) return
+        if (snap.credential?.hasOAuth) {
+            props.onStatus(t("providers:disconnectBeforeApiKey"))
+            return
+        }
+        await runProviderMutation(() => props.providerClient!.setApiKey(snap.id, key))
     }
     const onCustomResult = async (result: CustomResult) => {
         setDialog({kind: "none"});
         if (result.kind === "cancel") return;
-        await applyPatch([{
+        await runProviderMutation(() => props.providerClient!.saveCustomProvider({
             id: result.id,
             configJson: result.configJson,
-        }], result.apiKey ? [{provider: result.id, action: "set", apiKey: result.apiKey}] : [])
+            apiKey: result.apiKey,
+        }))
     }
     const disconnect = async (snap: ProviderSnapshot) => {
         if (!confirm(t("providers:disconnectConfirm", {name: displayName(snap.id)})) || !props.providerClient) return;
@@ -185,10 +193,9 @@ export function ProvidersPage(props: ProvidersPageProps) {
         }
     }
     const deleteCustom = async (snap: ProviderSnapshot) => {
-        if (confirm(t("providers:deleteConfirm", {id: snap.id}))) await applyPatch([{
-            id: snap.id,
-            remove: true
-        }], [{provider: snap.id, action: "clear"}])
+        if (confirm(t("providers:deleteConfirm", {id: snap.id}))) {
+            await runProviderMutation(() => props.providerClient!.deleteCustomProvider(snap.id))
+        }
     }
     const catalogIds = () => {
         const ids = catalogProviderIds(props.catalog);
@@ -245,7 +252,7 @@ export function ProvidersPage(props: ProvidersPageProps) {
             <p className="m-0 text-sm text-muted">{search.trim() ? t("providers:noMatch") : t("providers:noBuiltIn")}</p>}
         </section>
         {dialog.kind === "connect" && <ConnectDialog snapshot={dialog.snap} editMode={dialog.edit}
-                                                     onClose={(result) => void onConnectResult(dialog.snap, result, dialog.edit)}/>}
+                                                     onClose={(result) => void onConnectResult(dialog.snap, result)}/>}
         {dialog.kind === "custom" &&
             <CustomProviderDialog existing={dialog.existing} catalogIds={catalogIds()} existingCustomIds={customIds}
                                   onClose={(result) => void onCustomResult(result)}/>}
@@ -293,4 +300,16 @@ function ProviderRow({snap, onConnect, onEdit, onDisconnect, onDelete}: {
                                         className="rounded border border-border px-2 py-1 text-xs text-red-400 hover:border-red-400"
                                         onClick={onDelete}>{t("common:delete")}</button>}</div>
     </li>
+}
+
+function formatProviderError(
+    error: string | null | undefined,
+    fallback: string,
+    translate: Translator,
+): string {
+    if (!error) return fallback
+    if (error.includes("Disconnect this provider before setting an API key")) {
+        return translate("providers:disconnectBeforeApiKey")
+    }
+    return error
 }

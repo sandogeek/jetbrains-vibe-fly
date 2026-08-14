@@ -1,8 +1,7 @@
 import type {
-    CredentialAction,
+    CustomProviderMutationRequest,
     ProviderLoginResult,
     ProviderLogoutResult,
-    ProviderPatch,
     ProvidersPatchResult,
     ProvidersRefreshResult,
     Ui2HostSettings,
@@ -92,22 +91,49 @@ export class UiProviderSettingsClient {
     }
 
     /**
-     * Optimistic-concurrency patch with revision replay.
+     * Set or replace a provider API key through the Host credential command.
+     * The Agent credential store retries conflicts; the UI does not replay.
+     */
+    async setApiKey(providerId: string, apiKey: string): Promise<GatedProviderResult<ProvidersPatchResult>> {
+        return this.#gate(await this.host.setProviderApiKey({providerId, apiKey}, PROVIDER_CONFIG_RPC_OPTIONS))
+    }
+
+    /**
+     * Create or replace a custom provider entry and optionally set its API key.
+     */
+    async saveCustomProvider(input: {
+        id: string
+        configJson: string
+        apiKey?: string
+    }): Promise<GatedProviderResult<ProvidersPatchResult>> {
+        const apiKey = input.apiKey?.trim() ?? ""
+        return this.#mutateCustom({
+            id: input.id,
+            configJson: input.configJson,
+            apiKey: apiKey || null,
+            remove: false,
+        })
+    }
+
+    /** Delete a custom provider entry and any stored credential for that id. */
+    async deleteCustomProvider(id: string): Promise<GatedProviderResult<ProvidersPatchResult>> {
+        return this.#mutateCustom({id, remove: true})
+    }
+
+    /**
+     * Optimistic-concurrency custom-provider mutation with revision replay.
      * On conflict, advance `expectedRevision` from the host response when align
      * succeeded, otherwise re-read the local application revision and retry.
      * Exhausted retries surface conflict without a snapshot (caller must refresh).
-     * 带 revision 重放的乐观并发 patch。
-     * 冲突时：若 align 成功则用 Host 响应推进 `expectedRevision`，否则重读本地
-     * application revision 再重试。重试耗尽则返回无 snapshot 的冲突（调用方须 refresh）。
+     * 带 revision 重放的乐观并发自定义 Provider 变更。
      */
-    async applyPatch(
-        providers: ProviderPatch[],
-        credentials: CredentialAction[] = [],
+    async #mutateCustom(
+        request: CustomProviderMutationRequest,
     ): Promise<GatedProviderResult<ProvidersPatchResult>> {
         let expectedRevision = this.settings.client.getSnapshot("application").revision
         for (let attempt = 0; attempt < 4; attempt += 1) {
-            const result = await this.host.applyProvidersPatch(
-                {providers, credentials},
+            const result = await this.host.mutateCustomProvider(
+                request,
                 expectedRevision,
                 PROVIDER_CONFIG_RPC_OPTIONS,
             )
@@ -145,7 +171,7 @@ export class UiProviderSettingsClient {
      * accepted and the result is not a conflict (conflicts are replayed by applyPatch).
      * 将本地设置对齐到 `result.revision`，仅在对齐成功时发布与 catalog 合并的 snapshot。
      * 嵌套调用共享一个失效标志：最外层 gate 结束后，若未接受 snapshot 且结果非冲突，
-     * 则执行延迟 refresh（冲突由 applyPatch 重放）。
+     * 则执行延迟 refresh（冲突由自定义 Provider mutation 重放）。
      */
     async #gate<T extends {
         revision?: string | null
@@ -171,9 +197,9 @@ export class UiProviderSettingsClient {
             if (this.#aligning === 0 && this.#invalidationDuringAlign) {
                 this.#invalidationDuringAlign = false
                 // A returned snapshot already represents the converged revision.
-                // Conflicting patch responses are immediately replayed by applyPatch.
+                // Conflicting custom-provider mutations are immediately replayed.
                 // 返回的 snapshot 已代表收敛后的 revision。
-                // 冲突的 patch 响应由 applyPatch 立即重放。
+                // 冲突的自定义 Provider 响应由 #mutateCustom 立即重放。
                 if (!snapshotAccepted && !("conflict" in result && result.conflict)) {
                     this.#scheduleRefresh()
                 }

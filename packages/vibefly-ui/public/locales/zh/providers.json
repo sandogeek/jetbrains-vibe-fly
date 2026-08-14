@@ -12,6 +12,7 @@
   "disconnectConfirm": "断开 {{name}}？这将从 Vibe Fly 的 auth.json 移除已存储的 API 密钥和 OAuth 会话。",
   "deleteConfirm": "删除自定义提供商“{{id}}”？这将从 models.json 移除其配置并清除 API 密钥。",
   "saveFailed": "保存提供商配置失败",
+  "disconnectBeforeApiKey": "请先断开连接，再设置 API 密钥",
   "logoutFailed": "退出登录失败",
   "loginFailed": "登录失败",
   "loginSuccess": "登录成功",

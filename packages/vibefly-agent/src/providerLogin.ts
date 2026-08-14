@@ -12,7 +12,6 @@ import type {
 import {log} from "./log.js"
 import {resolveLoginProviderId} from "./loginProviders.js"
 import {getPiRuntime, type PiRuntime} from "./piRuntime.js"
-import {getProvidersSnapshot} from "./providerConfig.js"
 
 const loginUiOpts = rpcOptions({ timeoutMs: 0 })
 
@@ -147,10 +146,9 @@ export async function loginProvider(
       loginType(provider),
       interaction,
     )
-      const snapshot = await getProvidersSnapshot(runtime)
     log.info("loginProvider ok", { providerId: loginId, identityType: credential.type })
     if (credential.type === "api_key") {
-      return { ok: true, identityType: "api_key", snapshot }
+      return { ok: true, identityType: "api_key" }
     }
     return {
       ok: true,
@@ -159,7 +157,6 @@ export async function loginProvider(
       accountId: typeof credential.accountId === "string" ? credential.accountId : null,
       orgId: typeof credential.orgId === "string" ? credential.orgId : null,
       orgName: typeof credential.orgName === "string" ? credential.orgName : null,
-      snapshot,
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
@@ -181,9 +178,8 @@ export async function logoutProvider(
   try {
     await runtime.modelRuntime.logout(loginId)
     if (providerId !== loginId) await runtime.modelRuntime.logout(providerId)
-      const snapshot = await getProvidersSnapshot(runtime)
     log.info("logoutProvider ok", { providerId, loginId })
-    return { ok: true, snapshot }
+    return { ok: true }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     log.warn("logoutProvider failed", { providerId, err: message })

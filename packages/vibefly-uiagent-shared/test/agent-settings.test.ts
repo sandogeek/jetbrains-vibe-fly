@@ -88,6 +88,7 @@ describe("agent-only settings documents", () => {
         )
         assert.equal(browserEntry.includes("agent-settings"), false)
         assert.equal(browserEntry.includes("authJson"), false)
+        assert.equal(browserEntry.includes("provider-settings"), false)
     })
 
     test("normalizeAgentSettingsSnapshot accepts wire-shaped application and project payloads", () => {

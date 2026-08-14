@@ -20,18 +20,8 @@ data class ProviderPatch(
 )
 
 @Serializable
-data class CredentialAction(
-    val provider: String,
-    /** set | clear | logout */
-    val action: String,
-    /** Required when action is set; empty/null is ignored for set. */
-    val apiKey: String? = null,
-)
-
-@Serializable
 data class ProvidersPatchRequest(
     val providers: List<ProviderPatch> = emptyList(),
-    val credentials: List<CredentialAction> = emptyList(),
 )
 
 @Serializable
@@ -41,4 +31,58 @@ data class ProvidersPatchResult(
     val snapshot: ProvidersSnapshot? = null,
     val revision: String? = null,
     val conflict: Boolean = false,
+)
+
+/**
+ * Trusted stdio result of a models.json-only Agent transform.
+ * Host stamps revision after an atomic models.json save and never writes auth.json.
+ */
+@Serializable
+data class ModelsDocumentPatchResult(
+    val ok: Boolean,
+    val error: String? = null,
+    val modelsJson: String? = null,
+    val modelsChanged: Boolean = false,
+)
+
+@Serializable
+data class ProviderApiKeyRequest(
+    val providerId: String,
+    val apiKey: String,
+)
+
+@Serializable
+data class ProviderApiKeyResult(
+    val ok: Boolean,
+    val error: String? = null,
+)
+
+/**
+ * Atomic custom-provider mutation across models.json and optional auth.json.
+ *
+ * - [remove]=true deletes the models.json entry and any credential for [id].
+ * - Non-remove operations replace the models.json entry with [configJson].
+ * - Non-blank [apiKey] writes an api_key credential; blank/null leaves auth.json unchanged.
+ */
+@Serializable
+data class CustomProviderMutationRequest(
+    val id: String,
+    val remove: Boolean = false,
+    val configJson: String? = null,
+    val apiKey: String? = null,
+)
+
+/**
+ * Trusted stdio result of a pure Agent-side custom-provider transform.
+ * Host stamps revision after an atomic models.json / auth.json save.
+ */
+@Serializable
+data class ProviderDocumentsPatchResult(
+    val ok: Boolean,
+    val error: String? = null,
+    val modelsJson: String? = null,
+    val authJson: String? = null,
+    val modelsChanged: Boolean = false,
+    val authChanged: Boolean = false,
+    val snapshot: ProvidersSnapshot? = null,
 )

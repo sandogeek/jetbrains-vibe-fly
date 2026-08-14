@@ -27,4 +27,15 @@ interface Ui2HostSettings {
 
     @RpcFun(5)
     suspend fun logoutProvider(request: ProviderLogoutRequest): ProviderLogoutResult
+
+    /** Set or replace an API key through the Agent credential store. */
+    @RpcFun(6)
+    suspend fun setProviderApiKey(request: ProviderApiKeyRequest): ProvidersPatchResult
+
+    /** Atomically create, update, or delete a custom provider and optional API key. */
+    @RpcFun(7)
+    suspend fun mutateCustomProvider(
+        request: CustomProviderMutationRequest,
+        expectedRevision: String,
+    ): ProvidersPatchResult
 }

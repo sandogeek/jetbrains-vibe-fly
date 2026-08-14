@@ -58,7 +58,12 @@ class SettingsUi2Host(
         return try {
             val application = VibeflyApplicationSettingsService.getInstance()
             val settings = application.snapshot(refresh = true)
-            val snapshot = ProviderSettingsJson.snapshot(settings)
+            val snapshot = VibeflyAgentService.getInstance(project).withControl { control ->
+                control.getProvidersSnapshot(
+                    settings.content(SettingsDocument.MODELS),
+                    settings.content(SettingsDocument.AUTH),
+                )
+            }
             log.info(
                 "refreshProviders done request=$requestId elapsedMs=${elapsedMs()} " +
                         "providers=${snapshot.providers.size}",
@@ -80,8 +85,44 @@ class SettingsUi2Host(
     override suspend fun applyProvidersPatch(
         request: ProvidersPatchRequest,
         expectedRevision: String,
-    ): ProvidersPatchResult = VibeflyApplicationSettingsService.getInstance()
-        .applyProvidersPatch(request, expectedRevision)
+    ): ProvidersPatchResult {
+        val application = VibeflyApplicationSettingsService.getInstance()
+        val current = application.snapshot(refresh = true)
+        revisionConflict(current, expectedRevision)?.let { return it }
+
+        val patched = try {
+            VibeflyAgentService.getInstance(project).withControl { control ->
+                control.applyProvidersPatch(
+                    request,
+                    current.content(SettingsDocument.MODELS),
+                )
+            }
+        } catch (error: Exception) {
+            log.warn("applyProvidersPatch agent transform failed", error)
+            return ProvidersPatchResult(ok = false, error = error.message ?: error.toString())
+        }
+        if (!patched.ok) {
+            return ProvidersPatchResult(
+                ok = false,
+                error = patched.error ?: "Invalid provider config patch",
+                revision = current.revision,
+            )
+        }
+
+        if (patched.modelsChanged && patched.modelsJson == null) {
+            return ProvidersPatchResult(
+                ok = false,
+                error = "Agent omitted modelsJson for a models change",
+                revision = current.revision,
+            )
+        }
+
+        return persistProviderDocuments(
+            modelsJson = if (patched.modelsChanged) patched.modelsJson else null,
+            authJson = null,
+            expectedRevision = expectedRevision,
+        )
+    }
 
     override suspend fun loginProvider(request: ProviderLoginRequest): ProviderLoginResult {
         val webUi = WebProviderLoginUi(host2UiSettingsProvider)
@@ -92,12 +133,12 @@ class SettingsUi2Host(
                 ) { control ->
                     activeControl.set(control)
                     try {
-                        control.loginProvider(request)
+                        control.loginProvider(request).withHostSnapshot(control)
                     } finally {
                         activeControl.compareAndSet(control, null)
                     }
                 }
-            }.withHostSnapshot()
+            }
         } catch (e: Exception) {
             log.warn("loginProvider failed", e)
             ProviderLoginResult(ok = false, error = e.message ?: e.toString())
@@ -120,12 +161,76 @@ class SettingsUi2Host(
     override suspend fun logoutProvider(request: ProviderLogoutRequest): ProviderLogoutResult {
         return try {
             VibeflyAgentService.getInstance(project).withControl { control ->
-                control.logoutProvider(request)
-            }.withHostSnapshot()
+                control.logoutProvider(request).withHostSnapshot(control)
+            }
         } catch (e: Exception) {
             log.warn("logoutProvider failed", e)
             ProviderLogoutResult(ok = false, error = e.message ?: e.toString())
         }
+    }
+
+    override suspend fun setProviderApiKey(request: ProviderApiKeyRequest): ProvidersPatchResult {
+        return try {
+            VibeflyAgentService.getInstance(project).withControl { control ->
+                val result = control.setProviderApiKey(request)
+                if (!result.ok) {
+                    return@withControl ProvidersPatchResult(ok = false, error = result.error)
+                }
+                attachProvidersSnapshot(control, ProvidersPatchResult(ok = true))
+            }
+        } catch (e: Exception) {
+            log.warn("setProviderApiKey failed", e)
+            ProvidersPatchResult(ok = false, error = e.message ?: e.toString())
+        }
+    }
+
+    override suspend fun mutateCustomProvider(
+        request: CustomProviderMutationRequest,
+        expectedRevision: String,
+    ): ProvidersPatchResult {
+        val application = VibeflyApplicationSettingsService.getInstance()
+        val current = application.snapshot(refresh = true)
+        revisionConflict(current, expectedRevision)?.let { return it }
+
+        val patched = try {
+            VibeflyAgentService.getInstance(project).withControl { control ->
+                control.mutateCustomProvider(
+                    request,
+                    current.content(SettingsDocument.MODELS),
+                    current.content(SettingsDocument.AUTH),
+                )
+            }
+        } catch (error: Exception) {
+            log.warn("mutateCustomProvider agent transform failed", error)
+            return ProvidersPatchResult(ok = false, error = error.message ?: error.toString())
+        }
+        if (!patched.ok) {
+            return ProvidersPatchResult(
+                ok = false,
+                error = patched.error ?: "Invalid custom provider mutation",
+                revision = current.revision,
+            )
+        }
+        if (patched.modelsChanged && patched.modelsJson == null) {
+            return ProvidersPatchResult(
+                ok = false,
+                error = "Agent omitted modelsJson for a models change",
+                revision = current.revision,
+            )
+        }
+        if (patched.authChanged && patched.authJson == null) {
+            return ProvidersPatchResult(
+                ok = false,
+                error = "Agent omitted authJson for an auth change",
+                revision = current.revision,
+            )
+        }
+
+        return persistProviderDocuments(
+            modelsJson = if (patched.modelsChanged) patched.modelsJson else null,
+            authJson = if (patched.authChanged) patched.authJson else null,
+            expectedRevision = expectedRevision,
+        )
     }
 
     override fun dispose() {
@@ -146,23 +251,91 @@ class SettingsUi2Host(
         }
     }
 
-    private fun ProviderLoginResult.withHostSnapshot(): ProviderLoginResult {
+    private suspend fun ProviderLoginResult.withHostSnapshot(control: Host2Agent): ProviderLoginResult {
         if (!ok) return this
-        val application = VibeflyApplicationSettingsService.getInstance()
-        val settings = application.snapshot(refresh = true)
+        val settings = VibeflyApplicationSettingsService.getInstance().snapshot(refresh = true)
         return copy(
-            snapshot = ProviderSettingsJson.snapshot(settings),
+            snapshot = control.getProvidersSnapshot(
+                settings.content(SettingsDocument.MODELS),
+                settings.content(SettingsDocument.AUTH),
+            ),
             revision = settings.revision,
             conflict = false,
         )
     }
 
-    private fun ProviderLogoutResult.withHostSnapshot(): ProviderLogoutResult {
+    private suspend fun ProviderLogoutResult.withHostSnapshot(control: Host2Agent): ProviderLogoutResult {
         if (!ok) return this
-        val application = VibeflyApplicationSettingsService.getInstance()
-        val settings = application.snapshot(refresh = true)
+        val settings = VibeflyApplicationSettingsService.getInstance().snapshot(refresh = true)
         return copy(
-            snapshot = ProviderSettingsJson.snapshot(settings),
+            snapshot = control.getProvidersSnapshot(
+                settings.content(SettingsDocument.MODELS),
+                settings.content(SettingsDocument.AUTH),
+            ),
+            revision = settings.revision,
+            conflict = false,
+        )
+    }
+
+    private fun revisionConflict(
+        current: SettingsScopeSnapshot,
+        expectedRevision: String,
+    ): ProvidersPatchResult? {
+        if (current.revision == expectedRevision) return null
+        return ProvidersPatchResult(
+            ok = false,
+            error = "Settings revision conflict",
+            revision = current.revision,
+            conflict = true,
+        )
+    }
+
+    private suspend fun persistProviderDocuments(
+        modelsJson: String?,
+        authJson: String?,
+        expectedRevision: String,
+    ): ProvidersPatchResult {
+        val result = VibeflyApplicationSettingsService.getInstance().saveProviderDocuments(
+            modelsJson = modelsJson,
+            authJson = authJson,
+            expectedRevision = expectedRevision,
+        )
+        if (!result.ok || result.conflict) {
+            return ProvidersPatchResult(
+                ok = result.ok,
+                error = result.error,
+                revision = result.revision,
+                conflict = result.conflict,
+            )
+        }
+        return try {
+            VibeflyAgentService.getInstance(project).withControl { control ->
+                attachProvidersSnapshot(
+                    control,
+                    ProvidersPatchResult(ok = true, revision = result.revision),
+                )
+            }
+        } catch (error: Exception) {
+            log.warn("attachProvidersSnapshot failed after provider document save", error)
+            ProvidersPatchResult(
+                ok = true,
+                error = error.message ?: error.toString(),
+                revision = result.revision,
+            )
+        }
+    }
+
+    private suspend fun attachProvidersSnapshot(
+        control: Host2Agent,
+        result: ProvidersPatchResult,
+    ): ProvidersPatchResult {
+        if (!result.ok) return result
+        val settings = VibeflyApplicationSettingsService.getInstance().snapshot(refresh = true)
+        return result.copy(
+            snapshot = control.getProvidersSnapshot(
+                settings.content(SettingsDocument.MODELS),
+                settings.content(SettingsDocument.AUTH),
+            ),
             revision = settings.revision,
             conflict = false,
         )
