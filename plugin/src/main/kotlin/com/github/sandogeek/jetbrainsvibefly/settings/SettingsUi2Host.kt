@@ -219,6 +219,8 @@ class SettingsUi2Host(
     override suspend fun getAgentConnection(): AgentConnection? {
         return try {
             VibeflyAgentService.getInstance(project).openSession(AgentOrigin.currentPanel())
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: Exception) {
             log.warn("getAgentConnection failed", error)
             null

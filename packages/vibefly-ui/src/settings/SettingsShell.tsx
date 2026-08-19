@@ -185,18 +185,20 @@ export function SettingsShell() {
             // 同步拆除：StrictMode 下安全，因为 cleanup 在下次 setup 之前执行。
             unsubscribeProviderRefresh?.()
             unsubscribeProviderRefresh = undefined
-            stopAgent?.()
-            stopAgent = undefined
             unbindConsole?.()
             unbindConsole = undefined
             if (mutationQueue.current === queue) {
                 mutationQueue.current = null
             }
-            // Flush this effect's queue, then close only its peer and drop shared ownership
-            // when identity still matches (do not wipe the remounted effect's runtime).
-            // 冲刷本 effect 的队列，再仅关闭其 peer，并在身份仍匹配时放弃共享所有权
-            // （不要抹掉已 remount 的 effect 的 runtime）。
+            // Flush pending mutations while the Agent client is still available,
+            // then stop the socket. Stopping first made persist() throw
+            // "Agent settings client is unavailable" on remount/language reload.
+            // 先在 Agent 仍可用时冲刷待写入，再停 socket。
+            // 若先 stop，persist() 会因 Agent 不可用而丢掉语言等变更。
+            const stopAgentHandle = stopAgent
+            stopAgent = undefined
             void queue.close().finally(() => {
+                stopAgentHandle?.()
                 peerClose?.()
                 releaseSettingsShellOwnership({
                     runtime,

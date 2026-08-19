@@ -1,6 +1,7 @@
 package com.github.sandogeek.vibefly.jcef.rpc
 
 import com.intellij.openapi.diagnostic.logger
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * Default [Ui2HostChat] for the tool-window WebView.
@@ -24,6 +25,8 @@ class Ui2HostChatImpl(
         val provider = agentConnectionProvider ?: return null
         return try {
             provider()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             log.warn("getAgentConnection failed", e)
             null

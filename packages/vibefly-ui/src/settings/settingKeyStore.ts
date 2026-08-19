@@ -16,6 +16,7 @@ export type SettingEntryStatus = "loading" | "ready" | "saving" | "error"
 type SettingEntry = {
     value: unknown
     sequence: number
+    writeGeneration: number
     status: SettingEntryStatus
     error?: string
     listeners: Set<() => void>
@@ -68,6 +69,15 @@ export class SettingKeyStore {
         return this.#readKeys(keys.map((key) => key.id))
     }
 
+    /**
+     * Optimistic local write. Bumps writeGeneration so an in-flight read cannot
+     * clobber this value if it was started against an older generation.
+     * 乐观本地写入。提升 writeGeneration，避免针对旧 generation 的在途读取覆盖本次值。
+     */
+    stage(operations: readonly SettingMutation[]): void {
+        this.#applyLocalMutations(operations, "saving")
+    }
+
     handleInvalidation(change: AgentSettingsInvalidation): Promise<void> {
         const documents = new Set(change.changes.map((item) => item.document))
         const keyIds = [...this.#entries.keys()].filter((keyId) => {
@@ -84,13 +94,7 @@ export class SettingKeyStore {
     async persist(operations: readonly SettingMutation[]): Promise<void> {
         const client = this.agent()
         if (!client) throw new Error("Agent settings client is unavailable")
-        for (const operation of operations) {
-            const entry = this.#entries.get(settingMutationId(operation))
-            if (entry) {
-                entry.status = "saving"
-                this.#notifyEntry(entry)
-            }
-        }
+        this.#applyLocalMutations(operations, "saving")
         const request: SettingMutationRequest = {
             clientMutationId: crypto.randomUUID(),
             operations: operations.map((operation) => (
@@ -108,8 +112,10 @@ export class SettingKeyStore {
                 entry.error = result.error ?? "Settings save failed"
                 this.#notifyEntry(entry)
             }
+            await this.#readKeys(operations.map((operation) => operation.key.id))
             throw new Error(result.error ?? "Settings save failed")
         }
+        this.#markReady(operations)
         await this.#readKeys(operations.map((operation) => operation.key.id))
     }
 
@@ -123,19 +129,22 @@ export class SettingKeyStore {
                 .filter((key) => unique.includes(key.id))
                 .map((key) => settingDocumentFile(key.document)),
         )
-        for (const document of documents) {
-            this.#documentEpochs.set(document, (this.#documentEpochs.get(document) ?? 0) + 1)
-        }
         const inflightKey = [...documents].sort().join(",")
         const pending = this.#inflight.get(inflightKey)
         if (pending) {
             await pending
             return this.#readKeys(unique)
         }
+        for (const document of documents) {
+            this.#documentEpochs.set(document, (this.#documentEpochs.get(document) ?? 0) + 1)
+        }
         const epochs = new Map(
             [...documents].map((document) => [document, this.#documentEpochs.get(document) ?? 0]),
         )
-        const task = this.#readKeysOnce(unique, epochs)
+        const writeGenerations = new Map(
+            unique.map((keyId) => [keyId, this.#entries.get(keyId)?.writeGeneration ?? 0]),
+        )
+        const task = this.#readKeysOnce(unique, epochs, writeGenerations)
         this.#inflight.set(inflightKey, task)
         try {
             await task
@@ -151,19 +160,25 @@ export class SettingKeyStore {
     async #readKeysOnce(
         keyIds: string[],
         epochs: Map<string, number>,
+        writeGenerations: Map<string, number>,
     ): Promise<void> {
         const client = this.agent()
         if (!client) return
         const results = await client.readSettingValues(keyIds)
-        for (const result of results) this.#applyResult(result, epochs)
+        for (const result of results) this.#applyResult(result, epochs, writeGenerations)
         this.#rebuildView()
     }
 
-    #applyResult(result: SettingValueResult, epochs: Map<string, number>): void {
+    #applyResult(
+        result: SettingValueResult,
+        epochs: Map<string, number>,
+        writeGenerations: Map<string, number>,
+    ): void {
         const entry = this.#entries.get(result.keyId)
         if (!entry) return
         const epoch = epochs.get(result.document)
         if (epoch != null && epoch !== this.#documentEpochs.get(result.document)) return
+        if ((writeGenerations.get(result.keyId) ?? 0) !== entry.writeGeneration) return
         if (result.sequence < entry.sequence) return
         entry.value = cloneValue(result.value)
         entry.sequence = result.sequence
@@ -178,11 +193,38 @@ export class SettingKeyStore {
         const created: SettingEntry = {
             value: cloneValue(key.decode(undefined)),
             sequence: 0,
+            writeGeneration: 0,
             status: "loading",
             listeners: new Set(),
         }
         this.#entries.set(key.id, created)
         return created
+    }
+
+    #applyLocalMutations(operations: readonly SettingMutation[], status: SettingEntryStatus): void {
+        if (operations.length === 0) return
+        for (const operation of operations) {
+            const entry = this.#ensureEntry(operation.key)
+            entry.writeGeneration += 1
+            entry.value = operation.kind === "set"
+                ? cloneValue(operation.value)
+                : cloneValue(operation.key.decode(undefined))
+            entry.status = status
+            entry.error = undefined
+            this.#notifyEntry(entry)
+        }
+        this.#rebuildView()
+    }
+
+    #markReady(operations: readonly SettingMutation[]): void {
+        for (const operation of operations) {
+            const entry = this.#entries.get(settingMutationId(operation))
+            if (!entry) continue
+            entry.status = "ready"
+            entry.error = undefined
+            this.#notifyEntry(entry)
+        }
+        this.#rebuildView()
     }
 
     #notifyEntry(entry: SettingEntry): void {

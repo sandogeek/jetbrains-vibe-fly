@@ -13,19 +13,21 @@ class FakeAgent {
         [settingKeys.defaultProvider.id, ""],
     ])
     mutations: Array<{keyId: string; value?: unknown}> = []
+    sequence = 1
 
     async readSettingValues(keyIds: string[]) {
-        return keyIds.map((keyId, index) => ({
+        return keyIds.map((keyId) => ({
             keyId,
             value: this.values.get(keyId) ?? settingKeys.ui.locale.decode(undefined),
             source: "application" as const,
             document: keyId.startsWith("settings:") ? "settings.json" as const : "settings.vibefly.json" as const,
             revisions: {application: "app-1", project: null},
-            sequence: index + 1,
+            sequence: this.sequence,
         }))
     }
 
     async mutateSettings(request: {operations: Array<{keyId: string; value?: unknown}>}) {
+        this.sequence += 1
         for (const operation of request.operations) {
             this.mutations.push(operation)
             if (operation.value !== undefined) this.values.set(operation.keyId, operation.value)
@@ -45,6 +47,7 @@ describe("UiSettingsRuntime", () => {
         await runtime.persist([setSetting(settingKeys.ui.locale, "zh")])
         expect(agent.mutations).toHaveLength(1)
         expect(agent.mutations[0]!.keyId).toBe(settingKeys.ui.locale.id)
+        expect(runtime.getView().settings.ui.locale).toBe("zh")
     })
 
     test("getSnapshot returns a cached view until settings change", async () => {

@@ -92,7 +92,9 @@ export class UiSettingsRuntime {
         return this.#modelsRevision === revision || revision === ""
     }
 
-    stage(_operations: readonly SettingMutation[]): void {}
+    stage(operations: readonly SettingMutation[]): void {
+        this.store.stage(operations)
+    }
 
     mutate(operations: readonly SettingMutation[]): Promise<void> {
         return this.persist(operations)

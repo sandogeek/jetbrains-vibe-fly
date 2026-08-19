@@ -64,12 +64,27 @@ export const i18nReady = i18n
         },
     })
 
-/** Apply IDE-persisted UI language preference to the active i18n instance. */
+let desiredUiLanguage: string | null = null
+let localeApplyChain: Promise<void> = Promise.resolve()
+
+/**
+ * Apply the persisted UI language. Calls are serialized onto the latest desired
+ * language so a slow first `changeLanguage` cannot overwrite a later click.
+ * 应用已持久化的界面语言。按“最后一次请求”串行执行，避免第一次慢速
+ * `changeLanguage` 完成后覆盖后续点击。
+ */
 export function applyUiLocale(mode?: string | null): void {
     const normalized = normalizeUiLocaleMode(mode)
     const lng = normalized === "follow_ide" ? detectLocale() : normalized
-    if (i18n.resolvedLanguage === lng || i18n.language === lng) return
-    void i18n.changeLanguage(lng)
+    desiredUiLanguage = lng
+    localeApplyChain = localeApplyChain
+        .then(async () => {
+            const targetLanguage = desiredUiLanguage
+            if (targetLanguage == null) return
+            if (i18n.resolvedLanguage === targetLanguage || i18n.language === targetLanguage) return
+            await i18n.changeLanguage(targetLanguage)
+        })
+        .catch(() => undefined)
 }
 
 /**

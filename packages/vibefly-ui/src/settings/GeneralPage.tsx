@@ -14,7 +14,7 @@ export function GeneralPage(props: GeneralPageProps) {
     const locale = props.settings.ui?.locale ?? "follow_ide"
     const onLocale = (value: IdeSettings["ui"]["locale"]) => {
         applyUiLocale(value)
-        props.onMutate([setSetting(settingKeys.ui.locale, value)])
+        props.onMutate([setSetting(settingKeys.ui.locale, value)], {immediate: true})
     }
     return (
         <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto p-4">
