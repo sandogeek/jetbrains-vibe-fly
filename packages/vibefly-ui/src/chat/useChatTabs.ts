@@ -23,7 +23,6 @@ export function useChatTabs(options: {
   const [tabs, setTabs] = useState<ChatTab[]>([])
   const [activeId, setActiveId] = useState("")
   const [recent, setRecent] = useState<RecentChatSession[]>([])
-  const [recentOpen, setRecentOpen] = useState(false)
   const tabsRef = useRef<ChatTab[]>([])
   const activeIdRef = useRef("")
 
@@ -80,7 +79,6 @@ export function useChatTabs(options: {
   )
 
   const newSession = useCallback(async () => {
-    setRecentOpen(false)
     if (offlineRef.current) {
       const id = `demo-${Date.now()}`
       const tab: ChatTab = {
@@ -171,9 +169,7 @@ export function useChatTabs(options: {
   )
 
   const refreshRecent = useCallback(async () => {
-    const open = !recentOpen
-    setRecentOpen(open)
-    if (!open || !agentRef.current || offlineRef.current) return
+    if (!agentRef.current || offlineRef.current) return
     try {
       setRecent(
         await agentRef.current.listRecentChatSessions({
@@ -183,34 +179,36 @@ export function useChatTabs(options: {
     } catch (recentError) {
       setError(errorText(recentError))
     }
-  }, [agentRef, offlineRef, projectRootRef, recentOpen, setError])
-
-  const closeRecent = useCallback(() => {
-    setRecentOpen(false)
-  }, [])
+  }, [agentRef, offlineRef, projectRootRef, setError])
 
   const openRecent = useCallback(
-    async (session: RecentChatSession) => {
-      setRecentOpen(false)
+    async (session: RecentChatSession, options?: {replaceSessionId?: string}) => {
       const existing = tabsRef.current.find((tab) => tab.summary.sessionId === session.sessionId)
-      if (existing) {
-        await activate(existing.summary.sessionId)
-        return
-      }
-      if (!agentRef.current) return
       try {
-        const snapshot = await agentRef.current.openChatSession({
-          projectRoot: projectRootRef.current,
-          sessionId: session.sessionId,
-          sessionFile: session.sessionFile,
-        })
-        updateTabs((current) => [...current, snapshot])
-        await activate(snapshot.summary.sessionId)
+        if (existing) {
+          await activate(existing.summary.sessionId)
+        } else {
+          if (!agentRef.current) return
+          const snapshot = await agentRef.current.openChatSession({
+            projectRoot: projectRootRef.current,
+            sessionId: session.sessionId,
+            sessionFile: session.sessionFile,
+          })
+          updateTabs((current) => [...current, snapshot])
+          await activate(snapshot.summary.sessionId)
+        }
       } catch (openError) {
         setError(errorText(openError))
+        return
       }
+
+      const replaceSessionId = options?.replaceSessionId
+      if (!replaceSessionId || replaceSessionId === session.sessionId) return
+      const sourceTab = tabsRef.current.find((tab) => tab.summary.sessionId === replaceSessionId)
+      if (!sourceTab || sourceTab.messages.length > 0 || sourceTab.summary.messageCount > 0) return
+      await closeSession(replaceSessionId)
     },
-    [activate, agentRef, projectRootRef, setError, updateTabs],
+    [activate, agentRef, closeSession, projectRootRef, setError, updateTabs],
   )
 
   const reorderTabs = useCallback(
@@ -236,7 +234,6 @@ export function useChatTabs(options: {
     activeTab,
     recent,
     setRecent,
-    recentOpen,
     thinkingOptions,
     busy,
     queued,
@@ -249,7 +246,6 @@ export function useChatTabs(options: {
     closeSession,
     closeOtherSessions,
     refreshRecent,
-    closeRecent,
     openRecent,
     reorderTabs,
   }

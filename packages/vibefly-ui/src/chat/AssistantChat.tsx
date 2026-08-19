@@ -10,6 +10,7 @@ import {
     settingKeys,
     type ChatContextItem,
     type ChatMessage,
+    type RecentChatSession,
     type ToolPermissionDecision,
 } from "@vibefly/uiagent-shared"
 import {
@@ -17,6 +18,7 @@ import {
     ChevronDown,
     CircleStop,
     FileCode2,
+    History,
     MessageSquareText,
     Paperclip,
     Send,
@@ -24,7 +26,7 @@ import {
     Sparkles,
     X,
 } from "lucide-react"
-import {type MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState} from "react"
+import {type MouseEvent as ReactMouseEvent, useCallback, useEffect, useMemo, useRef, useState} from "react"
 
 import {convertChatMessage} from "../chatMessageAdapter"
 import {useAppTranslation} from "../i18n"
@@ -33,6 +35,8 @@ import type {SettingKeyStore} from "../settings/settingKeyStore"
 import {useSettingKey} from "../settings/useSettingKey"
 import {ChatMessageActionsContext, ChatMessageView} from "./MessageParts"
 import type {ChatTab, PendingInput, PendingPermission, ThinkingOption} from "./types"
+import {ChatHistoryView, RecentSessionRow} from "./ChatHistoryView"
+import {filterListedRecentSessions, formatRelativeTime, RECENT_PREVIEW_LIMIT} from "./recentSessions"
 
 /** Stable identity — inline children remount on every stream tick. */
 const renderThreadMessage = () => <ChatMessageView/>
@@ -66,6 +70,9 @@ export type AssistantChatProps = {
     onOpenLocation: (path: string, line?: number) => void
     onShowDiff: (path: string) => void
     onOpenExternalUrl: (url: string) => void
+    recent: RecentChatSession[]
+    onRefreshRecent: () => Promise<void>
+    onOpenRecent: (session: RecentChatSession) => Promise<void>
 }
 
 function modelLabel(modelId: string | undefined, fallback: string): string {
@@ -77,8 +84,15 @@ function modelLabel(modelId: string | undefined, fallback: string): string {
 export function AssistantChat(props: AssistantChatProps) {
     const {t} = useAppTranslation("chat")
     const running = props.busy || props.queued
+    const isEmpty = props.tab.messages.length === 0
+    const [historyOpen, setHistoryOpen] = useState(false)
     const pinnedSpecs = useSettingKey(props.store, settingKeys.modelPreferences.pinnedModelSpecs)
     const recentSpecs = useSettingKey(props.store, settingKeys.modelPreferences.recentModelSpecs)
+    const listedRecent = useMemo(
+        () => filterListedRecentSessions(props.recent, props.tab.summary.sessionId),
+        [props.recent, props.tab.summary.sessionId],
+    )
+    const previewRecent = listedRecent.slice(0, RECENT_PREVIEW_LIMIT)
     const runtime = useExternalStoreRuntime<ChatMessage>({
         messages: props.tab.messages,
         convertMessage: convertChatMessage,
@@ -100,6 +114,20 @@ export function AssistantChat(props: AssistantChatProps) {
         }
     }, [props.draft, runtime])
 
+    useEffect(() => {
+        if (!isEmpty) setHistoryOpen(false)
+    }, [isEmpty])
+
+    useEffect(() => {
+        if (!isEmpty || !props.connected || props.offline) return
+        void props.onRefreshRecent()
+    }, [isEmpty, props.connected, props.offline, props.onRefreshRecent, props.tab.summary.sessionId])
+
+    const openRecentSession = (session: RecentChatSession) => {
+        void props.onOpenRecent(session)
+    }
+    const closeHistory = useCallback(() => setHistoryOpen(false), [])
+
     const onMarkdownClick = (event: ReactMouseEvent<HTMLElement>) => {
         const anchor = (event.target as HTMLElement).closest("a")
         const href = anchor?.getAttribute("href")
@@ -116,6 +144,16 @@ export function AssistantChat(props: AssistantChatProps) {
         [props.onOpenLocation, props.onShowDiff],
     )
 
+    if (historyOpen) {
+        return (
+            <ChatHistoryView
+                sessions={listedRecent}
+                onOpen={openRecentSession}
+                onClose={closeHistory}
+            />
+        )
+    }
+
     return (
         <AssistantRuntimeProvider runtime={runtime}>
             <ChatMessageActionsContext.Provider value={messageActions}>
@@ -128,11 +166,36 @@ export function AssistantChat(props: AssistantChatProps) {
                     <div className="message-stream">
                         <AuiIf condition={(s) => s.thread.isEmpty}>
                             <div className="new-session-state">
-                                <div className="new-session-mark">
-                                    <Sparkles size={22}/>
+                                <div className="new-session-intro">
+                                    <div className="new-session-mark">
+                                        <Sparkles size={22}/>
+                                    </div>
+                                    <h1>{t("chat:startSession")}</h1>
+                                    <p>{modelLabel(props.tab.summary.modelId, t("chat:defaultModel"))}</p>
                                 </div>
-                                <h1>{t("chat:startSession")}</h1>
-                                <p>{modelLabel(props.tab.summary.modelId, t("chat:defaultModel"))}</p>
+                                {previewRecent.length > 0 ? (
+                                    <div className="recent-preview">
+                                        <div className="recent-preview-title">{t("chat:recentSessions")}</div>
+                                        {previewRecent.map((session) => (
+                                            <RecentSessionRow
+                                                key={session.sessionId}
+                                                session={session}
+                                                timeLabel={formatRelativeTime(session.updatedAt, t)}
+                                                onOpen={openRecentSession}
+                                            />
+                                        ))}
+                                        {listedRecent.length > RECENT_PREVIEW_LIMIT ? (
+                                            <button
+                                                type="button"
+                                                className="recent-show-history"
+                                                onClick={() => setHistoryOpen(true)}
+                                            >
+                                                <History size={13} strokeWidth={1.8}/>
+                                                {t("chat:showHistory")}
+                                            </button>
+                                        ) : null}
+                                    </div>
+                                ) : null}
                             </div>
                         </AuiIf>
                         <ThreadPrimitive.Messages>

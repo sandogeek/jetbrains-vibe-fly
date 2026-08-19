@@ -1,5 +1,5 @@
 import type {ChatSessionSummary, RecentChatSession} from "@vibefly/uiagent-shared"
-import {ChevronsUpDown, History, MessageSquareText, Plus, Settings2, ShieldCheck, X,} from "lucide-react"
+import {ChevronsUpDown, MessageSquareText, Plus, Settings2, ShieldCheck, X,} from "lucide-react"
 import {type RefObject, useCallback, useEffect, useRef, useState} from "react"
 
 import {ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger,} from "@/components/ui/context-menu"
@@ -49,8 +49,6 @@ function measureHiddenTabs(
 function ChatPageView({controller}: { controller: ChatController }) {
     const {t} = useAppTranslation("chat")
     const dragSessionIdRef = useRef<string | null>(null)
-    const recentTriggerRef = useRef<HTMLButtonElement>(null)
-    const recentMenuRef = useRef<HTMLDivElement>(null)
     const tabsRef = useRef<HTMLDivElement>(null)
     const tabsListTriggerRef = useRef<HTMLButtonElement>(null)
     const tabsListMenuRef = useRef<HTMLDivElement>(null)
@@ -120,9 +118,10 @@ function ChatPageView({controller}: { controller: ChatController }) {
     }, [actions, scrollTabIntoView])
 
     const openRecentSession = useCallback(async (session: RecentChatSession) => {
-        await actions.openRecent(session)
+        if (!activeTab) return
+        await actions.openRecent(session, {replaceSessionId: activeTab.summary.sessionId})
         scrollTabIntoView(session.sessionId)
-    }, [actions, scrollTabIntoView])
+    }, [actions, activeTab, scrollTabIntoView])
 
     useEffect(() => {
         const el = tabsRef.current
@@ -159,24 +158,16 @@ function ChatPageView({controller}: { controller: ChatController }) {
     }, [hasHiddenTabs, tabsListOpen])
 
     useEffect(() => {
-        if (!controller.recentOpen && !tabsListOpen) return
+        if (!tabsListOpen) return
         const onPointerDown = (event: PointerEvent) => {
             if (!(event.target instanceof Node)) return
-            if (controller.recentOpen) {
-                if (recentTriggerRef.current?.contains(event.target)) return
-                if (recentMenuRef.current?.contains(event.target)) return
-                actions.closeRecent()
-            }
-            if (tabsListOpen) {
-                if (tabsListTriggerRef.current?.contains(event.target)) return
-                if (tabsListMenuRef.current?.contains(event.target)) return
-                setTabsListOpen(false)
-            }
+            if (tabsListTriggerRef.current?.contains(event.target)) return
+            if (tabsListMenuRef.current?.contains(event.target)) return
+            setTabsListOpen(false)
         }
         const onKeyDown = (event: KeyboardEvent) => {
             if (event.key !== "Escape") return
-            if (tabsListOpen) setTabsListOpen(false)
-            if (controller.recentOpen) actions.closeRecent()
+            setTabsListOpen(false)
         }
         document.addEventListener("pointerdown", onPointerDown)
         document.addEventListener("keydown", onKeyDown)
@@ -184,7 +175,7 @@ function ChatPageView({controller}: { controller: ChatController }) {
             document.removeEventListener("pointerdown", onPointerDown)
             document.removeEventListener("keydown", onKeyDown)
         }
-    }, [controller.recentOpen, tabsListOpen, actions.closeRecent])
+    }, [tabsListOpen])
 
     return (
         <TooltipProvider delayDuration={350}>
@@ -260,7 +251,6 @@ function ChatPageView({controller}: { controller: ChatController }) {
                             aria-label={t("chat:showTabsList")}
                             aria-expanded={tabsListOpen}
                             onClick={() => {
-                                actions.closeRecent()
                                 refreshHiddenTabs()
                                 setTabsListOpen((open) => !open)
                             }}
@@ -292,17 +282,6 @@ function ChatPageView({controller}: { controller: ChatController }) {
                         <Plus size={17}/>
                     </button>
                     <button
-                        ref={recentTriggerRef}
-                        className="icon-button"
-                        title={t("chat:recentSessions")}
-                        onClick={() => {
-                            setTabsListOpen(false)
-                            void actions.refreshRecent()
-                        }}
-                    >
-                        <History size={16}/>
-                    </button>
-                    <button
                         className="icon-button"
                         title={t("chat:openSettings")}
                         onClick={actions.openSettings}
@@ -314,13 +293,6 @@ function ChatPageView({controller}: { controller: ChatController }) {
                         title={`${controller.hostStatus} / ${controller.agentStatus}`}
                     />
                 </div>
-                {controller.recentOpen ? (
-                    <RecentMenu
-                        menuRef={recentMenuRef}
-                        recent={controller.recent}
-                        onOpen={openRecentSession}
-                    />
-                ) : null}
             </header>
 
             {backgroundPermission ? (
@@ -385,6 +357,9 @@ function ChatPageView({controller}: { controller: ChatController }) {
                     onOpenLocation={actions.openLocation}
                     onShowDiff={actions.showDiff}
                     onOpenExternalUrl={actions.openExternalUrl}
+                    recent={controller.recent}
+                    onRefreshRecent={actions.refreshRecent}
+                    onOpenRecent={openRecentSession}
                 />
             ) : (
                 <section className="conversation">
@@ -501,48 +476,6 @@ function TabsListMenu({
     )
 }
 
-function RecentMenu({
-                        menuRef,
-                        recent,
-                        onOpen,
-                    }: {
-    menuRef: RefObject<HTMLDivElement | null>
-    recent: RecentChatSession[]
-    onOpen: (session: RecentChatSession) => Promise<void>
-}) {
-    const {t} = useAppTranslation("chat")
-    return (
-        <div
-            ref={menuRef}
-            className="recent-menu"
-            onPointerDown={(event) => event.stopPropagation()}
-        >
-            <div className="recent-menu-title">{t("chat:recentSessions")}</div>
-            {recent.length > 0 ? (
-                recent.map((session) => (
-                    <button
-                        key={session.sessionId}
-                        className="recent-item"
-                        onPointerDown={(event) => {
-                            event.preventDefault()
-                            event.stopPropagation()
-                            void onOpen(session)
-                        }}
-                    >
-                        <MessageSquareText size={14}/>
-                        <span>
-                            <strong>{session.title}</strong>
-                            <small>{new Date(session.updatedAt).toLocaleString()}</small>
-                        </span>
-                    </button>
-                ))
-            ) : (
-                <div className="empty-menu">{t("chat:noRecent")}</div>
-            )}
-        </div>
-    )
-}
-
 function TruncatedText({className, text}: { className?: string; text: string }) {
     const ref = useRef<HTMLSpanElement>(null)
     const [open, setOpen] = useState(false)
@@ -575,4 +508,3 @@ function TruncatedText({className, text}: { className?: string; text: string }) 
         </Tooltip>
     )
 }
-

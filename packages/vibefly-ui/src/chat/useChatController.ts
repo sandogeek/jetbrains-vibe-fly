@@ -28,7 +28,6 @@ export type ChatController = {
   activeId: string
   activeTab: ChatTab | null
   recent: RecentChatSession[]
-  recentOpen: boolean
   offline: boolean
   error: string | null
   activeDraft: string
@@ -48,8 +47,7 @@ export type ChatController = {
     closeSession: (sessionId: string) => Promise<void>
     closeOtherSessions: (sessionId: string) => Promise<void>
     refreshRecent: () => Promise<void>
-    closeRecent: () => void
-    openRecent: (session: RecentChatSession) => Promise<void>
+    openRecent: (session: RecentChatSession, options?: {replaceSessionId?: string}) => Promise<void>
     reorderTabs: (draggedId: string, targetId: string) => void
     setDraft: (sessionId: string, value: string) => void
     sendMessage: (sessionId: string, text: string) => Promise<void>
@@ -241,7 +239,6 @@ export function useChatController(): ChatController {
     activeId: tabs.activeId,
     activeTab: tabs.activeTab,
     recent: tabs.recent,
-    recentOpen: tabs.recentOpen,
     offline: connection.offline,
     error: connection.error,
     activeDraft: workspace.activeDraft,
@@ -261,7 +258,6 @@ export function useChatController(): ChatController {
       closeSession: tabs.closeSession,
       closeOtherSessions: tabs.closeOtherSessions,
       refreshRecent: tabs.refreshRecent,
-      closeRecent: tabs.closeRecent,
       openRecent: tabs.openRecent,
       reorderTabs: tabs.reorderTabs,
       setDraft: workspace.setDraft,

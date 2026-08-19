@@ -669,7 +669,6 @@
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--vf-ring) 16%, transparent);
 }
 
-.new-session-state,
 .empty-state {
     min-height: min(62vh, 520px);
     display: flex;
@@ -678,6 +677,23 @@
     justify-content: center;
     color: var(--vf-muted);
     text-align: center;
+}
+
+.new-session-state {
+    width: 100%;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    color: var(--vf-muted);
+}
+
+.new-session-intro {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding-top: 20px;
 }
 
 .new-session-mark {
