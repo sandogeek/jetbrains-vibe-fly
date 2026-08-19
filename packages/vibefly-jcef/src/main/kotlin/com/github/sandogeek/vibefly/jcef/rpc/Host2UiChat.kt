@@ -12,4 +12,8 @@ interface Host2UiChat {
     /** Native file chooser / drag-and-drop delivery into the currently active chat tab. */
     @RpcFun(1)
     suspend fun addChatContexts(sessionId: String, contexts: List<HostChatContextItem>)
+
+    /** Tool-window title-bar new session: create and activate a chat tab. */
+    @RpcFun(2)
+    suspend fun createNewSession()
 }

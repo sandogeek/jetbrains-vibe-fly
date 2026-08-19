@@ -166,18 +166,6 @@
     font-weight: 600;
 }
 
-.session-actions {
-    position: relative;
-    z-index: 2;
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    padding: 0 10px;
-    flex: none;
-    border-left: 1px solid var(--vf-border-soft);
-    background: color-mix(in srgb, var(--vf-surface) 92%, transparent);
-}
-
 .icon-button,
 .toolbar-button,
 .send-button,

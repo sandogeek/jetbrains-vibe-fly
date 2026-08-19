@@ -1,5 +1,5 @@
 import type {ChatSessionSummary, RecentChatSession} from "@vibefly/uiagent-shared"
-import {ChevronsUpDown, MessageSquareText, Plus, Settings2, ShieldCheck, X,} from "lucide-react"
+import {ChevronsUpDown, MessageSquareText, ShieldCheck, X,} from "lucide-react"
 import {type RefObject, useCallback, useEffect, useRef, useState} from "react"
 
 import {ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger,} from "@/components/ui/context-menu"
@@ -272,22 +272,6 @@ function ChatPageView({controller}: { controller: ChatController }) {
                             }}
                         />
                     ) : null}
-                </div>
-                <div className="session-actions">
-                    <button
-                        className="icon-button"
-                        title={t("chat:newSession")}
-                        onClick={() => void actions.newSession()}
-                    >
-                        <Plus size={17}/>
-                    </button>
-                    <button
-                        className="icon-button"
-                        title={t("chat:openSettings")}
-                        onClick={actions.openSettings}
-                    >
-                        <Settings2 size={16}/>
-                    </button>
                 </div>
             </header>
 

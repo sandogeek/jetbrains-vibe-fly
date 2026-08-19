@@ -57,6 +57,7 @@ export function useAgentConnection(
     persistWorkspace: () => Promise<void>
     cancelAllPending: () => void
     setRecent: (sessions: RecentChatSession[]) => void
+    createNewSession: () => Promise<void>
   },
 ) {
   const {
@@ -71,7 +72,10 @@ export function useAgentConnection(
     persistWorkspace,
     cancelAllPending,
     setRecent,
+    createNewSession,
   } = options
+  const createNewSessionRef = useRef(createNewSession)
+  createNewSessionRef.current = createNewSession
   const {
     hostRef,
     hostChatRef,
@@ -275,6 +279,9 @@ export function useAgentConnection(
               endLine: item.endLine ?? undefined,
             })),
           )
+        },
+        async createNewSession() {
+          await createNewSessionRef.current()
         },
       },
     })

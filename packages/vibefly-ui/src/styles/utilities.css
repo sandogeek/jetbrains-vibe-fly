@@ -53,14 +53,6 @@
 }
 
 @media (max-width: 390px) {
-    .session-actions {
-        padding: 0 4px;
-    }
-
-    .session-actions .icon-button {
-        width: 28px;
-    }
-
     .message-stream {
         padding-inline: 10px;
     }

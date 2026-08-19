@@ -2,6 +2,7 @@ package com.github.sandogeek.jetbrainsvibefly.toolWindow
 
 import com.github.sandogeek.jetbrainsvibefly.agent.VibeflyAgentService
 import com.github.sandogeek.jetbrainsvibefly.chat.ChatContextDeliveryService
+import com.github.sandogeek.jetbrainsvibefly.chat.ChatToolWindowCommandService
 import com.github.sandogeek.jetbrainsvibefly.chat.ChatWorkspaceState
 import com.github.sandogeek.jetbrainsvibefly.settings.ProjectUi2Host
 import com.github.sandogeek.jetbrainsvibefly.settings.VibeflySettingsTabService
@@ -39,6 +40,7 @@ class VibeflyToolWindowFactory : ToolWindowFactory {
     override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
         val contentFactory = ContentFactory.getInstance()
         if (!JBCefApp.isSupported()) {
+            installTitleActions(project, toolWindow, jcefAvailable = false)
             val fallback = JPanel(BorderLayout()).apply {
                 border = JBUI.Borders.empty(12)
                 add(
@@ -52,10 +54,12 @@ class VibeflyToolWindowFactory : ToolWindowFactory {
             return
         }
 
+        installTitleActions(project, toolWindow, jcefAvailable = true)
         val agentService = VibeflyAgentService.getInstance(project)
         val projectRoot = project.basePath.orEmpty()
         val workspaceState = ChatWorkspaceState.getInstance(project)
         val contextDelivery = ChatContextDeliveryService.getInstance(project)
+        val commandService = ChatToolWindowCommandService.getInstance(project)
         val expectedOrigin = AgentOrigin.currentPanel()
         var panel: VibeflyBrowserPanel? = null
         val ui2Host = ProjectUi2Host(project)
@@ -91,6 +95,7 @@ class VibeflyToolWindowFactory : ToolWindowFactory {
             },
             chatUiReadyHandler = {
                 contextDelivery.retry()
+                commandService.retry()
                 // Host2Ui is registered; push current LAF mode (no CSS batch).
                 panel?.applyTheme(retry = false)
             },
@@ -123,12 +128,24 @@ class VibeflyToolWindowFactory : ToolWindowFactory {
         contextDelivery.bind { sessionId, contexts ->
             browserPanel.rpc.host2UiChat.addChatContexts(sessionId, contexts)
         }
+        commandService.bind {
+            browserPanel.rpc.host2UiChat.createNewSession()
+        }
         val content = contentFactory.createContent(browserPanel, null, false)
         Disposer.register(content, browserPanel)
         toolWindow.contentManager.addContent(content)
     }
 
     override fun shouldBeAvailable(project: Project) = true
+
+    private fun installTitleActions(project: Project, toolWindow: ToolWindow, jcefAvailable: Boolean) {
+        toolWindow.setTitleActions(
+            listOf(
+                NewChatSessionTitleAction(project, jcefAvailable),
+                OpenSettingsTitleAction(project),
+            ),
+        )
+    }
 
     private fun openProjectFile(project: Project, root: String, relativePath: String, line: Int?) {
         val filePath = resolveProjectPath(root, relativePath) ?: return

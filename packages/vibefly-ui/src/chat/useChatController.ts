@@ -57,7 +57,6 @@ export type ChatController = {
     respondInput: (cancelInput?: boolean) => void
     setInputReply: (value: string) => void
     dismissError: () => void
-    openSettings: () => void
     openLocation: (path: string, line?: number) => void
     showDiff: (path: string) => void
     openExternalUrl: (url: string) => void
@@ -158,6 +157,7 @@ export function useChatController(): ChatController {
       persistWorkspace: persistWorkspaceStable,
       cancelAllPending: permission.cancelAllPending,
       setRecent: tabs.setRecent,
+      createNewSession: tabs.newSession,
     },
   )
 
@@ -266,7 +266,6 @@ export function useChatController(): ChatController {
       respondInput: permission.respondInput,
       setInputReply: permission.setInputReply,
       dismissError: () => connection.setError(null),
-      openSettings: () => void hostChatRef.current?.openIdeSettings(),
       openLocation: workspace.openLocation,
       showDiff: workspace.showDiff,
       openExternalUrl: workspace.openExternalUrl,

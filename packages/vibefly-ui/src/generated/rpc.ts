@@ -174,6 +174,7 @@ export function registerHost2UiService(peer: SimpleRpcPeer, implementation: Host
 
 export const host2UiChat = defineRpcService("Host2UiChat", {
   addChatContexts: rpcMethod<[sessionId: string, contexts: Array<HostChatContextItem>], void>(1),
+  createNewSession: rpcMethod<[], void>(2),
 });
 
 export type Host2UiChatService = RpcService<typeof host2UiChat>;
