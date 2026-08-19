@@ -1,13 +1,5 @@
 import {type AgentSettingsInvalidation, type SettingMutation} from "@vibefly/uiagent-shared"
-import {useSyncExternalStore} from "react"
-import type {IdeSettings} from "./settingsStore"
 import {SettingKeyStore} from "./settingKeyStore"
-
-export type UiSettingsView = {
-    settings: IdeSettings
-    diagnostics: string | null
-    applicationRevision: string
-}
 
 /**
  * Agent-backed settings runtime. Confirmed values come from SettingKeyStore.
@@ -16,7 +8,6 @@ export class UiSettingsRuntime {
     readonly store: SettingKeyStore
     #modelsRevision = ""
     readonly #revisionListeners = new Set<(revision: string) => void>()
-    #cachedView?: UiSettingsView
     #cachedClientSnapshot?: {revision: string; application: {revision: string}}
 
     constructor(store: SettingKeyStore) {
@@ -37,29 +28,13 @@ export class UiSettingsRuntime {
         }
     }
 
-    async start(_hasProject?: boolean): Promise<UiSettingsView> {
+    /**
+     * Repeatable bootstrap. Agent may still be unavailable; a later call after
+     * onReady is required to load confirmed values.
+     * 可重复调用。Agent 当时可能尚未就绪；onReady 之后必须再调一次才能读到 confirmed 值。
+     */
+    async start(_hasProject?: boolean): Promise<void> {
         await this.store.bootstrap()
-        return this.getView()
-    }
-
-    getView(): UiSettingsView {
-        const view = this.store.getView()
-        const cached = this.#cachedView
-        if (
-            cached
-            && cached.settings === view.settings
-            && cached.diagnostics === view.diagnostics
-            && cached.applicationRevision === this.#modelsRevision
-        ) {
-            return cached
-        }
-        const next: UiSettingsView = {
-            settings: view.settings,
-            diagnostics: view.diagnostics,
-            applicationRevision: this.#modelsRevision,
-        }
-        this.#cachedView = next
-        return next
     }
 
     #clientSnapshot(): {revision: string; application: {revision: string}} {
@@ -72,10 +47,6 @@ export class UiSettingsRuntime {
         this.#cachedClientSnapshot = next
         return next
     }
-
-    readonly subscribe = (listener: () => void): (() => void) => this.store.subscribe(listener)
-
-    readonly getSnapshot = (): UiSettingsView | undefined => this.getView()
 
     setModelsRevision(revision: string): void {
         if (this.#modelsRevision === revision) return
@@ -103,17 +74,4 @@ export class UiSettingsRuntime {
     persist(operations: readonly SettingMutation[]): Promise<void> {
         return this.store.persist(operations)
     }
-}
-
-const subscribeUnavailable = () => () => undefined
-const snapshotUnavailable = () => undefined
-
-export function useUiSettingsView(
-    runtime: UiSettingsRuntime | null,
-): UiSettingsView | undefined {
-    return useSyncExternalStore(
-        runtime?.subscribe ?? subscribeUnavailable,
-        runtime?.getSnapshot ?? snapshotUnavailable,
-        runtime?.getSnapshot ?? snapshotUnavailable,
-    )
 }

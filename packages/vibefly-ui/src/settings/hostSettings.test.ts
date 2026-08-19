@@ -42,26 +42,32 @@ describe("UiSettingsRuntime", () => {
         agent.values.set(settingKeys.ui.locale.id, "en")
         const runtime = new UiSettingsRuntime(new SettingKeyStore(() => agent as never))
         await runtime.start()
-        expect(runtime.getView().settings.ui.locale).toBe("en")
+        expect(runtime.store.getKey(settingKeys.ui.locale)).toBe("en")
 
         await runtime.persist([setSetting(settingKeys.ui.locale, "zh")])
         expect(agent.mutations).toHaveLength(1)
         expect(agent.mutations[0]!.keyId).toBe(settingKeys.ui.locale.id)
-        expect(runtime.getView().settings.ui.locale).toBe("zh")
+        expect(runtime.store.getKey(settingKeys.ui.locale)).toBe("zh")
     })
 
-    test("getSnapshot returns a cached view until settings change", async () => {
+    test("subscribeKey is notified after persist and invalidation", async () => {
         const agent = new FakeAgent()
         const runtime = new UiSettingsRuntime(new SettingKeyStore(() => agent as never))
         await runtime.start()
-        const first = runtime.getSnapshot()
-        const second = runtime.getSnapshot()
-        expect(first).toBe(second)
-        expect(runtime.store.getSnapshot()).toBe(runtime.store.getSnapshot())
+        const locales: string[] = []
+        runtime.store.subscribeKey(settingKeys.ui.locale, () => {
+            locales.push(runtime.store.getKey(settingKeys.ui.locale))
+        })
 
         await runtime.persist([setSetting(settingKeys.ui.locale, "zh")])
-        const third = runtime.getSnapshot()
-        expect(third).not.toBe(first)
-        expect(third).toBe(runtime.getSnapshot())
+        expect(locales.at(-1)).toBe("zh")
+
+        agent.values.set(settingKeys.ui.locale.id, "en")
+        await runtime.notifyInvalidation({
+            changes: [{scope: "application", document: "settings.vibefly.json", revision: "r2"}],
+            sequence: 1,
+        })
+        expect(runtime.store.getKey(settingKeys.ui.locale)).toBe("en")
+        expect(locales.at(-1)).toBe("en")
     })
 })

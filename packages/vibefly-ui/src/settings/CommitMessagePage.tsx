@@ -5,11 +5,12 @@ import {useNavigate} from "react-router-dom"
 import type {ProviderSnapshot, ProvidersSnapshot} from "./providerSnapshots"
 import type {BundledCatalog} from "./catalog"
 import {ModelPicker} from "./ModelPicker"
-import {type IdeSettings} from "./settingsStore"
 import type {SettingsMutateOptions} from "./settingsMutationQueue"
+import type {SettingKeyStore} from "./settingKeyStore"
+import {useSettingKey} from "./useSettingKey"
 
 export type CommitMessagePageProps = {
-    settings: IdeSettings
+    store: SettingKeyStore | null
     snapshot: ProvidersSnapshot | null
     catalog: BundledCatalog
     busy: boolean
@@ -20,15 +21,22 @@ export function CommitMessagePage(props: CommitMessagePageProps) {
     const {t} = useAppTranslation(["commit", "settings"])
     const navigate = useNavigate()
     const providers: ProviderSnapshot[] = props.snapshot?.providers ?? []
-    const defaultModelSpec = props.settings.providers?.defaultProvider?.trim() && props.settings.providers?.defaultModel?.trim()
-        ? `${props.settings.providers.defaultProvider.trim()}/${props.settings.providers.defaultModel.trim()}`
+    const defaultProvider = useSettingKey(props.store, settingKeys.defaultProvider)
+    const defaultModel = useSettingKey(props.store, settingKeys.defaultModel)
+    const commitModelSpec = useSettingKey(props.store, settingKeys.commit.commitModelSpec)
+    const languageMode = useSettingKey(props.store, settingKeys.commit.languageMode)
+    const useCustomPrompt = useSettingKey(props.store, settingKeys.commit.useCustomPrompt)
+    const customPrompt = useSettingKey(props.store, settingKeys.commit.customPrompt)
+    const pinnedModelSpecs = useSettingKey(props.store, settingKeys.modelPreferences.pinnedModelSpecs)
+    const recentModelSpecs = useSettingKey(props.store, settingKeys.modelPreferences.recentModelSpecs)
+    const defaultModelSpec = defaultProvider.trim() && defaultModel.trim()
+        ? `${defaultProvider.trim()}/${defaultModel.trim()}`
         : ""
     const onModel = (spec: string, pinned: string[], recent: string[]) => props.onMutate([
         setSetting(settingKeys.commit.commitModelSpec, spec),
         setSetting(settingKeys.modelPreferences.pinnedModelSpecs, [...pinned]),
         setSetting(settingKeys.modelPreferences.recentModelSpecs, [...recent]),
     ])
-    const languageMode = props.settings.commit?.languageMode ?? "follow_ide"
     return <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto p-4">
         <header><h2 className="m-0 text-lg font-semibold text-fg">{t("settings:commitMessage")}</h2><p
             className="m-0 mt-1 text-xs text-muted">{t("commit:subtitle")}</p></header>
@@ -41,9 +49,9 @@ export function CommitMessagePage(props: CommitMessagePageProps) {
         </section>
         <section><label className="mb-1 block text-xs text-muted">{t("commit:model")}</label>
             <ModelPicker
-                value={props.settings.commit?.commitModelSpec ?? ""} providers={providers} catalog={props.catalog}
-                pinnedSpecs={props.settings.modelPreferences?.pinnedModelSpecs ?? []}
-                recentSpecs={props.settings.modelPreferences?.recentModelSpecs ?? []} allowFollowDefault
+                value={commitModelSpec} providers={providers} catalog={props.catalog}
+                pinnedSpecs={pinnedModelSpecs}
+                recentSpecs={recentModelSpecs} allowFollowDefault
                 ariaLabel={t("commit:model")} followDefaultSpec={defaultModelSpec}
                 onConfigureProviders={() => navigate("/settings/providers")} disabled={props.busy} onChange={onModel}/>
             <p className="m-0 mt-1 text-[11px] text-muted">{t("commit:followDefaultHint")}</p>
@@ -51,13 +59,13 @@ export function CommitMessagePage(props: CommitMessagePageProps) {
         <section>
             <label className="mb-2 flex items-center gap-2 text-sm text-fg">
                 <input type="checkbox"
-                       checked={Boolean(props.settings.commit?.useCustomPrompt)}
+                       checked={Boolean(useCustomPrompt)}
                        onChange={(event) => props.onMutate([setSetting(settingKeys.commit.useCustomPrompt, event.currentTarget.checked)])}/>
                 {t("commit:useCustomPrompt")}
             </label>
             <textarea
                 className="h-40 w-full rounded border border-border bg-surface px-2 py-1.5 font-mono text-xs text-fg disabled:opacity-50"
-                disabled={!props.settings.commit?.useCustomPrompt} value={props.settings.commit?.customPrompt ?? ""}
+                disabled={!useCustomPrompt} value={customPrompt}
                 placeholder={t("commit:customPromptPlaceholder")}
                 onChange={(event) => props.onMutate([setSetting(settingKeys.commit.customPrompt, event.currentTarget.value)])}/>
         </section>

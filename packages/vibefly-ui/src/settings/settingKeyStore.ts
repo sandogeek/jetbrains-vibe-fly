@@ -1,6 +1,5 @@
 import {
     type AgentSettingsInvalidation,
-    defaultSettingValues,
     type SettingKey,
     type SettingMutation,
     type SettingMutationRequest,
@@ -9,7 +8,7 @@ import {
     settingMutationId,
 } from "@vibefly/uiagent-shared"
 import type {Ui2Agent} from "@vibefly/uiagent-shared"
-import {ideSettingKeys, type IdeSettings} from "./settingsStore"
+import {ideSettingKeys} from "./settingsStore"
 
 export type SettingEntryStatus = "loading" | "ready" | "saving" | "error"
 
@@ -30,29 +29,23 @@ function cloneValue<T>(value: T): T {
 
 export class SettingKeyStore {
     readonly #entries = new Map<string, SettingEntry>()
-    readonly #viewListeners = new Set<() => void>()
     readonly #documentEpochs = new Map<string, number>()
     readonly #inflight = new Map<string, Promise<void>>()
-    #diagnostics: string | null = null
-    #snapshot: {settings: IdeSettings; diagnostics: string | null}
+    readonly #defaultValues = new Map<string, unknown>()
 
     constructor(private readonly agent: () => AgentSettingsClient | null) {
-        this.#snapshot = {
-            settings: defaultSettingValues(ideSettingKeys),
-            diagnostics: this.#diagnostics,
-        }
     }
 
-    getView(): {settings: IdeSettings; diagnostics: string | null} {
-        return this.#snapshot
+    /**
+     * Stable per-key snapshot. Does not create entries or start I/O, so it is safe
+     * to call from React render / useSyncExternalStore getSnapshot.
+     * 稳定的 per-key 快照。不创建 entry、不发起 I/O，可在 React render /
+     * useSyncExternalStore getSnapshot 中调用。
+     */
+    getKey<T>(key: SettingKey<T>): T {
+        const entry = this.#entries.get(key.id)
+        return (entry ? entry.value : this.#getDefaultValue(key)) as T
     }
-
-    readonly subscribe = (listener: () => void): (() => void) => {
-        this.#viewListeners.add(listener)
-        return () => this.#viewListeners.delete(listener)
-    }
-
-    readonly getSnapshot = () => this.getView()
 
     subscribeKey<T>(key: SettingKey<T>, listener: () => void): () => void {
         const entry = this.#ensureEntry(key)
@@ -60,7 +53,6 @@ export class SettingKeyStore {
         if (entry.status === "loading") void this.#readKeys([key.id])
         return () => {
             entry.listeners.delete(listener)
-            if (entry.listeners.size === 0) this.#entries.delete(key.id)
         }
     }
 
@@ -80,15 +72,13 @@ export class SettingKeyStore {
 
     handleInvalidation(change: AgentSettingsInvalidation): Promise<void> {
         const documents = new Set(change.changes.map((item) => item.document))
-        const keyIds = [...this.#entries.keys()].filter((keyId) => {
-            const key = flattenIdeKeys().find((item) => item.id === keyId)
-            return key ? documents.has(settingDocumentFile(key.document)) : false
-        })
-        if (keyIds.length === 0 && this.#entries.size > 0) {
+        const keys = flattenIdeKeys().filter((key) => documents.has(settingDocumentFile(key.document)))
+        if (keys.length === 0) {
+            if (this.#entries.size === 0) return Promise.resolve()
             return this.#readKeys([...this.#entries.keys()])
         }
-        if (keyIds.length === 0) return Promise.resolve()
-        return this.#readKeys(keyIds)
+        for (const key of keys) this.#ensureEntry(key)
+        return this.#readKeys(keys.map((key) => key.id))
     }
 
     async persist(operations: readonly SettingMutation[]): Promise<void> {
@@ -105,13 +95,15 @@ export class SettingKeyStore {
         }
         const result = await client.mutateSettings(request)
         if (!result.ok) {
+            const failed = new Set<SettingEntry>()
             for (const operation of operations) {
                 const entry = this.#entries.get(settingMutationId(operation))
                 if (!entry) continue
                 entry.status = "error"
                 entry.error = result.error ?? "Settings save failed"
-                this.#notifyEntry(entry)
+                failed.add(entry)
             }
+            this.#notifyEntries(failed)
             await this.#readKeys(operations.map((operation) => operation.key.id))
             throw new Error(result.error ?? "Settings save failed")
         }
@@ -129,10 +121,14 @@ export class SettingKeyStore {
                 .filter((key) => unique.includes(key.id))
                 .map((key) => settingDocumentFile(key.document)),
         )
-        const inflightKey = [...documents].sort().join(",")
-        const pending = this.#inflight.get(inflightKey)
-        if (pending) {
-            await pending
+        const pending = [...documents]
+            .map((document) => this.#inflight.get(document))
+            .filter((task): task is Promise<void> => task != null)
+        if (pending.length > 0) {
+            // Wait on overlapping documents. A per-key read and a bootstrap of the
+            // same file must not run together or they keep bumping each other's epoch.
+            // 重叠 document 必须串行。单 key read 和同文件 bootstrap 并行会互相抬 epoch。
+            await Promise.all(pending)
             return this.#readKeys(unique)
         }
         for (const document of documents) {
@@ -145,11 +141,13 @@ export class SettingKeyStore {
             unique.map((keyId) => [keyId, this.#entries.get(keyId)?.writeGeneration ?? 0]),
         )
         const task = this.#readKeysOnce(unique, epochs, writeGenerations)
-        this.#inflight.set(inflightKey, task)
+        for (const document of documents) this.#inflight.set(document, task)
         try {
             await task
         } finally {
-            if (this.#inflight.get(inflightKey) === task) this.#inflight.delete(inflightKey)
+            for (const document of documents) {
+                if (this.#inflight.get(document) === task) this.#inflight.delete(document)
+            }
         }
         const stale = [...documents].some((document) => {
             return (this.#documentEpochs.get(document) ?? 0) !== epochs.get(document)
@@ -165,33 +163,37 @@ export class SettingKeyStore {
         const client = this.agent()
         if (!client) return
         const results = await client.readSettingValues(keyIds)
-        for (const result of results) this.#applyResult(result, epochs, writeGenerations)
-        this.#rebuildView()
+        const updated = new Set<SettingEntry>()
+        for (const result of results) {
+            const entry = this.#applyResult(result, epochs, writeGenerations)
+            if (entry) updated.add(entry)
+        }
+        this.#notifyEntries(updated)
     }
 
     #applyResult(
         result: SettingValueResult,
         epochs: Map<string, number>,
         writeGenerations: Map<string, number>,
-    ): void {
+    ): SettingEntry | null {
         const entry = this.#entries.get(result.keyId)
-        if (!entry) return
+        if (!entry) return null
         const epoch = epochs.get(result.document)
-        if (epoch != null && epoch !== this.#documentEpochs.get(result.document)) return
-        if ((writeGenerations.get(result.keyId) ?? 0) !== entry.writeGeneration) return
-        if (result.sequence < entry.sequence) return
+        if (epoch != null && epoch !== this.#documentEpochs.get(result.document)) return null
+        if ((writeGenerations.get(result.keyId) ?? 0) !== entry.writeGeneration) return null
+        if (result.sequence < entry.sequence) return null
         entry.value = cloneValue(result.value)
         entry.sequence = result.sequence
         entry.status = "ready"
         entry.error = undefined
-        this.#notifyEntry(entry)
+        return entry
     }
 
     #ensureEntry<T>(key: SettingKey<T>): SettingEntry {
         const existing = this.#entries.get(key.id)
         if (existing) return existing
         const created: SettingEntry = {
-            value: cloneValue(key.decode(undefined)),
+            value: this.#getDefaultValue(key),
             sequence: 0,
             writeGeneration: 0,
             status: "loading",
@@ -201,8 +203,18 @@ export class SettingKeyStore {
         return created
     }
 
+    #getDefaultValue<T>(key: SettingKey<T>): T {
+        if (this.#defaultValues.has(key.id)) {
+            return this.#defaultValues.get(key.id) as T
+        }
+        const created = key.decode(undefined)
+        this.#defaultValues.set(key.id, created)
+        return created
+    }
+
     #applyLocalMutations(operations: readonly SettingMutation[], status: SettingEntryStatus): void {
         if (operations.length === 0) return
+        const updated = new Set<SettingEntry>()
         for (const operation of operations) {
             const entry = this.#ensureEntry(operation.key)
             entry.writeGeneration += 1
@@ -211,39 +223,35 @@ export class SettingKeyStore {
                 : cloneValue(operation.key.decode(undefined))
             entry.status = status
             entry.error = undefined
-            this.#notifyEntry(entry)
+            updated.add(entry)
         }
-        this.#rebuildView()
+        this.#notifyEntries(updated)
     }
 
     #markReady(operations: readonly SettingMutation[]): void {
+        const updated = new Set<SettingEntry>()
         for (const operation of operations) {
             const entry = this.#entries.get(settingMutationId(operation))
             if (!entry) continue
             entry.status = "ready"
             entry.error = undefined
-            this.#notifyEntry(entry)
+            updated.add(entry)
         }
-        this.#rebuildView()
+        this.#notifyEntries(updated)
     }
 
-    #notifyEntry(entry: SettingEntry): void {
-        for (const listener of entry.listeners) listener()
-    }
-
-    #rebuildView(): void {
-        const next = defaultSettingValues(ideSettingKeys)
-        applyTree(ideSettingKeys, next, this.#entries)
-        this.#snapshot = {
-            settings: next,
-            diagnostics: this.#diagnostics,
+    #notifyEntries(entries: Iterable<SettingEntry>): void {
+        const unique = new Set(entries)
+        for (const entry of unique) {
+            for (const listener of [...entry.listeners]) listener()
         }
-        for (const listener of this.#viewListeners) listener()
     }
 }
 
-function flattenIdeKeys(): SettingKey<unknown>[] {
-    return collectKeys(ideSettingKeys)
+const IDE_SETTING_KEY_LEAVES: SettingKey<unknown>[] = collectKeys(ideSettingKeys)
+
+function flattenIdeKeys(): readonly SettingKey<unknown>[] {
+    return IDE_SETTING_KEY_LEAVES
 }
 
 function collectKeys(tree: unknown, collected: SettingKey<unknown>[] = []): SettingKey<unknown>[] {
@@ -254,24 +262,4 @@ function collectKeys(tree: unknown, collected: SettingKey<unknown>[] = []): Sett
     if (!tree || typeof tree !== "object") return collected
     for (const child of Object.values(tree)) collectKeys(child, collected)
     return collected
-}
-
-function applyTree(
-    keys: unknown,
-    target: Record<string, unknown>,
-    entries: Map<string, SettingEntry>,
-): void {
-    if (keys && typeof keys === "object" && "id" in keys) return
-    if (!keys || typeof keys !== "object") return
-    for (const [name, node] of Object.entries(keys)) {
-        if (node && typeof node === "object" && "id" in node) {
-            const entry = entries.get((node as SettingKey<unknown>).id)
-            if (entry) target[name] = cloneValue(entry.value)
-            continue
-        }
-        const child = target[name]
-        if (child && typeof child === "object" && !Array.isArray(child)) {
-            applyTree(node, child as Record<string, unknown>, entries)
-        }
-    }
 }

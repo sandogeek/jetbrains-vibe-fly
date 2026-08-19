@@ -1,8 +1,9 @@
 import type {SimpleRpcPeer} from "@sandogeek/simple-rpc"
-import type {
-  ChatEventBatch,
-  RecentChatSession,
-  Ui2Agent,
+import {
+  type ChatEventBatch,
+  type RecentChatSession,
+  type Ui2Agent,
+  settingKeys,
 } from "@vibefly/uiagent-shared"
 import {useCallback, useEffect, useRef, useState, type MutableRefObject} from "react"
 
@@ -12,8 +13,9 @@ import {log} from "../log"
 import {type AgentStatus, connectAgentRpc} from "../rpc/agent"
 import {createChatUiRpc} from "../rpc/client"
 import {bindConsoleToHost} from "../rpc/console"
-import {UiSettingsRuntime, useUiSettingsView} from "../settings/UiSettingsRuntime"
+import {UiSettingsRuntime} from "../settings/UiSettingsRuntime"
 import {SettingKeyStore} from "../settings/settingKeyStore"
+import {useSettingKey} from "../settings/useSettingKey"
 import type {ModelPreferences} from "../settings/settingsStore"
 import {applyJbTheme} from "../theme"
 import {createDemoTab} from "./demoSession"
@@ -86,8 +88,11 @@ export function useAgentConnection(
   const [agentStatus, setAgentStatus] = useState<AgentStatus>("idle")
   const [error, setError] = useState<string | null>(null)
   const [offline, setOffline] = useState(false)
-  const [settingsStore, setSettingsStore] = useState<UiSettingsRuntime | null>(null)
-  const settingsView = useUiSettingsView(settingsStore)
+  const [settingsRuntime, setSettingsRuntime] = useState<UiSettingsRuntime | null>(null)
+  const settingStore = settingsRuntime?.store ?? null
+  const pinnedModelSpecs = useSettingKey(settingStore, settingKeys.modelPreferences.pinnedModelSpecs)
+  const recentModelSpecs = useSettingKey(settingStore, settingKeys.modelPreferences.recentModelSpecs)
+  const locale = useSettingKey(settingStore, settingKeys.ui.locale)
 
   const peerRef = useRef<SimpleRpcPeer | null>(null)
   const stopAgentRef = useRef<(() => void) | null>(null)
@@ -108,7 +113,7 @@ export function useAgentConnection(
           if (!runtime) {
             runtime = new UiSettingsRuntime(new SettingKeyStore(() => agentRef.current))
             settingsRuntimeRef.current = runtime
-            setSettingsStore(runtime)
+            setSettingsRuntime(runtime)
           }
           await runtime.start()
         } catch (preferencesError) {
@@ -119,10 +124,9 @@ export function useAgentConnection(
     )
 
   useEffect(() => {
-    if (!settingsView) return
-    onModelPreferences(settingsView.settings.modelPreferences)
-    applyUiLocale(settingsView.settings.ui.locale)
-  }, [onModelPreferences, settingsView])
+    onModelPreferences({pinnedModelSpecs, recentModelSpecs})
+    applyUiLocale(locale)
+  }, [onModelPreferences, pinnedModelSpecs, recentModelSpecs, locale])
 
   const bootstrap = useCallback(
     async (ui2Host: Ui2Host, ui2HostChat: Ui2HostChat, isDisposed: () => boolean) => {
@@ -142,7 +146,11 @@ export function useAgentConnection(
           isStopped: isDisposed,
           onReady(proxy) {
             agentRef.current = proxy
-            if (proxy) void settingsRuntimeRef.current?.start()
+            if (proxy) {
+              void settingsRuntimeRef.current?.start().catch((preferencesError) => {
+                log.warn("model preferences unavailable", preferencesError)
+              })
+            }
           },
           onStatus(status) {
             setAgentStatus(status)
@@ -292,7 +300,7 @@ export function useAgentConnection(
       unbindConsoleRef.current = bindConsoleToHost(rpc.ui2Host)
       const runtime = new UiSettingsRuntime(new SettingKeyStore(() => agentRef.current))
       settingsRuntimeRef.current = runtime
-      setSettingsStore(runtime)
+      setSettingsRuntime(runtime)
       void bootstrap(rpc.ui2Host, rpc.ui2HostChat, () => disposed)
     }
 
@@ -303,7 +311,7 @@ export function useAgentConnection(
       unbindConsoleRef.current?.()
       unbindConsoleRef.current = null
       settingsRuntimeRef.current = null
-      setSettingsStore(null)
+      setSettingsRuntime(null)
       peerRef.current?.close()
       peerRef.current = null
       hostRef.current = null

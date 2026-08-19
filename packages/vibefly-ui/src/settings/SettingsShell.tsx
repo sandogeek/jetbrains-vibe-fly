@@ -1,6 +1,5 @@
 import {Languages, Search, Settings2, SlidersHorizontal} from "lucide-react"
-import {type SettingMutation} from "@vibefly/uiagent-shared"
-import type {Ui2Agent} from "@vibefly/uiagent-shared"
+import {type SettingMutation, type Ui2Agent, settingKeys} from "@vibefly/uiagent-shared"
 import {applyUiLocale, useAppTranslation} from "../i18n"
 import {type ReactNode, useEffect, useRef, useState} from "react"
 
@@ -18,12 +17,13 @@ import {applyJbTheme} from "../theme"
 import {CommitMessagePage} from "./CommitMessagePage"
 import {GeneralPage} from "./GeneralPage"
 import {ProvidersPage} from "./ProvidersPage"
-import {emptySettings, initialState, type SettingsState} from "./settingsStore"
+import {initialState, type SettingsState} from "./settingsStore"
 import {SettingsMutationQueue, type SettingsMutateOptions} from "./settingsMutationQueue"
 import {releaseSettingsShellOwnership} from "./settingsShellOwnership"
-import {UiSettingsRuntime, useUiSettingsView} from "./UiSettingsRuntime"
+import {UiSettingsRuntime} from "./UiSettingsRuntime"
 import {SettingKeyStore} from "./settingKeyStore"
 import {UiProviderSettingsClient} from "./UiProviderSettingsClient"
+import {useSettingKey} from "./useSettingKey"
 import {
     Sidebar,
     SidebarContent,
@@ -53,12 +53,12 @@ export function SettingsShell() {
     const [search, setSearch] = useState("")
     const [state, setState] = useState<SettingsState>(() => initialState())
     const [ui2Host, setUi2Host] = useState<Ui2Host | null>(null)
-    const [settingsStore, setSettingsStore] = useState<UiSettingsRuntime | null>(null)
-    const settingsView = useUiSettingsView(settingsStore)
-    const settings = settingsView?.settings ?? emptySettings()
-    const loadError = settingsView?.diagnostics ?? state.loadError
+    const [settingsRuntime, setSettingsRuntime] = useState<UiSettingsRuntime | null>(null)
+    const settingStore = settingsRuntime?.store ?? null
+    const locale = useSettingKey(settingStore, settingKeys.ui.locale)
+    const loadError = state.loadError
     const loginHandlers = useRef<LoginHandlers | null>(null)
-    const settingsRuntime = useRef<UiSettingsRuntime | null>(null)
+    const settingsRuntimeRef = useRef<UiSettingsRuntime | null>(null)
     const providerClient = useRef<UiProviderSettingsClient | null>(null)
     const mutationQueue = useRef<SettingsMutationQueue | null>(null)
 
@@ -131,8 +131,8 @@ export function SettingsShell() {
                 runtime = nextRuntime
                 providers = nextProviders
                 if (!cancelled) {
-                    settingsRuntime.current = nextRuntime
-                    setSettingsStore(nextRuntime)
+                    settingsRuntimeRef.current = nextRuntime
+                    setSettingsRuntime(nextRuntime)
                     providerClient.current = nextProviders
                 }
                 const refreshProviders = async () => {
@@ -146,16 +146,23 @@ export function SettingsShell() {
                         onStatus() {},
                         onReady(agent) {
                             agentRef = agent
-                            if (agent) void nextRuntime.start()
+                            if (agent) {
+                                void nextRuntime.start().catch((error) => {
+                                    if (!cancelled) {
+                                        setState((current) => ({
+                                            ...current,
+                                            loadError: error instanceof Error ? error.message : String(error),
+                                        }))
+                                    }
+                                })
+                            }
                         },
                         onSettingsInvalidated(change) {
                             void nextRuntime.notifyInvalidation(change)
                         },
                     }).stop
-                    const view = await nextRuntime.start()
+                    await nextRuntime.start()
                     if (cancelled) return
-                    applyUiLocale(view.settings.ui.locale)
-                    loadError = view.diagnostics
                     unsubscribeProviderRefresh = nextProviders.watch((snapshot) => {
                         if (!cancelled) setState((current) => ({...current, snapshot}))
                     })
@@ -204,9 +211,9 @@ export function SettingsShell() {
                     runtime,
                     providers,
                     ui2Host: ui2HostInstance,
-                    settingsRuntime,
+                    settingsRuntime: settingsRuntimeRef,
                     providerClient,
-                    setSettingsStore,
+                    setSettingsStore: setSettingsRuntime,
                     setUi2Host,
                 })
             })
@@ -214,13 +221,8 @@ export function SettingsShell() {
     }, [])
 
     useEffect(() => {
-        if (!settingsView) return
-        applyUiLocale(settingsView.settings.ui.locale)
-        setState((current) => ({
-            ...current,
-            loadError: settingsView.diagnostics,
-        }))
-    }, [settingsView])
+        applyUiLocale(locale)
+    }, [locale])
 
     const onMutate = (mutations: readonly SettingMutation[], options?: SettingsMutateOptions) => {
         mutationQueue.current?.enqueue(mutations, options)
@@ -275,7 +277,7 @@ export function SettingsShell() {
                     className="border-b border-border bg-surface px-4 py-2 text-xs text-muted">{loadError}</div>}
                 {showingCommit ? (
                     <CommitMessagePage
-                        settings={settings}
+                        store={settingStore}
                         snapshot={state.snapshot}
                         catalog={state.catalog}
                         busy={state.busy}
@@ -283,7 +285,7 @@ export function SettingsShell() {
                     />
                 ) : showingGeneral ? (
                     <GeneralPage
-                        settings={settings}
+                        store={settingStore}
                         busy={state.busy}
                         onMutate={onMutate}
                     />
@@ -291,7 +293,7 @@ export function SettingsShell() {
                     <ProvidersPage
                         ui2Host={ui2Host}
                         providerClient={providerClient.current}
-                        settings={settings}
+                        store={settingStore}
                         snapshot={state.snapshot}
                         catalog={state.catalog}
                         busy={state.busy}

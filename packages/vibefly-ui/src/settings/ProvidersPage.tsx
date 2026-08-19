@@ -24,15 +24,16 @@ import {
     primaryBadge
 } from "./providerLogic"
 import {description, displayName} from "./providerLabels"
-import {type IdeSettings} from "./settingsStore"
 import type {SettingsMutateOptions} from "./settingsMutationQueue"
 import type {ProviderSnapshot, ProvidersSnapshot} from "./providerSnapshots"
 import type {UiProviderSettingsClient} from "./UiProviderSettingsClient"
+import type {SettingKeyStore} from "./settingKeyStore"
+import {useSettingKey} from "./useSettingKey"
 
 export type ProvidersPageProps = {
     ui2Host: Ui2Host | null;
     providerClient: UiProviderSettingsClient | null;
-    settings: IdeSettings;
+    store: SettingKeyStore | null;
     snapshot: ProvidersSnapshot | null;
     catalog: BundledCatalog;
     busy: boolean;
@@ -81,7 +82,11 @@ export function ProvidersPage(props: ProvidersPageProps) {
     const providers = props.snapshot?.providers ?? []
     const classified = useMemo(() => classifyProviders(providers), [providers])
     const builtIn = useMemo(() => filterBuiltInProviders(classified.popular, search), [classified.popular, search])
-    const defaultSpec = modelSpec(props.settings.providers?.defaultProvider ?? "", props.settings.providers?.defaultModel ?? "")
+    const defaultProvider = useSettingKey(props.store, settingKeys.defaultProvider)
+    const defaultModel = useSettingKey(props.store, settingKeys.defaultModel)
+    const pinnedModelSpecs = useSettingKey(props.store, settingKeys.modelPreferences.pinnedModelSpecs)
+    const recentModelSpecs = useSettingKey(props.store, settingKeys.modelPreferences.recentModelSpecs)
+    const defaultSpec = modelSpec(defaultProvider, defaultModel)
     const onDefaultModel = (spec: string, pinned: string[], recent: string[]) => {
         const {provider, model} = parseModelSpec(spec)
         props.onMutate([
@@ -215,8 +220,8 @@ export function ProvidersPage(props: ProvidersPageProps) {
         </header>
         <section><label className="mb-1 block text-xs text-muted">{t("providers:defaultModel")}</label><ModelPicker
             value={defaultSpec} providers={providers} catalog={props.catalog}
-            pinnedSpecs={props.settings.modelPreferences?.pinnedModelSpecs ?? []}
-            recentSpecs={props.settings.modelPreferences?.recentModelSpecs ?? []} allowClear
+            pinnedSpecs={pinnedModelSpecs}
+            recentSpecs={recentModelSpecs} allowClear
             ariaLabel={t("providers:defaultModel")} disabled={props.busy} onChange={onDefaultModel}/></section>
         <section>
             <div className="mb-2 flex items-center justify-between"><h3
