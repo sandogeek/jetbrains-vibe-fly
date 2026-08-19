@@ -9,7 +9,6 @@ import {useCallback, useRef} from "react"
 
 import type {Ui2Host, Ui2HostChat} from "../generated/rpc"
 import {log} from "../log"
-import type {AgentStatus} from "../rpc/agent"
 import {modelPreferenceMutations} from "../settings/hostSettings"
 import type {ModelPickerOption} from "../settings/ModelPicker"
 import type {SettingKeyStore} from "../settings/settingKeyStore"
@@ -22,8 +21,6 @@ import {useChatWorkspace} from "./useChatWorkspace"
 import {usePermissionFlow} from "./usePermissionFlow"
 
 export type ChatController = {
-  hostStatus: string
-  agentStatus: AgentStatus
   tabs: ChatTab[]
   activeId: string
   activeTab: ChatTab | null
@@ -233,8 +230,6 @@ export function useChatController(): ChatController {
   }
 
   return {
-    hostStatus: connection.hostStatus,
-    agentStatus: connection.agentStatus,
     tabs: tabs.tabs,
     activeId: tabs.activeId,
     activeTab: tabs.activeTab,

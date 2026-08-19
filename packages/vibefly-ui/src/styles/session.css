@@ -210,25 +210,6 @@
     cursor: default;
 }
 
-.connection-dot {
-    width: 7px;
-    height: 7px;
-    margin-left: 4px;
-    border-radius: 50%;
-    background: var(--vf-warning);
-    transition: background 150ms ease, box-shadow 150ms ease;
-}
-
-.connection-dot.ready {
-    background: var(--vf-accent);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--vf-accent) 20%, transparent);
-}
-
-.connection-dot.offline {
-    background: #6d7076;
-    box-shadow: none;
-}
-
 .tabs-list-menu {
     position: absolute;
     top: 44px;

@@ -288,10 +288,6 @@ function ChatPageView({controller}: { controller: ChatController }) {
                     >
                         <Settings2 size={16}/>
                     </button>
-                    <span
-                        className={`connection-dot ${controller.agentStatus === "ready" ? "ready" : ""} ${controller.offline ? "offline" : ""}`}
-                        title={`${controller.hostStatus} / ${controller.agentStatus}`}
-                    />
                 </div>
             </header>
 

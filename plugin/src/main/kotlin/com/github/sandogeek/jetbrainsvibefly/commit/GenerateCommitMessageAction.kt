@@ -1,9 +1,9 @@
 package com.github.sandogeek.jetbrainsvibefly.commit
 
 import com.github.sandogeek.jetbrainsvibefly.VibeflyBundle
+import com.github.sandogeek.jetbrainsvibefly.VibeflyNotifications
 import com.github.sandogeek.jetbrainsvibefly.agent.VibeflyAgentService
 import com.github.sandogeek.jetbrainsvibefly.util.Edt
-import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
@@ -51,7 +51,7 @@ class GenerateCommitMessageAction : AnAction(), DumbAware {
         val commitMessage = resolveCommitMessageWriter(e)
         if (commitMessage == null) {
             generating.set(false)
-            notify(
+            VibeflyNotifications.notify(
                 project,
                 VibeflyBundle.message("commit.generate.error.title"),
                 VibeflyBundle.message("commit.generate.error.noControl"),
@@ -63,7 +63,7 @@ class GenerateCommitMessageAction : AnAction(), DumbAware {
         val changes = resolveIncludedChanges(e, project)
         if (changes.isEmpty()) {
             generating.set(false)
-            notify(
+            VibeflyNotifications.notify(
                 project,
                 VibeflyBundle.message("commit.generate.error.title"),
                 VibeflyBundle.message("commit.generate.error.noChanges"),
@@ -86,7 +86,7 @@ class GenerateCommitMessageAction : AnAction(), DumbAware {
                     val collected = CommitDiffCollector.collect(project, changes)
                     if (collected.files.isEmpty()) {
                         Edt.later {
-                            notify(
+                            VibeflyNotifications.notify(
                                 project,
                                 VibeflyBundle.message("commit.generate.error.title"),
                                 VibeflyBundle.message("commit.generate.error.noChanges"),
@@ -121,7 +121,7 @@ class GenerateCommitMessageAction : AnAction(), DumbAware {
                     val message = result.message.trim()
                     if (message.isEmpty()) {
                         Edt.later {
-                            notify(
+                            VibeflyNotifications.notify(
                                 project,
                                 VibeflyBundle.message("commit.generate.error.title"),
                                 VibeflyBundle.message("commit.generate.error.empty"),
@@ -141,7 +141,7 @@ class GenerateCommitMessageAction : AnAction(), DumbAware {
                     val detail = ex.message?.takeIf { it.isNotBlank() }
                         ?: VibeflyBundle.message("commit.generate.error.unknown")
                     Edt.later {
-                        notify(
+                        VibeflyNotifications.notify(
                             project,
                             VibeflyBundle.message("commit.generate.error.title"),
                             detail,
@@ -241,18 +241,6 @@ internal suspend fun <T> awaitWithProgressCancel(
 private const val PROGRESS_CANCEL_POLL_MS = 50L
 
 private val commitMessageLog = logger<GenerateCommitMessageAction>()
-
-private fun notify(
-    project: Project,
-    title: String,
-    content: String,
-    type: NotificationType,
-) {
-    NotificationGroupManager.getInstance()
-        .getNotificationGroup("Vibe Fly")
-        .createNotification(title, content, type)
-        .notify(project)
-}
 
 internal sealed interface CommitMessageWriter {
     fun setMessage(text: String)

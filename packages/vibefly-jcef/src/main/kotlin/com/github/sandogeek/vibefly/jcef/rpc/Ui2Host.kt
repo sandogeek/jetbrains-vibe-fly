@@ -17,4 +17,8 @@ interface Ui2Host {
 
     @RpcFun(5)
     suspend fun openExternalUrl(url: String)
+
+    /** Show an IDE balloon for a terminal UI/bootstrap failure. */
+    @RpcFun(6)
+    suspend fun notifyError(message: String)
 }

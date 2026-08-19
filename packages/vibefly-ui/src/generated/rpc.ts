@@ -116,6 +116,7 @@ export const ui2Host = defineRpcService("Ui2Host", {
   getAppVersion: rpcMethod<[], string>(1),
   logFromWeb: rpcMethod<[message: string], void>(2),
   openExternalUrl: rpcMethod<[url: string], void>(5),
+  notifyError: rpcMethod<[message: string], void>(6),
 });
 
 export type Ui2Host = RpcClient<typeof ui2Host>;

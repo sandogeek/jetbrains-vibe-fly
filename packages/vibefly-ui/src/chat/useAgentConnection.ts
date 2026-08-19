@@ -81,7 +81,6 @@ export function useAgentConnection(
     settingsRuntimeRef,
   } = refs
 
-  const [hostStatus, setHostStatus] = useState("connecting")
   const [agentStatus, setAgentStatus] = useState<AgentStatus>("idle")
   const [error, setError] = useState<string | null>(null)
   const [offline, setOffline] = useState(false)
@@ -133,8 +132,6 @@ export function useAgentConnection(
           loadModelPreferences(),
         ])
         if (isDisposed()) return
-        setHostStatus("connected")
-
         const connection = connectAgentRpc({
           ui2HostChat,
           isStopped: isDisposed,
@@ -233,7 +230,9 @@ export function useAgentConnection(
         const message = errorText(bootstrapError)
         log.error("chat bootstrap failed", message)
         setError(message)
-        setHostStatus("error")
+        void ui2Host.notifyError(message).catch((notifyError) => {
+          log.warn("host notifyError failed", notifyError)
+        })
       }
     },
     [
@@ -257,7 +256,7 @@ export function useAgentConnection(
     const rpc = createChatUiRpc({
       host2Ui: {
         setStatus(message) {
-          setHostStatus(message)
+          log.info("host status", message)
         },
         async setTheme(mode) {
           applyJbTheme(mode)
@@ -282,7 +281,6 @@ export function useAgentConnection(
 
     if (!rpc) {
       updateOffline(true)
-      setHostStatus("browser preview")
       setAgentStatus("unavailable")
       const demo = createDemoTab()
       updateTabs([demo])
@@ -327,8 +325,6 @@ export function useAgentConnection(
   ])
 
   return {
-    hostStatus,
-    agentStatus,
     error,
     setError,
     offline,

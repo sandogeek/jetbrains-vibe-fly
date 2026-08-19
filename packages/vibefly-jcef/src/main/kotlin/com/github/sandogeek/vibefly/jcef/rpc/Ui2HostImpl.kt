@@ -9,6 +9,7 @@ import com.intellij.openapi.diagnostic.logger
 open class Ui2HostImpl(
     private val appVersion: String = DEFAULT_VERSION,
     private val openExternalUrlHandler: (suspend (String) -> Unit)? = null,
+    private val notifyErrorHandler: (suspend (String) -> Unit)? = null,
 ) : Ui2Host {
 
     override suspend fun getAppVersion(): String = appVersion
@@ -30,6 +31,17 @@ open class Ui2HostImpl(
         } catch (e: Exception) {
             log.warn("BrowserUtil.browse failed", e)
         }
+    }
+
+    override suspend fun notifyError(message: String) {
+        val text = message.trim()
+        if (text.isEmpty()) return
+        val handler = notifyErrorHandler
+        if (handler != null) {
+            handler(text)
+            return
+        }
+        log.warn("notifyError ignored: $text")
     }
 
     companion object {

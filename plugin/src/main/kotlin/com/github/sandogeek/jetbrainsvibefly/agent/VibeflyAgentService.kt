@@ -1,6 +1,9 @@
 package com.github.sandogeek.jetbrainsvibefly.agent
 
+import com.github.sandogeek.jetbrainsvibefly.VibeflyBundle
+import com.github.sandogeek.jetbrainsvibefly.VibeflyNotifications
 import com.github.sandogeek.jetbrainsvibefly.settings.*
+import com.github.sandogeek.jetbrainsvibefly.util.Edt
 import com.github.sandogeek.simplerpc.RpcSession
 import com.github.sandogeek.simplerpc.stdio.StdioRpcTransport
 import com.github.sandogeek.vibefly.jcef.AgentOrigin
@@ -13,12 +16,17 @@ import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.logger
+import com.intellij.openapi.progress.ProgressIndicator
+import com.intellij.openapi.progress.ProgressManager
+import com.intellij.openapi.progress.Task
 import com.intellij.openapi.project.Project
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Duration.Companion.milliseconds
 
 /**
@@ -35,6 +43,7 @@ class VibeflyAgentService(private val project: Project) : Disposable {
     private val host2AgentRef = AtomicReference<Host2Agent?>(null)
     private val settingsNotificationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val projectRoot = VibeflyProjectSettingsService.getInstance(project).projectRoot
+    private val startFailureNotified = AtomicBoolean(false)
 
     init {
         ApplicationManager.getApplication().messageBus
@@ -155,12 +164,57 @@ class VibeflyAgentService(private val project: Project) : Disposable {
 
     suspend fun ensureStarted() {
         if (disposed) error("VibeflyAgentService is disposed")
+        if (canReuseRunningProcess()) {
+            state = State.READY
+            log.debug("ensureStarted reuse alive agent pid=${processRef.get()?.pid()}")
+            return
+        }
+        startColdWithProgressIfNeeded()
+    }
+
+    private fun canReuseRunningProcess(): Boolean {
+        val existing = processRef.get()
+        return existing != null && existing.isAlive && host2AgentRef.get() != null
+    }
+
+    private suspend fun startColdWithProgressIfNeeded() {
+        val existingIndicator = ProgressManager.getGlobalProgressIndicator()
+        if (existingIndicator != null) {
+            existingIndicator.text = VibeflyBundle.message("agent.start.progress")
+            startColdLocked()
+            return
+        }
+        // Do not use platform withBackgroundProgress: its CoroutineScope receiver comes from
+        // the IDE classloader, while this plugin ships kotlinx-coroutines via simplerpc.
+        val title = VibeflyBundle.message("agent.start.progress")
+        val started = CompletableDeferred<Unit>()
+        try {
+            ProgressManager.getInstance().run(object : Task.Backgroundable(project, title, false) {
+                override fun run(indicator: ProgressIndicator) {
+                    indicator.isIndeterminate = true
+                    indicator.text = title
+                    try {
+                        runBlocking {
+                            startColdLocked()
+                        }
+                        started.complete(Unit)
+                    } catch (error: Throwable) {
+                        started.completeExceptionally(error)
+                    }
+                }
+            })
+        } catch (error: Throwable) {
+            started.completeExceptionally(error)
+        }
+        started.await()
+    }
+
+    private suspend fun startColdLocked() {
         mutex.withLock {
             if (disposed) error("VibeflyAgentService is disposed")
-            val existing = processRef.get()
-            if (existing != null && existing.isAlive && host2AgentRef.get() != null) {
+            if (canReuseRunningProcess()) {
                 state = State.READY
-                log.debug("ensureStarted reuse alive agent pid=${existing.pid()}")
+                log.debug("ensureStarted reuse alive agent pid=${processRef.get()?.pid()}")
                 return
             }
             val startedAt = System.nanoTime()
@@ -169,16 +223,35 @@ class VibeflyAgentService(private val project: Project) : Disposable {
             try {
                 startLocked()
                 state = State.READY
+                startFailureNotified.set(false)
                 val totalMs = (System.nanoTime() - startedAt) / 1_000_000L
                 val pid = processRef.get()?.pid()
                 log.info("ensureStarted cold start ready pid=$pid totalMs=$totalMs")
+            } catch (e: CancellationException) {
+                state = State.STOPPED
+                stopLocked()
+                throw e
             } catch (e: Exception) {
                 state = State.FAILED
                 stopLocked()
                 val totalMs = (System.nanoTime() - startedAt) / 1_000_000L
                 log.warn("ensureStarted cold start failed totalMs=$totalMs", e)
+                notifyStartFailedOnce(e)
                 throw e
             }
+        }
+    }
+
+    private fun notifyStartFailedOnce(error: Exception) {
+        if (!startFailureNotified.compareAndSet(false, true)) return
+        val detail = error.message?.takeIf { it.isNotBlank() } ?: error.javaClass.simpleName
+        Edt.later {
+            if (disposed) return@later
+            VibeflyNotifications.error(
+                project,
+                VibeflyBundle.message("agent.start.failed.title"),
+                VibeflyBundle.message("agent.start.failed", detail),
+            )
         }
     }
 
