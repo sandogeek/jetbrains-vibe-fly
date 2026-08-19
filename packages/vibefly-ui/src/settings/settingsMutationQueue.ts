@@ -79,7 +79,7 @@ export class SettingsMutationQueue {
         if (batch.length === 0) return Promise.resolve()
         const runtime = this.#runtime()
         if (!runtime) return Promise.resolve()
-        this.#flushing = runtime.persist(batch).catch((error) => {
+        this.#flushing = runtime.persist(batch, {alreadyStaged: true}).catch((error) => {
             this.#onError(error)
         }).finally(() => {
             this.#flushing = null

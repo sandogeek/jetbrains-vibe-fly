@@ -3,12 +3,14 @@ import {expect} from "expect"
 import {settingKeys, setSetting, type SettingMutation} from "@vibefly/uiagent-shared"
 import {SettingsMutationQueue} from "./settingsMutationQueue"
 import type {UiSettingsRuntime} from "./UiSettingsRuntime"
+import type {SettingPersistOptions} from "./settingKeyStore"
 
 type FakeRuntime = {
     staged: SettingMutation[][]
     persisted: SettingMutation[][]
+    persistOptions: Array<SettingPersistOptions | undefined>
     stage: (operations: readonly SettingMutation[]) => void
-    persist: (operations: readonly SettingMutation[]) => Promise<void>
+    persist: (operations: readonly SettingMutation[], options?: SettingPersistOptions) => Promise<void>
 }
 
 function createFakeRuntime(options?: {
@@ -17,11 +19,13 @@ function createFakeRuntime(options?: {
     const runtime: FakeRuntime = {
         staged: [],
         persisted: [],
+        persistOptions: [],
         stage(operations) {
             runtime.staged.push([...operations])
         },
-        async persist(operations) {
+        async persist(operations, persistOptions) {
             runtime.persisted.push([...operations])
+            runtime.persistOptions.push(persistOptions)
             if (options?.persistImpl) await options.persistImpl(operations)
         },
     }
@@ -143,5 +147,26 @@ describe("SettingsMutationQueue", () => {
         expect(errors).toHaveLength(1)
         expect(String(errors[0])).toContain("save failed")
         await expect(queue.flush()).resolves.toBeUndefined()
+    })
+
+    test("flush persists once with alreadyStaged after each enqueue stages immediately", async () => {
+        const runtime = createFakeRuntime()
+        const queue = new SettingsMutationQueue(() => asRuntime(runtime), () => undefined, 30)
+
+        queue.enqueue([setSetting(settingKeys.ui.locale, "en")])
+        queue.enqueue([setSetting(settingKeys.ui.locale, "zh")])
+        expect(runtime.staged).toEqual([
+            [setSetting(settingKeys.ui.locale, "en")],
+            [setSetting(settingKeys.ui.locale, "zh")],
+        ])
+        expect(runtime.persisted).toHaveLength(0)
+
+        await wait(50)
+        expect(runtime.persisted).toEqual([[setSetting(settingKeys.ui.locale, "zh")]])
+        expect(runtime.persistOptions).toEqual([{alreadyStaged: true}])
+
+        await queue.flush()
+        expect(runtime.persisted).toHaveLength(1)
+        expect(runtime.persistOptions).toEqual([{alreadyStaged: true}])
     })
 })

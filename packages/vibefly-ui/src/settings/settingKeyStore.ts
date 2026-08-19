@@ -27,6 +27,44 @@ function cloneValue<T>(value: T): T {
     return structuredClone(value)
 }
 
+export type SettingPersistOptions = {
+    /**
+     * Skip the optimistic local write. Use after an explicit `stage()` so the
+     * same mutation batch is not applied twice.
+     * 跳过本地乐观写入。在已经 `stage()` 之后使用，避免同一批 mutation 被应用两次。
+     */
+    alreadyStaged?: boolean
+}
+
+/**
+ * Structural equality for JSON setting values. Object key insertion order is
+ * ignored; functions, class instances, and cycles are out of scope.
+ * JSON 设置值的结构相等。对象 key 插入顺序不参与比较；不处理函数、类实例或循环引用。
+ */
+function jsonValuesEqual(left: unknown, right: unknown): boolean {
+    if (Object.is(left, right)) return true
+    if (left === null || right === null) return false
+    if (typeof left !== "object" || typeof right !== "object") return false
+    if (Array.isArray(left) || Array.isArray(right)) {
+        if (!Array.isArray(left) || !Array.isArray(right)) return false
+        if (left.length !== right.length) return false
+        for (let index = 0; index < left.length; index += 1) {
+            if (!jsonValuesEqual(left[index], right[index])) return false
+        }
+        return true
+    }
+    const leftRecord = left as Record<string, unknown>
+    const rightRecord = right as Record<string, unknown>
+    const leftKeys = Object.keys(leftRecord)
+    const rightKeys = Object.keys(rightRecord)
+    if (leftKeys.length !== rightKeys.length) return false
+    for (const key of leftKeys) {
+        if (!Object.prototype.hasOwnProperty.call(rightRecord, key)) return false
+        if (!jsonValuesEqual(leftRecord[key], rightRecord[key])) return false
+    }
+    return true
+}
+
 export class SettingKeyStore {
     readonly #entries = new Map<string, SettingEntry>()
     readonly #documentEpochs = new Map<string, number>()
@@ -81,10 +119,13 @@ export class SettingKeyStore {
         return this.#readKeys(keys.map((key) => key.id))
     }
 
-    async persist(operations: readonly SettingMutation[]): Promise<void> {
+    async persist(
+        operations: readonly SettingMutation[],
+        options?: SettingPersistOptions,
+    ): Promise<void> {
         const client = this.agent()
         if (!client) throw new Error("Agent settings client is unavailable")
-        this.#applyLocalMutations(operations, "saving")
+        if (!options?.alreadyStaged) this.#applyLocalMutations(operations, "saving")
         const request: SettingMutationRequest = {
             clientMutationId: crypto.randomUUID(),
             operations: operations.map((operation) => (
@@ -95,15 +136,12 @@ export class SettingKeyStore {
         }
         const result = await client.mutateSettings(request)
         if (!result.ok) {
-            const failed = new Set<SettingEntry>()
             for (const operation of operations) {
                 const entry = this.#entries.get(settingMutationId(operation))
                 if (!entry) continue
                 entry.status = "error"
                 entry.error = result.error ?? "Settings save failed"
-                failed.add(entry)
             }
-            this.#notifyEntries(failed)
             await this.#readKeys(operations.map((operation) => operation.key.id))
             throw new Error(result.error ?? "Settings save failed")
         }
@@ -182,10 +220,11 @@ export class SettingKeyStore {
         if (epoch != null && epoch !== this.#documentEpochs.get(result.document)) return null
         if ((writeGenerations.get(result.keyId) ?? 0) !== entry.writeGeneration) return null
         if (result.sequence < entry.sequence) return null
-        entry.value = cloneValue(result.value)
         entry.sequence = result.sequence
         entry.status = "ready"
         entry.error = undefined
+        if (jsonValuesEqual(entry.value, result.value)) return null
+        entry.value = cloneValue(result.value)
         return entry
     }
 
@@ -218,26 +257,26 @@ export class SettingKeyStore {
         for (const operation of operations) {
             const entry = this.#ensureEntry(operation.key)
             entry.writeGeneration += 1
-            entry.value = operation.kind === "set"
-                ? cloneValue(operation.value)
-                : cloneValue(operation.key.decode(undefined))
+            const nextValue = operation.kind === "set"
+                ? operation.value
+                : this.#getDefaultValue(operation.key)
+            if (!jsonValuesEqual(entry.value, nextValue)) {
+                entry.value = cloneValue(nextValue)
+                updated.add(entry)
+            }
             entry.status = status
             entry.error = undefined
-            updated.add(entry)
         }
         this.#notifyEntries(updated)
     }
 
     #markReady(operations: readonly SettingMutation[]): void {
-        const updated = new Set<SettingEntry>()
         for (const operation of operations) {
             const entry = this.#entries.get(settingMutationId(operation))
             if (!entry) continue
             entry.status = "ready"
             entry.error = undefined
-            updated.add(entry)
         }
-        this.#notifyEntries(updated)
     }
 
     #notifyEntries(entries: Iterable<SettingEntry>): void {

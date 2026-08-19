@@ -1,5 +1,5 @@
 import {type AgentSettingsInvalidation, type SettingMutation} from "@vibefly/uiagent-shared"
-import {SettingKeyStore} from "./settingKeyStore"
+import {SettingKeyStore, type SettingPersistOptions} from "./settingKeyStore"
 
 /**
  * Agent-backed settings runtime. Confirmed values come from SettingKeyStore.
@@ -71,7 +71,10 @@ export class UiSettingsRuntime {
         return this.persist(operations)
     }
 
-    persist(operations: readonly SettingMutation[]): Promise<void> {
-        return this.store.persist(operations)
+    persist(
+        operations: readonly SettingMutation[],
+        options?: SettingPersistOptions,
+    ): Promise<void> {
+        return this.store.persist(operations, options)
     }
 }

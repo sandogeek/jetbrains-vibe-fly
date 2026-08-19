@@ -1,6 +1,6 @@
 import {describe, test} from "node:test"
 import {expect} from "expect"
-import {getSettingKey, settingKeys, setSetting} from "@vibefly/uiagent-shared"
+import {getSettingKey, settingKeys, setSetting, unsetSetting, type SettingKey} from "@vibefly/uiagent-shared"
 import {SettingKeyStore} from "./settingKeyStore"
 
 class RecordingAgent {
@@ -13,6 +13,8 @@ class RecordingAgent {
     failNextMutation = false
     #readGate: Promise<void> | null = null
     #releaseRead: (() => void) | null = null
+    #mutationGate: Promise<void> | null = null
+    #releaseMutation: (() => void) | null = null
 
     holdReads(): void {
         this.#readGate = new Promise((resolve) => {
@@ -26,6 +28,18 @@ class RecordingAgent {
         this.#releaseRead = null
     }
 
+    holdMutations(): void {
+        this.#mutationGate = new Promise((resolve) => {
+            this.#releaseMutation = resolve
+        })
+    }
+
+    releaseMutations(): void {
+        this.#releaseMutation?.()
+        this.#mutationGate = null
+        this.#releaseMutation = null
+    }
+
     async readSettingValues(keyIds: string[]) {
         const snapshot = new Map(this.values)
         const sequence = this.sequence
@@ -35,7 +49,7 @@ class RecordingAgent {
             const key = getSettingKey(keyId)
             return {
                 keyId,
-                value: snapshot.has(keyId) ? snapshot.get(keyId) : key?.decode(undefined),
+                value: snapshot.has(keyId) ? structuredClone(snapshot.get(keyId)) : key?.decode(undefined),
                 source: "application" as const,
                 document: keyId.startsWith("settings:") ? "settings.json" as const : "settings.vibefly.json" as const,
                 revisions: {application: "app-1", project: null},
@@ -44,7 +58,8 @@ class RecordingAgent {
         })
     }
 
-    async mutateSettings(request: {operations: Array<{keyId: string; value?: unknown}>}) {
+    async mutateSettings(request: {operations: Array<{kind?: string; keyId: string; value?: unknown}>}) {
+        if (this.#mutationGate) await this.#mutationGate
         if (this.failNextMutation) {
             this.failNextMutation = false
             return {ok: false, clientMutationId: "fail", error: "save failed"}
@@ -52,9 +67,22 @@ class RecordingAgent {
         this.sequence += 1
         for (const operation of request.operations) {
             this.mutations.push(operation)
-            if (operation.value !== undefined) this.values.set(operation.keyId, operation.value)
+            if (operation.kind === "unset") this.values.delete(operation.keyId)
+            else this.values.set(operation.keyId, structuredClone(operation.value))
         }
         return {ok: true, clientMutationId: "ok"}
+    }
+}
+
+type ObjectSetting = {enabled: boolean; count: number}
+
+function objectSettingKey(): SettingKey<ObjectSetting> {
+    return {
+        id: "vibefly:test.object",
+        document: "vibefly",
+        path: ["test", "object"],
+        decode: (value) => (value as ObjectSetting | undefined) ?? {enabled: false, count: 0},
+        encode: (value) => value,
     }
 }
 
@@ -234,5 +262,182 @@ describe("SettingKeyStore per-key snapshots", () => {
         client.values.set(settingKeys.ui.locale.id, "zh")
         await store.bootstrap()
         expect(store.getKey(settingKeys.ui.locale)).toBe("zh")
+    })
+})
+
+describe("SettingKeyStore structural equality", () => {
+    test("identical primitive mutations do not notify again", async () => {
+        const agent = new RecordingAgent()
+        const store = new SettingKeyStore(() => agent as never)
+        await store.bootstrap()
+
+        const snapshots: string[] = []
+        store.subscribeKey(settingKeys.ui.locale, () => {
+            snapshots.push(store.getKey(settingKeys.ui.locale))
+        })
+
+        store.stage([setSetting(settingKeys.ui.locale, "follow_ide")])
+        expect(snapshots).toEqual([])
+
+        store.stage([setSetting(settingKeys.ui.locale, "zh")])
+        expect(snapshots).toEqual(["zh"])
+        store.stage([setSetting(settingKeys.ui.locale, "zh")])
+        expect(snapshots).toEqual(["zh"])
+    })
+
+    test("identical array mutations keep the previous snapshot reference", async () => {
+        const agent = new RecordingAgent()
+        const store = new SettingKeyStore(() => agent as never)
+        await store.bootstrap()
+
+        const pinned = settingKeys.modelPreferences.pinnedModelSpecs
+        await store.persist([setSetting(pinned, ["openai/gpt"])])
+        const snapshot = store.getKey(pinned)
+        const notifications: string[][] = []
+        store.subscribeKey(pinned, () => {
+            notifications.push(store.getKey(pinned))
+        })
+
+        store.stage([setSetting(pinned, ["openai/gpt"])])
+        expect(store.getKey(pinned)).toBe(snapshot)
+        expect(notifications).toEqual([])
+    })
+
+    test("identical object mutations ignore key insertion order", async () => {
+        const agent = new RecordingAgent()
+        const store = new SettingKeyStore(() => agent as never)
+        const key = objectSettingKey()
+
+        await store.persist([setSetting(key, {enabled: true, count: 1})])
+        const snapshot = store.getKey(key)
+        const notifications: ObjectSetting[] = []
+        store.subscribeKey(key, () => {
+            notifications.push(store.getKey(key))
+        })
+
+        await store.persist([setSetting(key, {count: 1, enabled: true})])
+        expect(store.getKey(key)).toBe(snapshot)
+        expect(notifications).toEqual([])
+    })
+
+    test("RPC reread with equal content keeps the snapshot and does not notify", async () => {
+        const agent = new RecordingAgent()
+        const store = new SettingKeyStore(() => agent as never)
+        const pinned = settingKeys.modelPreferences.pinnedModelSpecs
+        await store.bootstrap()
+        await store.persist([setSetting(pinned, ["openai/gpt"])])
+
+        const snapshot = store.getKey(pinned)
+        let notifications = 0
+        store.subscribeKey(pinned, () => {
+            notifications += 1
+        })
+
+        await store.handleInvalidation({
+            changes: [{scope: "application", document: "settings.vibefly.json", revision: "r2"}],
+            sequence: 1,
+        })
+        expect(store.getKey(pinned)).toBe(snapshot)
+        expect(notifications).toBe(0)
+    })
+
+    test("RPC reread with a new value notifies and replaces the snapshot", async () => {
+        const agent = new RecordingAgent()
+        const store = new SettingKeyStore(() => agent as never)
+        const pinned = settingKeys.modelPreferences.pinnedModelSpecs
+        await store.bootstrap()
+        await store.persist([setSetting(pinned, ["openai/gpt"])])
+
+        const snapshot = store.getKey(pinned)
+        const notifications: string[][] = []
+        store.subscribeKey(pinned, () => {
+            notifications.push(store.getKey(pinned))
+        })
+
+        agent.values.set(pinned.id, ["anthropic/claude"])
+        await store.handleInvalidation({
+            changes: [{scope: "application", document: "settings.vibefly.json", revision: "r3"}],
+            sequence: 2,
+        })
+
+        const next = store.getKey(pinned)
+        expect(next).not.toBe(snapshot)
+        expect(next).toEqual(["anthropic/claude"])
+        expect(notifications).toEqual([["anthropic/claude"]])
+    })
+
+    test("unset back to the default value follows structural equality", async () => {
+        const agent = new RecordingAgent()
+        const store = new SettingKeyStore(() => agent as never)
+        const pinned = settingKeys.modelPreferences.pinnedModelSpecs
+        await store.bootstrap()
+        const defaultSnapshot = store.getKey(pinned)
+
+        store.stage([unsetSetting(pinned)])
+        expect(store.getKey(pinned)).toBe(defaultSnapshot)
+
+        await store.persist([setSetting(pinned, ["openai/gpt"])])
+        const setSnapshot = store.getKey(pinned)
+        expect(setSnapshot).not.toBe(defaultSnapshot)
+
+        const notifications: string[][] = []
+        store.subscribeKey(pinned, () => {
+            notifications.push(store.getKey(pinned))
+        })
+        await store.persist([unsetSetting(pinned)])
+        const unsetSnapshot = store.getKey(pinned)
+        expect(unsetSnapshot).not.toBe(setSnapshot)
+        expect(unsetSnapshot).toEqual([])
+        expect(notifications).toEqual([[]])
+
+        store.stage([unsetSetting(pinned)])
+        expect(store.getKey(pinned)).toBe(unsetSnapshot)
+        expect(notifications).toEqual([[]])
+    })
+
+    test("persist still applies an optimistic local write by default", async () => {
+        const agent = new RecordingAgent()
+        const store = new SettingKeyStore(() => agent as never)
+        await store.bootstrap()
+
+        const snapshots: string[] = []
+        store.subscribeKey(settingKeys.ui.locale, () => {
+            snapshots.push(store.getKey(settingKeys.ui.locale))
+        })
+        agent.holdMutations()
+        const pending = store.persist([setSetting(settingKeys.ui.locale, "zh")])
+        expect(store.getKey(settingKeys.ui.locale)).toBe("zh")
+        expect(snapshots).toEqual(["zh"])
+
+        agent.releaseMutations()
+        await pending
+        expect(store.getKey(settingKeys.ui.locale)).toBe("zh")
+        expect(snapshots).toEqual(["zh"])
+    })
+
+    test("persist with alreadyStaged does not restage the local value", async () => {
+        const agent = new RecordingAgent()
+        const store = new SettingKeyStore(() => agent as never)
+        await store.bootstrap()
+
+        agent.holdMutations()
+        const skipped = store.persist(
+            [setSetting(settingKeys.ui.locale, "zh")],
+            {alreadyStaged: true},
+        )
+        expect(store.getKey(settingKeys.ui.locale)).toBe("follow_ide")
+        agent.releaseMutations()
+        await skipped
+        expect(store.getKey(settingKeys.ui.locale)).toBe("zh")
+
+        const snapshots: string[] = []
+        store.subscribeKey(settingKeys.ui.locale, () => {
+            snapshots.push(store.getKey(settingKeys.ui.locale))
+        })
+        store.stage([setSetting(settingKeys.ui.locale, "en")])
+        expect(snapshots).toEqual(["en"])
+        await store.persist([setSetting(settingKeys.ui.locale, "en")], {alreadyStaged: true})
+        expect(store.getKey(settingKeys.ui.locale)).toBe("en")
+        expect(snapshots).toEqual(["en"])
     })
 })
