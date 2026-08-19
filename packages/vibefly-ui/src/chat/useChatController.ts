@@ -12,7 +12,7 @@ import {log} from "../log"
 import type {AgentStatus} from "../rpc/agent"
 import {modelPreferenceMutations} from "../settings/hostSettings"
 import type {ModelPickerOption} from "../settings/ModelPicker"
-import type {ModelPreferences} from "../settings/settingsStore"
+import type {SettingKeyStore} from "../settings/settingKeyStore"
 import {UiSettingsRuntime} from "../settings/UiSettingsRuntime"
 import {applyChatEvent} from "./chatEventState"
 import type {ChatTab, PendingInput, PendingPermission, ThinkingOption} from "./types"
@@ -34,7 +34,7 @@ export type ChatController = {
   activeDraft: string
   activeContexts: ChatContextItem[]
   activeModelOptions: ModelPickerOption[]
-  modelPreferences: ModelPreferences
+  settingStore: SettingKeyStore | null
   thinkingOptions: ThinkingOption[]
   busy: boolean
   queued: boolean
@@ -162,17 +162,19 @@ export function useChatController(): ChatController {
       loadModels: loadModelsStable,
       persistWorkspace: persistWorkspaceStable,
       cancelAllPending: permission.cancelAllPending,
-      onModelPreferences: workspace.setModelPreferences,
       setRecent: tabs.setRecent,
     },
   )
 
   errorSetterRef.current = connection.setError
 
-  const persistModelPreferences = (preferences: ModelPreferences) => {
+  const persistModelPreferences = (pinned: string[], recentModels: string[]) => {
     const runtime = settingsRuntimeRef.current
     if (!runtime || offlineRef.current) return
-    void runtime.mutate(modelPreferenceMutations(preferences)).catch((preferencesError) => {
+    void runtime.mutate(modelPreferenceMutations({
+      pinnedModelSpecs: [...pinned],
+      recentModelSpecs: [...recentModels],
+    })).catch((preferencesError) => {
       log.warn("model preferences save failed", preferencesError)
       connection.setError(
         preferencesError instanceof Error ? preferencesError.message : String(preferencesError),
@@ -181,12 +183,7 @@ export function useChatController(): ChatController {
   }
 
   const onChatModelChange = (spec: string, pinned: string[], recentModels: string[]) => {
-    const preferences = {
-      pinnedModelSpecs: [...pinned],
-      recentModelSpecs: [...recentModels],
-    }
-    workspace.setModelPreferences(preferences)
-    persistModelPreferences(preferences)
+    persistModelPreferences(pinned, recentModels)
     if (spec && spec !== tabs.activeTab?.summary.modelId) void workspace.setModel(spec)
   }
 
@@ -250,7 +247,7 @@ export function useChatController(): ChatController {
     activeDraft: workspace.activeDraft,
     activeContexts: workspace.activeContexts,
     activeModelOptions: workspace.activeModelOptions,
-    modelPreferences: workspace.modelPreferences,
+    settingStore: connection.settingStore,
     thinkingOptions: tabs.thinkingOptions,
     busy: tabs.busy,
     queued: tabs.queued,

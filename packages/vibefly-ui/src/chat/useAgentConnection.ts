@@ -5,7 +5,7 @@ import {
   type Ui2Agent,
   settingKeys,
 } from "@vibefly/uiagent-shared"
-import {useCallback, useEffect, useRef, useState, type MutableRefObject} from "react"
+import {useCallback, useEffect, useRef, useState, type RefObject} from "react"
 
 import {applyUiLocale, i18n} from "../i18n"
 import type {Ui2Host, Ui2HostChat} from "../generated/rpc"
@@ -16,7 +16,6 @@ import {bindConsoleToHost} from "../rpc/console"
 import {UiSettingsRuntime} from "../settings/UiSettingsRuntime"
 import {SettingKeyStore} from "../settings/settingKeyStore"
 import {useSettingKey} from "../settings/useSettingKey"
-import type {ModelPreferences} from "../settings/settingsStore"
 import {applyJbTheme} from "../theme"
 import {createDemoTab} from "./demoSession"
 import type {ChatTab, PendingInput, PendingPermission} from "./types"
@@ -26,12 +25,12 @@ function errorText(error: unknown): string {
 }
 
 export type AgentConnectionRefs = {
-  hostRef: MutableRefObject<Ui2Host | null>
-  hostChatRef: MutableRefObject<Ui2HostChat | null>
-  agentRef: MutableRefObject<Ui2Agent | null>
-  projectRootRef: MutableRefObject<string>
-  offlineRef: MutableRefObject<boolean>
-  settingsRuntimeRef: MutableRefObject<UiSettingsRuntime | null>
+  hostRef: RefObject<Ui2Host | null>
+  hostChatRef: RefObject<Ui2HostChat | null>
+  agentRef: RefObject<Ui2Agent | null>
+  projectRootRef: RefObject<string>
+  offlineRef: RefObject<boolean>
+  settingsRuntimeRef: RefObject<UiSettingsRuntime | null>
 }
 
 export function useAgentConnection(
@@ -57,7 +56,6 @@ export function useAgentConnection(
     loadModels: (sessionId: string, force?: boolean) => Promise<void>
     persistWorkspace: () => Promise<void>
     cancelAllPending: () => void
-    onModelPreferences: (preferences: ModelPreferences) => void
     setRecent: (sessions: RecentChatSession[]) => void
   },
 ) {
@@ -72,7 +70,6 @@ export function useAgentConnection(
     loadModels,
     persistWorkspace,
     cancelAllPending,
-    onModelPreferences,
     setRecent,
   } = options
   const {
@@ -90,8 +87,6 @@ export function useAgentConnection(
   const [offline, setOffline] = useState(false)
   const [settingsRuntime, setSettingsRuntime] = useState<UiSettingsRuntime | null>(null)
   const settingStore = settingsRuntime?.store ?? null
-  const pinnedModelSpecs = useSettingKey(settingStore, settingKeys.modelPreferences.pinnedModelSpecs)
-  const recentModelSpecs = useSettingKey(settingStore, settingKeys.modelPreferences.recentModelSpecs)
   const locale = useSettingKey(settingStore, settingKeys.ui.locale)
 
   const peerRef = useRef<SimpleRpcPeer | null>(null)
@@ -124,9 +119,8 @@ export function useAgentConnection(
     )
 
   useEffect(() => {
-    onModelPreferences({pinnedModelSpecs, recentModelSpecs})
     applyUiLocale(locale)
-  }, [onModelPreferences, pinnedModelSpecs, recentModelSpecs, locale])
+  }, [locale])
 
   const bootstrap = useCallback(
     async (ui2Host: Ui2Host, ui2HostChat: Ui2HostChat, isDisposed: () => boolean) => {
@@ -339,5 +333,6 @@ export function useAgentConnection(
     setError,
     offline,
     connected: agentStatus === "ready",
+    settingStore,
   }
 }

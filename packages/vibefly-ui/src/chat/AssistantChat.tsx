@@ -6,7 +6,12 @@ import {
     ThreadPrimitive,
     useExternalStoreRuntime,
 } from "@assistant-ui/react"
-import type {ChatContextItem, ChatMessage, ToolPermissionDecision} from "@vibefly/uiagent-shared"
+import {
+    settingKeys,
+    type ChatContextItem,
+    type ChatMessage,
+    type ToolPermissionDecision,
+} from "@vibefly/uiagent-shared"
 import {
     AlertTriangle,
     ChevronDown,
@@ -24,7 +29,8 @@ import {type MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState
 import {convertChatMessage} from "../chatMessageAdapter"
 import {useAppTranslation} from "../i18n"
 import {ModelPicker, type ModelPickerOption} from "../settings/ModelPicker"
-import type {ModelPreferences} from "../settings/settingsStore"
+import type {SettingKeyStore} from "../settings/settingKeyStore"
+import {useSettingKey} from "../settings/useSettingKey"
 import {ChatMessageActionsContext, ChatMessageView} from "./MessageParts"
 import type {ChatTab, PendingInput, PendingPermission, ThinkingOption} from "./types"
 
@@ -36,7 +42,7 @@ export type AssistantChatProps = {
     draft: string
     contexts: ChatContextItem[]
     modelOptions: ModelPickerOption[]
-    modelPreferences: ModelPreferences
+    store: SettingKeyStore | null
     thinkingOptions: ThinkingOption[]
     busy: boolean
     queued: boolean
@@ -71,6 +77,8 @@ function modelLabel(modelId: string | undefined, fallback: string): string {
 export function AssistantChat(props: AssistantChatProps) {
     const {t} = useAppTranslation("chat")
     const running = props.busy || props.queued
+    const pinnedSpecs = useSettingKey(props.store, settingKeys.modelPreferences.pinnedModelSpecs)
+    const recentSpecs = useSettingKey(props.store, settingKeys.modelPreferences.recentModelSpecs)
     const runtime = useExternalStoreRuntime<ChatMessage>({
         messages: props.tab.messages,
         convertMessage: convertChatMessage,
@@ -203,8 +211,8 @@ export function AssistantChat(props: AssistantChatProps) {
                             <ModelPicker
                                 options={props.modelOptions}
                                 value={props.tab.summary.modelId ?? ""}
-                                pinnedSpecs={props.modelPreferences.pinnedModelSpecs ?? []}
-                                recentSpecs={props.modelPreferences.recentModelSpecs ?? []}
+                                pinnedSpecs={pinnedSpecs}
+                                recentSpecs={recentSpecs}
                                 variant="compact"
                                 placeholder={t("chat:defaultModel")}
                                 ariaLabel={t("chat:model")}

@@ -351,7 +351,7 @@ function ChatPageView({controller}: { controller: ChatController }) {
                     draft={controller.activeDraft}
                     contexts={controller.activeContexts}
                     modelOptions={controller.activeModelOptions}
-                    modelPreferences={controller.modelPreferences}
+                    store={controller.settingStore}
                     thinkingOptions={controller.thinkingOptions}
                     busy={controller.busy}
                     queued={controller.queued}
@@ -575,5 +575,4 @@ function TruncatedText({className, text}: { className?: string; text: string }) 
         </Tooltip>
     )
 }
-
 

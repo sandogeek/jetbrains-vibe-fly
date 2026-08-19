@@ -4,7 +4,6 @@ import {useCallback, useMemo, useRef, useState, type RefObject} from "react"
 import type {Ui2HostChat} from "../generated/rpc"
 import {log} from "../log"
 import type {ModelPickerOption} from "../settings/ModelPicker"
-import {emptySettings, type ModelPreferences} from "../settings/settingsStore"
 import type {ChatContexts, ChatTab} from "./types"
 
 type StateUpdater<T> = T | ((current: T) => T)
@@ -36,9 +35,6 @@ export function useChatWorkspace(options: {
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [contexts, setContexts] = useState<ChatContexts>({})
   const [models, setModels] = useState<Record<string, ChatModelOption[]>>({})
-  const [modelPreferences, setModelPreferences] = useState<ModelPreferences>(
-    () => emptySettings().modelPreferences,
-  )
   const contextsRef = useRef<ChatContexts>({})
   const modelsRef = useRef<Record<string, ChatModelOption[]>>({})
   const modelFetchGenerationRef = useRef<Record<string, number>>({})
@@ -219,8 +215,6 @@ export function useChatWorkspace(options: {
     drafts,
     contexts,
     models,
-    modelPreferences,
-    setModelPreferences,
     contextsRef,
     modelsRef,
     updateContexts,
