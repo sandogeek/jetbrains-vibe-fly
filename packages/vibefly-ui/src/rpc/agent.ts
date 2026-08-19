@@ -10,6 +10,7 @@ import {
     type UserInputRequest,
     type UserInputResponse,
 } from "@vibefly/uiagent-shared"
+import type {AgentSettingsInvalidation} from "@vibefly/uiagent-shared"
 import {log} from "../log"
 import type {AgentConnection, Ui2HostChat} from "../generated/rpc"
 
@@ -37,10 +38,12 @@ const BACKOFF_MS = [250, 500, 1000, 2000] as const
  * cannot schedule reconnects against a newer connection.
  */
 export function connectAgentRpc(options: {
-    ui2HostChat: Ui2HostChat
-    onChatEvents: (batch: ChatEventBatch) => void
-    requestToolPermission: (request: ToolPermissionRequest) => Promise<ToolPermissionResponse>
-    requestUserInput: (request: UserInputRequest) => Promise<UserInputResponse>
+    getConnection?: () => Promise<AgentConnection | null | undefined>
+    ui2HostChat?: Ui2HostChat
+    onChatEvents?: (batch: ChatEventBatch) => void
+    requestToolPermission?: (request: ToolPermissionRequest) => Promise<ToolPermissionResponse>
+    requestUserInput?: (request: UserInputRequest) => Promise<UserInputResponse>
+    onSettingsInvalidated?: (change: AgentSettingsInvalidation) => void
     onReady?: (agent: Ui2Agent | null) => void
     onStatus: (status: AgentStatus) => void
     isStopped: () => boolean
@@ -130,7 +133,9 @@ export function connectAgentRpc(options: {
         let connection: AgentConnection | null | undefined
         const ticketStarted = performance.now()
         try {
-            connection = await options.ui2HostChat.getAgentConnection()
+            connection = options.getConnection
+                ? await options.getConnection()
+                : await options.ui2HostChat?.getAgentConnection()
         } catch (e) {
             log.warn("getAgentConnection failed", {
                 attempt: attemptNo,
@@ -159,13 +164,23 @@ export function connectAgentRpc(options: {
 
         const agent2Ui: Agent2UiService = {
             onChatEvents(batch) {
-                options.onChatEvents(batch)
+                options.onChatEvents?.(batch)
             },
             requestToolPermission(request) {
-                return options.requestToolPermission(request)
+                return options.requestToolPermission?.(request) ?? Promise.resolve({
+                    requestId: request.requestId,
+                    decision: "cancelled",
+                })
             },
             requestUserInput(request) {
-                return options.requestUserInput(request)
+                return options.requestUserInput?.(request) ?? Promise.resolve({
+                    requestId: request.requestId,
+                    text: "",
+                    cancelled: true,
+                })
+            },
+            settingsInvalidated(change) {
+                options.onSettingsInvalidated?.(change)
             },
         }
 

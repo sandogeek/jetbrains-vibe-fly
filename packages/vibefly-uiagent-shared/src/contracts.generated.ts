@@ -66,6 +66,14 @@ export const ui2Agent = defineRpcService("Ui2Agent", {
     RpcMethodArgs<Ui2AgentContract["markChatSessionRead"]>,
     Awaited<ReturnType<Ui2AgentContract["markChatSessionRead"]>>
   >(13),
+  "readSettingValues": rpcMethod<
+    RpcMethodArgs<Ui2AgentContract["readSettingValues"]>,
+    Awaited<ReturnType<Ui2AgentContract["readSettingValues"]>>
+  >(14),
+  "mutateSettings": rpcMethod<
+    RpcMethodArgs<Ui2AgentContract["mutateSettings"]>,
+    Awaited<ReturnType<Ui2AgentContract["mutateSettings"]>>
+  >(15),
 })
 
 export type Ui2AgentService = RpcService<typeof ui2Agent>
@@ -88,6 +96,10 @@ export const agent2Ui = defineRpcService("Agent2Ui", {
     RpcMethodArgs<Agent2UiContract["requestUserInput"]>,
     Awaited<ReturnType<Agent2UiContract["requestUserInput"]>>
   >(3),
+  "settingsInvalidated": rpcMethod<
+    RpcMethodArgs<Agent2UiContract["settingsInvalidated"]>,
+    Awaited<ReturnType<Agent2UiContract["settingsInvalidated"]>>
+  >(4),
 })
 
 export type Agent2UiService = RpcService<typeof agent2Ui>

@@ -106,6 +106,7 @@ export class ChatSessionRegistry {
   readonly #pendingEvents = new Map<string, ChatEvent[]>()
   readonly #eventTimers = new Map<string, ReturnType<typeof setTimeout>>()
   #sink: Agent2Ui | undefined
+  #chatSinks = new Set<Agent2Ui>()
   #projectRoot: string | undefined
   #disposed = false
 
@@ -118,10 +119,22 @@ export class ChatSessionRegistry {
   }
 
   attach(sink: Agent2Ui): void {
+    this.#chatSinks.add(sink)
     this.#sink = sink
   }
 
+  detach(sink: Agent2Ui): void {
+    this.#chatSinks.delete(sink)
+    if (this.#sink === sink) {
+      this.#sink = [...this.#chatSinks][this.#chatSinks.size - 1]
+    }
+    if (this.#chatSinks.size === 0) {
+      void this.disconnect()
+    }
+  }
+
   async disconnect(): Promise<void> {
+    this.#chatSinks.clear()
     this.#sink = undefined
     this.#scheduler.clearQueued()
     this.#emitQueue()

@@ -1,11 +1,12 @@
 package com.github.sandogeek.jetbrainsvibefly.settings
 
+import com.github.sandogeek.vibefly.jcef.rpc.SettingsFileChange
 import com.intellij.util.messages.Topic
 
 internal data class VibeflySettingsChanged(
     val scope: String,
     val projectRoot: String?,
-    val revision: String,
+    val changes: List<SettingsFileChange>,
 )
 
 internal fun interface VibeflySettingsListener {

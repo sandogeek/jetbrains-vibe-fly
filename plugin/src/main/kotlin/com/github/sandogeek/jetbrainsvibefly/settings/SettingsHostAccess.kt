@@ -1,24 +1,33 @@
 package com.github.sandogeek.jetbrainsvibefly.settings
 
 import com.github.sandogeek.vibefly.jcef.rpc.AgentSettingsSnapshot
-import com.github.sandogeek.vibefly.jcef.rpc.SettingsSaveRequest
 import com.github.sandogeek.vibefly.jcef.rpc.SettingsSaveResult
-import com.github.sandogeek.vibefly.jcef.rpc.UiSettingsSnapshot
+import com.github.sandogeek.vibefly.jcef.rpc.SettingsDocumentSaveRequest
 import com.intellij.openapi.project.Project
 
 internal object SettingsHostAccess {
-    fun uiSnapshot(scope: String, project: Project?): UiSettingsSnapshot =
-        resolveSnapshot(scope, project).toUiSnapshot()
-
     fun agentSnapshot(scope: String, project: Project): AgentSettingsSnapshot =
         resolveSnapshot(scope, project).toAgentSnapshot()
 
-    fun saveSettings(request: SettingsSaveRequest, project: Project?): SettingsSaveResult =
-        when (normalizeScope(request.scope)) {
-            SETTINGS_SCOPE_APPLICATION -> VibeflyApplicationSettingsService.getInstance().saveSettings(request)
-            SETTINGS_SCOPE_PROJECT -> boundProjectService(project).saveSettings(request)
+    fun saveSettingsDocument(request: SettingsDocumentSaveRequest, project: Project?): SettingsSaveResult {
+        val document = settingsDocumentOf(request.document)
+            ?: return SettingsSaveResult(
+                ok = false,
+                revision = "",
+                error = "${request.document} is not a settings document",
+            )
+        return when (normalizeScope(request.scope)) {
+            SETTINGS_SCOPE_APPLICATION -> VibeflyApplicationSettingsService.getInstance()
+                .saveDocument(document, request.json, request.expectedRevision)
+            SETTINGS_SCOPE_PROJECT -> {
+                require(document == SettingsDocument.SETTINGS || document == SettingsDocument.VIBEFLY) {
+                    "${document.fileName} is only supported for application scope"
+                }
+                boundProjectService(project).saveDocument(document, request.json, request.expectedRevision)
+            }
             else -> error("Unsupported settings scope: ${request.scope}")
         }
+    }
 
     private fun resolveSnapshot(scope: String, project: Project?): SettingsScopeSnapshot =
         when (normalizeScope(scope)) {
@@ -39,18 +48,9 @@ internal object SettingsHostAccess {
 }
 
 /**
- * Pass through raw settings/vibefly documents. Those two files must never store secrets
- * (credentials live only in auth.json / Providers path).
+ * Trusted Host ↔ Agent projection. settings/vibefly must never store secrets;
+ * credentials live only in auth.json.
  */
-private fun SettingsScopeSnapshot.toUiSnapshot(): UiSettingsSnapshot = UiSettingsSnapshot(
-    scope = scope,
-    projectRoot = projectRoot,
-    settingsJson = content(SettingsDocument.SETTINGS),
-    vibeflyJson = content(SettingsDocument.VIBEFLY),
-    revision = revision,
-    diagnostics = diagnostics,
-)
-
 private fun SettingsScopeSnapshot.toAgentSnapshot(): AgentSettingsSnapshot = AgentSettingsSnapshot(
     scope = scope,
     projectRoot = projectRoot,
@@ -58,6 +58,6 @@ private fun SettingsScopeSnapshot.toAgentSnapshot(): AgentSettingsSnapshot = Age
     vibeflyJson = content(SettingsDocument.VIBEFLY),
     modelsJson = if (scope == SETTINGS_SCOPE_APPLICATION) content(SettingsDocument.MODELS) else null,
     authJson = if (scope == SETTINGS_SCOPE_APPLICATION) content(SettingsDocument.AUTH) else null,
-    revision = revision,
+    revisions = revisions.mapKeys { it.key.fileName },
     diagnostics = diagnostics,
 )

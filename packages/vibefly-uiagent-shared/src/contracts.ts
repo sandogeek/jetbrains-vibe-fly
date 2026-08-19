@@ -125,6 +125,22 @@ export abstract class Ui2Agent {
   ): CancelablePromise<void> {
     return contractOnly("Ui2Agent.markChatSessionRead")
   }
+
+  @rpcId(14)
+  readSettingValues(
+    keyIds: string[],
+    options?: BrandedRpcOptions,
+  ): CancelablePromise<import("./settings/protocol.js").SettingValueResult[]> {
+    return contractOnly("Ui2Agent.readSettingValues")
+  }
+
+  @rpcId(15)
+  mutateSettings(
+    request: import("./settings/protocol.js").SettingMutationRequest,
+    options?: BrandedRpcOptions,
+  ): CancelablePromise<import("./settings/protocol.js").SettingMutationResult> {
+    return contractOnly("Ui2Agent.mutateSettings")
+  }
 }
 
 /**
@@ -152,5 +168,13 @@ export abstract class Agent2Ui {
     options?: BrandedRpcOptions,
   ): CancelablePromise<UserInputResponse> {
     return contractOnly("Agent2Ui.requestUserInput")
+  }
+
+  @rpcId(4)
+  settingsInvalidated(
+    change: import("./settings/protocol.js").AgentSettingsInvalidation,
+    options?: BrandedRpcOptions,
+  ): CancelablePromise<void> {
+    return contractOnly("Agent2Ui.settingsInvalidated")
   }
 }

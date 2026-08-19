@@ -11,18 +11,6 @@ data class SettingsDiagnostic(
     val message: String,
 )
 
-/** WebView-safe raw settings projection. It deliberately has no modelsJson/authJson fields. */
-@Serializable
-data class UiSettingsSnapshot(
-    /** application | project */
-    val scope: String,
-    val projectRoot: String? = null,
-    val settingsJson: String = "{}",
-    val vibeflyJson: String = "{}",
-    val revision: String,
-    val diagnostics: List<SettingsDiagnostic> = emptyList(),
-)
-
 /** Full snapshot available only on the trusted local Host <-> Agent stdio channel. */
 @Serializable
 data class AgentSettingsSnapshot(
@@ -35,17 +23,31 @@ data class AgentSettingsSnapshot(
     val modelsJson: String? = null,
     /** Present only for application scope. */
     val authJson: String? = null,
-    val revision: String,
+    val revisions: Map<String, String> = emptyMap(),
     val diagnostics: List<SettingsDiagnostic> = emptyList(),
 )
 
 @Serializable
-data class SettingsSaveRequest(
+data class SettingsDocumentSaveRequest(
     /** application | project */
     val scope: String,
-    val settingsJson: String? = null,
-    val vibeflyJson: String? = null,
+    val document: String,
+    val json: String,
     val expectedRevision: String,
+)
+
+@Serializable
+data class SettingsFileChange(
+    /** application | project */
+    val scope: String,
+    val projectRoot: String? = null,
+    val document: String,
+    val revision: String,
+)
+
+@Serializable
+data class SettingsChangedNotification(
+    val changes: List<SettingsFileChange> = emptyList(),
 )
 
 @Serializable

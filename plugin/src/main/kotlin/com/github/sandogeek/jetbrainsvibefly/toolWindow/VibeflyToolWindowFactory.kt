@@ -58,7 +58,7 @@ class VibeflyToolWindowFactory : ToolWindowFactory {
         val contextDelivery = ChatContextDeliveryService.getInstance(project)
         val expectedOrigin = AgentOrigin.currentPanel()
         var panel: VibeflyBrowserPanel? = null
-        val ui2Host = ProjectUi2Host(project) { panel?.rpc?.host2Ui }
+        val ui2Host = ProjectUi2Host(project)
         val ui2HostChat = Ui2HostChatImpl(
             agentConnectionProvider = {
                 try {

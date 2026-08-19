@@ -9,6 +9,8 @@ import {
     type SettingsValidationResult,
     updateJsonAtPath,
 } from "./settings/schema.js"
+import {isSettingsFileName} from "./settings/protocol.js"
+import type {SettingsFileRevisions} from "./settings/schema.js"
 
 export type AgentApplicationSettingsSnapshot = SafeApplicationSettingsSnapshot & {
     modelsJson: string
@@ -29,7 +31,9 @@ export type LooseAgentSettingsSnapshot = {
     vibeflyJson?: string | null
     modelsJson?: string | null
     authJson?: string | null
-    revision: string
+    revisions?: Record<string, string> | null
+    /** @deprecated Host now sends file-level revisions. Kept for a single-cut migration. */
+    revision?: string | null
     diagnostics?: Array<{
         file: string
         severity: string
@@ -77,6 +81,22 @@ function safeDiagnostics(
     return diagnostics
 }
 
+function safeRevisions(
+    raw: LooseAgentSettingsSnapshot["revisions"],
+    fallbackRevision?: string | null,
+): SettingsFileRevisions {
+    const revisions: SettingsFileRevisions = {}
+    for (const [file, revision] of Object.entries(raw ?? {})) {
+        if (!isSettingsFileName(file) || revision == null) continue
+        revisions[file] = String(revision)
+    }
+    if (Object.keys(revisions).length === 0 && fallbackRevision) {
+        revisions["settings.json"] = String(fallbackRevision)
+        revisions["settings.vibefly.json"] = String(fallbackRevision)
+    }
+    return revisions
+}
+
 /** Normalize Host wire snapshot into the agent domain shape. */
 export function normalizeAgentSettingsSnapshot(
     raw: LooseAgentSettingsSnapshot,
@@ -84,7 +104,7 @@ export function normalizeAgentSettingsSnapshot(
     const common = {
         settingsJson: raw.settingsJson ?? "{}",
         vibeflyJson: raw.vibeflyJson ?? "{}",
-        revision: String(raw.revision),
+        revisions: safeRevisions(raw.revisions, raw.revision),
         diagnostics: safeDiagnostics(raw.diagnostics),
     }
     if (raw.scope === "application") {
@@ -97,6 +117,13 @@ export function normalizeAgentSettingsSnapshot(
             projectRoot: null,
             modelsJson: raw.modelsJson ?? "{}",
             authJson: raw.authJson ?? "{}",
+            revisions: {
+                "settings.json": common.revisions["settings.json"] ?? "",
+                "settings.vibefly.json": common.revisions["settings.vibefly.json"] ?? "",
+                "models.json": common.revisions["models.json"] ?? (raw.revision ? String(raw.revision) : ""),
+                "auth.json": common.revisions["auth.json"] ?? (raw.revision ? String(raw.revision) : ""),
+                ...common.revisions,
+            },
         }
     }
     if (raw.scope === "project") {

@@ -38,4 +38,8 @@ interface Ui2HostSettings {
         request: CustomProviderMutationRequest,
         expectedRevision: String,
     ): ProvidersPatchResult
+
+    /** Issue a short-lived Agent WebSocket session for the settings panel. */
+    @RpcFun(8)
+    suspend fun getAgentConnection(): AgentConnection?
 }

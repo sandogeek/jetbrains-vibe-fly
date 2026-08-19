@@ -32,7 +32,7 @@ English: [rpc.en.md](./rpc.en.md)
 
 典型能力（以代码为准）：
 
-- 设置读写（`getSettingsSnapshot` / `saveSettings` 等）
+- 主题、日志（`logFromWeb`）、打开外链
 - 获取 Agent 连接信息（WS 地址 + 票据）
 - 上下文、打开文件 / Diff、主题、日志（`logFromWeb`）
 - 状态推送（`Host2Ui`）

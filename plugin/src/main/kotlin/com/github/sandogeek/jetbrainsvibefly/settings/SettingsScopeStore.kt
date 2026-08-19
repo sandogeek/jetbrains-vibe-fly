@@ -30,14 +30,18 @@ internal enum class SettingsDocument(
     AUTH("auth.json"),
 }
 
+internal fun settingsDocumentOf(fileName: String): SettingsDocument? =
+    SettingsDocument.entries.firstOrNull { it.fileName == fileName }
+
 internal data class SettingsScopeSnapshot(
     val scope: String,
     val projectRoot: String?,
     val documents: Map<SettingsDocument, String>,
-    val revision: String,
+    val revisions: Map<SettingsDocument, String>,
     val diagnostics: List<SettingsDiagnostic>,
 ) {
     fun content(document: SettingsDocument): String = documents[document] ?: EMPTY_JSON
+    fun revision(document: SettingsDocument): String = revisions[document] ?: ""
 }
 
 internal data class StoreSaveResult(
@@ -64,7 +68,7 @@ internal class SettingsScopeStore(
     private val permissionSetter: ((Path, Boolean) -> Unit)? = null,
     watcherEnabled: Boolean = true,
     private val debounceMillis: Long = DEFAULT_DEBOUNCE_MILLIS,
-    private val onChanged: (SettingsScopeSnapshot) -> Unit = {},
+    private val onChanged: (SettingsScopeSnapshot, Set<SettingsDocument>) -> Unit = { _, _ -> },
     private val onWarning: (String, Throwable?) -> Unit = { _, _ -> },
 ) : AutoCloseable {
 
@@ -77,10 +81,10 @@ internal class SettingsScopeStore(
     private val allowedDocuments = allowedDocuments.toSet()
     private val stateLock = ReentrantLock()
     private val documents = EnumMap<SettingsDocument, String>(SettingsDocument::class.java)
+    private val revisions = EnumMap<SettingsDocument, String>(SettingsDocument::class.java)
     private val diagnostics = EnumMap<SettingsDocument, SettingsDiagnostic>(SettingsDocument::class.java)
     private val closed = AtomicBoolean(false)
 
-    private var revision: String = newRevision()
     private var watchService: WatchService? = null
     private var watchThread: Thread? = null
     private var debounceExecutor: ScheduledExecutorService? = null
@@ -127,6 +131,7 @@ internal class SettingsScopeStore(
         }
 
         for (document in allowedDocuments) documents[document] = EMPTY_JSON
+        for (document in allowedDocuments) revisions[document] = newRevision()
         ensureDirectory()
         loadInitialSnapshot()
         if (watcherEnabled) {
@@ -153,43 +158,41 @@ internal class SettingsScopeStore(
      * @param documents `null` refreshes every allowed document; otherwise only the given ones.
      */
     private fun reloadFromDisk(documents: Set<SettingsDocument>?): SettingsScopeSnapshot {
-        var changedSnapshot: SettingsScopeSnapshot? = null
+        var changedDocuments: Set<SettingsDocument> = emptySet()
         val snapshot = stateLock.withLock {
             withScopeFileLock {
-                if (refreshStateLocked(documents)) changedSnapshot = snapshotLocked()
+                changedDocuments = refreshStateLocked(documents)
                 snapshotLocked()
             }
         }
-        changedSnapshot?.let(::notifyChanged)
+        if (changedDocuments.isNotEmpty()) notifyChanged(snapshot, changedDocuments)
         return snapshot
     }
 
-    /** Save one or more raw documents as one scope-level revision update. */
+    /** Save a single raw document with file-level optimistic concurrency. */
+    fun saveDocument(
+        document: SettingsDocument,
+        json: String,
+        expectedRevision: String,
+    ): StoreSaveResult = saveDocuments(mapOf(document to json), expectedRevision)
+
+    /**
+     * Save raw documents. Each request should contain exactly one file; extra files are rejected
+     * so callers cannot pretend a multi-file write is atomic.
+     */
     fun saveDocuments(
         updates: Map<SettingsDocument, String>,
         expectedRevision: String,
     ): StoreSaveResult {
         if (updates.isEmpty()) {
-            val current = try {
-                reloadFromDisk()
-            } catch (error: Exception) {
-                onWarning("Failed to verify $scope settings before save", error)
-                return StoreSaveResult(
-                    ok = false,
-                    snapshot = snapshot(),
-                    error = "Failed to save settings",
-                )
-            }
-            return if (current.revision == expectedRevision) {
-                StoreSaveResult(ok = true, snapshot = current)
-            } else {
-                StoreSaveResult(
-                    ok = false,
-                    snapshot = current,
-                    conflict = true,
-                    error = REVISION_CONFLICT_MESSAGE,
-                )
-            }
+            return StoreSaveResult(ok = true, snapshot = snapshot())
+        }
+        if (updates.size > 1) {
+            return StoreSaveResult(
+                ok = false,
+                snapshot = snapshot(),
+                error = "A save request may update only one settings file",
+            )
         }
 
         val unsupported = updates.keys.firstOrNull { it !in allowedDocuments }
@@ -212,12 +215,13 @@ internal class SettingsScopeStore(
             )
         }
 
-        var changedSnapshot: SettingsScopeSnapshot? = null
+        var changedDocuments: Set<SettingsDocument> = emptySet()
         val result = try {
             stateLock.withLock {
                 withScopeFileLock {
-                    if (refreshStateLocked()) changedSnapshot = snapshotLocked()
-                    if (revision != expectedRevision) {
+                    changedDocuments = refreshStateLocked()
+                    val target = updates.keys.single()
+                    if (revisions[target] != expectedRevision) {
                         return@withScopeFileLock StoreSaveResult(
                             ok = false,
                             snapshot = snapshotLocked(),
@@ -230,7 +234,7 @@ internal class SettingsScopeStore(
                         writeDocumentsAtomically(updates)
                     } catch (error: Exception) {
                         onWarning("Failed to save $scope settings", error)
-                        if (refreshStateLocked()) changedSnapshot = snapshotLocked()
+                        changedDocuments = refreshStateLocked()
                         return@withScopeFileLock StoreSaveResult(
                             ok = false,
                             snapshot = snapshotLocked(),
@@ -238,7 +242,7 @@ internal class SettingsScopeStore(
                         )
                     }
 
-                    if (refreshStateLocked()) changedSnapshot = snapshotLocked()
+                    changedDocuments = refreshStateLocked()
                     StoreSaveResult(ok = true, snapshot = snapshotLocked())
                 }
             }
@@ -250,7 +254,7 @@ internal class SettingsScopeStore(
                 error = "Failed to save settings",
             )
         }
-        changedSnapshot?.let(::notifyChanged)
+        if (changedDocuments.isNotEmpty()) notifyChanged(result.snapshot, changedDocuments)
         return result
     }
 
@@ -281,8 +285,8 @@ internal class SettingsScopeStore(
                 onWarning("Failed to load initial $scope settings", error)
                 for (document in allowedDocuments) {
                     diagnostics[document] = readDiagnostic(document)
+                    revisions[document] = newRevision()
                 }
-                revision = newRevision()
             }
         }
     }
@@ -293,7 +297,7 @@ internal class SettingsScopeStore(
      * @param documentsToRefresh `null` refreshes every allowed document; otherwise only those
      * that are also in [allowedDocuments].
      */
-    private fun refreshStateLocked(documentsToRefresh: Set<SettingsDocument>? = null): Boolean {
+    private fun refreshStateLocked(documentsToRefresh: Set<SettingsDocument>? = null): Set<SettingsDocument> {
         ensureDirectory()
         val targets = when (documentsToRefresh) {
             null -> allowedDocuments
@@ -301,7 +305,7 @@ internal class SettingsScopeStore(
                 it in allowedDocuments
             }
         }
-        if (targets.isEmpty()) return false
+        if (targets.isEmpty()) return emptySet()
 
         val beforeDocuments = documents.toMap()
         val beforeDiagnostics = diagnostics.toMap()
@@ -342,16 +346,22 @@ internal class SettingsScopeStore(
             }
         }
 
-        val changed = beforeDocuments != documents || beforeDiagnostics != diagnostics
-        if (changed) revision = newRevision()
-        return changed
+        val changedDocuments = EnumSet.noneOf(SettingsDocument::class.java)
+        for (document in targets) {
+            val documentChanged = beforeDocuments[document] != documents[document]
+                    || beforeDiagnostics[document] != diagnostics[document]
+            if (!documentChanged) continue
+            revisions[document] = newRevision()
+            changedDocuments.add(document)
+        }
+        return changedDocuments
     }
 
     private fun snapshotLocked(): SettingsScopeSnapshot = SettingsScopeSnapshot(
         scope = scope,
         projectRoot = projectRoot,
         documents = documents.toMap(),
-        revision = revision,
+        revisions = revisions.toMap(),
         diagnostics = allowedDocuments.mapNotNull(diagnostics::get),
     )
 
@@ -639,9 +649,9 @@ internal class SettingsScopeStore(
         }
     }
 
-    private fun notifyChanged(snapshot: SettingsScopeSnapshot) {
+    private fun notifyChanged(snapshot: SettingsScopeSnapshot, changedDocuments: Set<SettingsDocument>) {
         try {
-            onChanged(snapshot)
+            onChanged(snapshot, changedDocuments)
         } catch (error: Exception) {
             onWarning("Settings change subscriber failed for $scope", error)
         }

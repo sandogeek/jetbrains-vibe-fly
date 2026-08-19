@@ -32,7 +32,7 @@ Service naming: **`Caller2Callee`** (e.g. `Ui2Host`, `Host2Ui`, `Ui2Agent`, `Age
 
 Typical capabilities (code is source of truth):
 
-- Settings read/write (`getSettingsSnapshot` / `saveSettings`, etc.)
+- Theme, logs (`logFromWeb`), open external URL
 - Agent connection info (WS URL + ticket)
 - Context, open file / Diff, theme, logs (`logFromWeb`)
 - State push (`Host2Ui`)

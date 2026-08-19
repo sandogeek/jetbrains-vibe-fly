@@ -11,7 +11,6 @@ import {
     type SafeProjectSettingsSnapshot,
     type SafeSettingsSnapshot,
     setJsonAtPath,
-    type SettingsChanged,
     updateJsonAtPath,
 } from "../src/settings/schema.js"
 import {
@@ -29,9 +28,23 @@ import {
     type SettingsSaveOutcome,
     type SettingsSyncAdapter,
 } from "../src/settings/sync-client.js"
+import {
+    layerCoversPath,
+    resolveSettingSource,
+    resolveSettingSourceFromLayers,
+    type SettingsFileChange,
+} from "../src/settings/protocol.js"
+
+function fileRevisions(revision: string, extra: Record<string, string> = {}) {
+    return {
+        "settings.json": revision,
+        "settings.vibefly.json": revision,
+        ...extra,
+    }
+}
 
 function application(
-    revision: string,
+    revision: string | Record<string, string>,
     settings: JsonObject | string = {},
     vibefly: JsonObject | string = {},
 ): SafeApplicationSettingsSnapshot {
@@ -40,13 +53,13 @@ function application(
         projectRoot: null,
         settingsJson: typeof settings === "string" ? settings : JSON.stringify(settings),
         vibeflyJson: typeof vibefly === "string" ? vibefly : JSON.stringify(vibefly),
-        revision,
+        revisions: typeof revision === "string" ? fileRevisions(revision) : revision,
         diagnostics: [],
     }
 }
 
 function project(
-    revision: string,
+    revision: string | Record<string, string>,
     settings: JsonObject | string = {},
     vibefly: JsonObject | string = {},
     projectRoot = "/workspace/project",
@@ -56,13 +69,13 @@ function project(
         projectRoot,
         settingsJson: typeof settings === "string" ? settings : JSON.stringify(settings),
         vibeflyJson: typeof vibefly === "string" ? vibefly : JSON.stringify(vibefly),
-        revision,
+        revisions: typeof revision === "string" ? fileRevisions(revision) : revision,
         diagnostics: [],
     }
 }
 
 class MutableAdapter implements SettingsSyncAdapter {
-    readonly calls: SettingsChanged["scope"][] = []
+    readonly calls: SettingsFileChange["scope"][] = []
     readonly saves: SettingsDocumentSaveRequest[] = []
     saveImpl?: (request: SettingsDocumentSaveRequest) => Promise<SettingsSaveOutcome>
 
@@ -72,7 +85,7 @@ class MutableAdapter implements SettingsSyncAdapter {
     ) {
     }
 
-    async fetch(scope: SettingsChanged["scope"]): Promise<SafeSettingsSnapshot> {
+    async fetch(scope: SettingsFileChange["scope"]): Promise<SafeSettingsSnapshot> {
         this.calls.push(scope)
         if (scope === "application") return this.applicationSnapshot
         if (!this.projectSnapshot) throw new Error("project snapshot unavailable")
@@ -410,9 +423,8 @@ describe("effective settings", () => {
             ui: {locale: null, futureUiField: "keep"},
             futureProductField: true,
         })
-        assert.equal(effective.applicationRevision, "app-1")
-        assert.equal(effective.projectRevision, "project-4")
-        assert.equal(effective.revision, JSON.stringify(["app-1", "project-4"]))
+        assert.equal(effective.revisions.application["settings.json"], "app-1")
+        assert.equal(effective.revisions.project?.["settings.json"], "project-4")
     })
 })
 
@@ -424,7 +436,7 @@ describe("SettingsSyncClient cache and invalidation", () => {
         )
         const client = new SettingsSyncClient(adapter)
         const revisions: string[] = []
-        client.subscribe((state) => state.effective.revision, (revision) => revisions.push(revision))
+        client.subscribe((state) => state.effective.revisions.application["settings.json"], (revision) => revisions.push(revision))
 
         const state = await client.start({hasProject: true})
 
@@ -433,10 +445,10 @@ describe("SettingsSyncClient cache and invalidation", () => {
             defaultProvider: "app",
             defaultModel: "project-model",
         })
-        assert.equal(client.getSnapshot("application").revision, "app-1")
-        assert.equal(client.getSnapshot("project")?.revision, "project-1")
+        assert.equal(client.getSnapshot("application").revisions["settings.json"], "app-1")
+        assert.equal(client.getSnapshot("project")?.revisions["settings.json"], "project-1")
         assert.equal(client.getState(), state)
-        assert.deepEqual(revisions, [JSON.stringify(["app-1", "project-1"])])
+        assert.deepEqual(revisions, ["app-1"])
     })
 
     test("application and project invalidations both replace the effective cache", async () => {
@@ -451,29 +463,27 @@ describe("SettingsSyncClient cache and invalidation", () => {
         await client.notify({
             scope: "application",
             projectRoot: null,
+            document: "settings.json",
             revision: "app-2",
         })
         assert.deepEqual(client.getState().effective.settings.retry, {
             enabled: false,
             maxRetries: 1,
         })
-        assert.equal(client.getState().effective.revision,
-            JSON.stringify(["app-2", "project-1"]),
-        )
+        assert.equal(client.getState().effective.revisions.application["settings.json"], "app-2")
 
         adapter.projectSnapshot = project("project-2", {retry: {maxRetries: 5}})
         await client.notify({
             scope: "project",
             projectRoot: "/workspace/project",
+            document: "settings.json",
             revision: "project-2",
         })
         assert.deepEqual(client.getState().effective.settings.retry, {
             enabled: false,
             maxRetries: 5,
         })
-        assert.equal(client.getState().effective.revision,
-            JSON.stringify(["app-2", "project-2"]),
-        )
+        assert.equal(client.getState().effective.revisions.project?.["settings.json"], "project-2")
     })
 
     test("ignores duplicate revisions and notifications for another project", async () => {
@@ -484,11 +494,13 @@ describe("SettingsSyncClient cache and invalidation", () => {
         await client.notify({
             scope: "application",
             projectRoot: null,
+            document: "settings.json",
             revision: "app-1",
         })
         await client.notify({
             scope: "project",
             projectRoot: "/workspace/other",
+            document: "settings.json",
             revision: "project-2",
         })
 
@@ -510,16 +522,17 @@ describe("SettingsSyncClient cache and invalidation", () => {
         await client.notify({
             scope: "application",
             projectRoot: null,
+            document: "settings.json",
             revision: "app-2",
         })
 
         assert.equal(calls, 4)
-        assert.equal(client.getSnapshot("application").revision, "app-3")
+        assert.equal(client.getSnapshot("application").revisions["settings.json"], "app-3")
         assert.equal(client.getState().effective.settings.defaultModel, "current")
     })
 
     test("retries propagation lag until the notified revision is fetched", async () => {
-        const calls: SettingsChanged["scope"][] = []
+        const calls: SettingsFileChange["scope"][] = []
         const snapshots = [
             application("app-1"),
             application("app-1"),
@@ -539,15 +552,16 @@ describe("SettingsSyncClient cache and invalidation", () => {
         await client.notify({
             scope: "application",
             projectRoot: null,
+            document: "settings.json",
             revision: "app-2",
         })
 
         assert.deepEqual(calls, ["application", "application", "application"])
-        assert.equal(client.getSnapshot("application").revision, "app-2")
+        assert.equal(client.getSnapshot("application").revisions["settings.json"], "app-2")
     })
 
     test("does not mistake a repeatedly cached starting revision for a newer one", async () => {
-        const calls: SettingsChanged["scope"][] = []
+        const calls: SettingsFileChange["scope"][] = []
         const snapshots = [
             application("app-1"),
             application("app-1"),
@@ -568,6 +582,7 @@ describe("SettingsSyncClient cache and invalidation", () => {
         await client.notify({
             scope: "application",
             projectRoot: null,
+            document: "settings.json",
             revision: "app-2",
         })
 
@@ -577,12 +592,12 @@ describe("SettingsSyncClient cache and invalidation", () => {
             "application",
             "application",
         ])
-        assert.equal(client.getSnapshot("application").revision, "app-2")
+        assert.equal(client.getSnapshot("application").revisions["settings.json"], "app-2")
     })
 
     test("a different revision received during refresh forces another fetch", async () => {
         const firstRefresh = deferred<SafeSettingsSnapshot>()
-        const calls: SettingsChanged["scope"][] = []
+        const calls: SettingsFileChange["scope"][] = []
         let applicationCall = 0
         const adapter: SettingsSyncAdapter = {
             async fetch(scope) {
@@ -600,19 +615,21 @@ describe("SettingsSyncClient cache and invalidation", () => {
         const refreshToTwo = client.notify({
             scope: "application",
             projectRoot: null,
+            document: "settings.json",
             revision: "app-2",
         })
         await until(() => applicationCall === 2)
         const refreshToThree = client.notify({
             scope: "application",
             projectRoot: null,
+            document: "settings.json",
             revision: "app-3",
         })
         firstRefresh.resolve(application("app-2", {defaultModel: "two"}))
 
         await Promise.all([refreshToTwo, refreshToThree])
         assert.deepEqual(calls, ["application", "application", "application"])
-        assert.equal(client.getSnapshot("application").revision, "app-3")
+        assert.equal(client.getSnapshot("application").revisions["settings.json"], "app-3")
         assert.equal(client.getState().effective.settings.defaultModel, "three")
     })
 
@@ -623,23 +640,22 @@ describe("SettingsSyncClient cache and invalidation", () => {
         await client.notify({
             scope: "project",
             projectRoot: "/workspace/project",
+            document: "settings.json",
             revision: "project-1",
         })
 
         assert.deepEqual(adapter.calls, ["application"])
         assert.equal(client.getSnapshot("project"), undefined)
-        assert.equal(client.getState().effective.projectRevision, null)
+        assert.equal(client.getState().effective.revisions.project?.["settings.json"], undefined)
     })
 })
 
 describe("settingKeys declaration tree", () => {
-    test("derives path, id, document, scopes and readLayer from nested properties", () => {
+    test("derives path, id and document from nested properties", () => {
         assert.deepEqual(settingKeys.defaultProvider, {
             id: "settings:defaultProvider",
             document: "settings",
             path: ["defaultProvider"],
-            scopes: ["application", "project"],
-            readLayer: "effective",
             decode: settingKeys.defaultProvider.decode,
             encode: settingKeys.defaultProvider.encode,
         })
@@ -648,15 +664,11 @@ describe("settingKeys declaration tree", () => {
                 id: settingKeys.commit.languageMode.id,
                 document: settingKeys.commit.languageMode.document,
                 path: [...settingKeys.commit.languageMode.path],
-                scopes: [...settingKeys.commit.languageMode.scopes],
-                readLayer: settingKeys.commit.languageMode.readLayer,
             },
             {
                 id: "vibefly:commit.languageMode",
                 document: "vibefly",
                 path: ["commit", "languageMode"],
-                scopes: ["application", "project"],
-                readLayer: "effective",
             },
         )
         assert.deepEqual(
@@ -664,27 +676,21 @@ describe("settingKeys declaration tree", () => {
                 id: settingKeys.modelPreferences.recentModelSpecs.id,
                 document: settingKeys.modelPreferences.recentModelSpecs.document,
                 path: [...settingKeys.modelPreferences.recentModelSpecs.path],
-                scopes: [...settingKeys.modelPreferences.recentModelSpecs.scopes],
-                readLayer: settingKeys.modelPreferences.recentModelSpecs.readLayer,
             },
             {
                 id: "vibefly:modelPreferences.recentModelSpecs",
                 document: "vibefly",
                 path: ["modelPreferences", "recentModelSpecs"],
-                scopes: ["application"],
-                readLayer: "application",
             },
         )
         assert.deepEqual(
             {
                 id: settingKeys.ui.locale.id,
                 path: [...settingKeys.ui.locale.path],
-                readLayer: settingKeys.ui.locale.readLayer,
             },
             {
                 id: "vibefly:ui.locale",
                 path: ["ui", "locale"],
-                readLayer: "effective",
             },
         )
         assert.equal(Object.isFrozen(settingKeys), true)
@@ -705,7 +711,7 @@ describe("settingKeys declaration tree", () => {
         ])
     })
 
-    test("encodes nested writes, application-only prefs, trimmed nulls and stable array fallbacks", () => {
+    test("encodes nested writes, trimmed nulls and stable array fallbacks", () => {
         const app = application("app-1", {}, {})
         const written = applySettingMutations(app, [
             setSetting(settingKeys.defaultProvider, "  "),
@@ -722,13 +728,13 @@ describe("settingKeys declaration tree", () => {
             modelPreferences: {pinnedModelSpecs: ["openai/gpt"]},
         })
 
-        assert.throws(
-            () => applySettingMutations(
-                project("proj-1"),
-                [setSetting(settingKeys.modelPreferences.recentModelSpecs, ["x"])],
-            ),
-            /cannot be written at project scope/,
+        const projectWritten = applySettingMutations(
+            project("proj-1"),
+            [setSetting(settingKeys.modelPreferences.recentModelSpecs, ["x"])],
         )
+        assert.deepEqual(JSON.parse(projectWritten.vibeflyJson), {
+            modelPreferences: {recentModelSpecs: ["x"]},
+        })
 
         assert.equal(settingKeys.ui.locale.decode(undefined), "follow_ide")
         assert.equal(settingKeys.ui.locale.decode("nope"), "follow_ide")
@@ -830,7 +836,7 @@ describe("setting key tree value projection", () => {
         assert.equal(commitTypesMatch, true)
     })
 
-    test("selects a remapped key tree while keeping per-leaf read layers", async () => {
+    test("selects a remapped key tree from the effective merge", async () => {
         const adapter = new MutableAdapter(
             application(
                 "app-1",
@@ -876,15 +882,15 @@ describe("setting key tree value projection", () => {
                 customPrompt: "",
             },
             modelPreferences: {
-                pinnedModelSpecs: ["application/pinned"],
-                recentModelSpecs: ["application/recent"],
+                pinnedModelSpecs: ["project/pinned"],
+                recentModelSpecs: ["project/recent"],
             },
             ui: {locale: "zh"},
         })
         selected.modelPreferences.pinnedModelSpecs.push("mutated")
         assert.deepEqual(
             selectSetting(settingKeys.modelPreferences.pinnedModelSpecs)(state),
-            ["application/pinned"],
+            ["project/pinned"],
         )
     })
 })
@@ -897,31 +903,44 @@ describe("SettingsSyncClient mutations and typed keys", () => {
         client.subscribe(selectSetting(settingKeys.ui.locale), (locale) => locales.push(locale))
 
         adapter.applicationSnapshot = application("app-2", {}, {ui: {locale: "zh"}})
-        await client.notify({scope: "application", projectRoot: null, revision: "app-2"})
+        await client.notify({
+            scope: "application",
+            projectRoot: null,
+            document: "settings.vibefly.json",
+            revision: "app-2",
+        })
         await client.start({hasProject: false})
         adapter.applicationSnapshot = {
             ...application("app-3", {}, {ui: {locale: "zh"}}),
             diagnostics: [{file: "settings.json", severity: "warning", message: "diagnostic only"}],
         }
-        await client.notify({scope: "application", projectRoot: null, revision: "app-3"})
+        await client.notify({
+            scope: "application",
+            projectRoot: null,
+            document: "settings.json",
+            revision: "app-3",
+        })
 
         assert.deepEqual(locales, ["zh"])
-        assert.equal(client.getSnapshot("application").revision, "app-3")
+        assert.equal(client.getSnapshot("application").revisions["settings.json"], "app-3")
     })
 
-    test("saves both documents atomically and preserves unknown fields", async () => {
+    test("saves each changed document separately and preserves unknown fields", async () => {
         const adapter = new MutableAdapter(application(
             "app-1",
             {defaultProvider: "old", futurePi: {keep: true}},
             {commit: {customPrompt: "old"}, futureProduct: true},
         ))
         adapter.saveImpl = async (request) => {
-            adapter.applicationSnapshot = application(
-                "app-2",
-                request.settingsJson ?? adapter.applicationSnapshot.settingsJson,
-                request.vibeflyJson ?? adapter.applicationSnapshot.vibeflyJson,
-            )
-            return {ok: true, revision: "app-2"}
+            const current = adapter.applicationSnapshot
+            const nextRevision = `${request.document}:${adapter.saves.length}`
+            adapter.applicationSnapshot = {
+                ...current,
+                settingsJson: request.document === "settings.json" ? request.json : current.settingsJson,
+                vibeflyJson: request.document === "settings.vibefly.json" ? request.json : current.vibeflyJson,
+                revisions: {...current.revisions, [request.document]: nextRevision},
+            }
+            return {ok: true, revision: nextRevision}
         }
         const client = new SettingsSyncClient(adapter)
         await client.start({hasProject: false})
@@ -932,12 +951,14 @@ describe("SettingsSyncClient mutations and typed keys", () => {
         ])
 
         assert.equal(result.ok, true)
-        assert.equal(adapter.saves.length, 1)
-        assert.deepEqual(JSON.parse(adapter.saves[0]!.settingsJson!), {
+        assert.equal(adapter.saves.length, 2)
+        const settingsSave = adapter.saves.find((save) => save.document === "settings.json")
+        const vibeflySave = adapter.saves.find((save) => save.document === "settings.vibefly.json")
+        assert.deepEqual(JSON.parse(settingsSave!.json), {
             defaultProvider: "openai",
             futurePi: {keep: true},
         })
-        assert.deepEqual(JSON.parse(adapter.saves[0]!.vibeflyJson!), {
+        assert.deepEqual(JSON.parse(vibeflySave!.json), {
             commit: {customPrompt: "new"},
             futureProduct: true,
         })
@@ -952,11 +973,13 @@ describe("SettingsSyncClient mutations and typed keys", () => {
                 adapter.applicationSnapshot = application("app-2", {future: "external"}, {ui: {locale: "en"}})
                 return {ok: false, conflict: true, revision: "app-2"}
             }
-            adapter.applicationSnapshot = application(
-                "app-3",
-                request.settingsJson ?? adapter.applicationSnapshot.settingsJson,
-                request.vibeflyJson ?? adapter.applicationSnapshot.vibeflyJson,
-            )
+            const current = adapter.applicationSnapshot
+            adapter.applicationSnapshot = {
+                ...current,
+                settingsJson: request.document === "settings.json" ? request.json : current.settingsJson,
+                vibeflyJson: request.document === "settings.vibefly.json" ? request.json : current.vibeflyJson,
+                revisions: {...current.revisions, [request.document]: "app-3"},
+            }
             return {ok: true, revision: "app-3"}
         }
         const client = new SettingsSyncClient(adapter)
@@ -968,7 +991,8 @@ describe("SettingsSyncClient mutations and typed keys", () => {
         ])
 
         assert.equal(result.attempts, 2)
-        assert.deepEqual(JSON.parse(adapter.saves[1]!.settingsJson!), {future: "external"})
+        const settingsSave = adapter.saves.find((save) => save.document === "settings.json")
+        assert.deepEqual(JSON.parse(settingsSave!.json), {future: "external"})
         assert.equal(selectSetting(settingKeys.ui.locale)(client.getState()), "zh")
     })
 
@@ -991,7 +1015,7 @@ describe("SettingsSyncClient mutations and typed keys", () => {
 
         assert.deepEqual(result, {
             ok: false,
-            revision: "app-5",
+            revisions: {"settings.json": "app-5"},
             attempts: 4,
             conflict: true,
             error: "Settings changed externally",
@@ -1020,5 +1044,89 @@ describe("SettingsSyncClient mutations and typed keys", () => {
         assert.equal(maxActive, 2)
         release.resolve()
         await starting
+    })
+})
+
+describe("setting source tracking", () => {
+    test("treats parent scalar array and null replacements as covering nested paths", () => {
+        const applicationLayer = {
+            commit: {languageMode: "en", customPrompt: "app"},
+            ui: {locale: "en"},
+        }
+        assert.equal(
+            resolveSettingSourceFromLayers(applicationLayer, {commit: null}, ["commit", "languageMode"]),
+            "project",
+        )
+        assert.equal(
+            resolveSettingSourceFromLayers(applicationLayer, {commit: ["replaced"]}, ["commit", "customPrompt"]),
+            "project",
+        )
+        assert.equal(
+            resolveSettingSourceFromLayers(applicationLayer, {ui: {other: true}}, ["ui", "locale"]),
+            "application",
+        )
+        assert.equal(
+            resolveSettingSourceFromLayers(applicationLayer, {}, ["ui", "locale"]),
+            "application",
+        )
+        assert.equal(
+            resolveSettingSourceFromLayers({}, undefined, ["ui", "locale"]),
+            "default",
+        )
+        assert.equal(layerCoversPath({commit: {languageMode: "zh"}}, ["commit", "languageMode"]), true)
+        assert.equal(layerCoversPath({commit: {}}, ["commit", "languageMode"]), false)
+    })
+
+    test("uses project source even when the decoded value matches application", () => {
+        const app = application("app-1", {}, {ui: {locale: "zh"}})
+        const proj = project("project-1", {}, {ui: {locale: "zh"}})
+        assert.equal(resolveSettingSource(app, proj, settingKeys.ui.locale), "project")
+        assert.equal(resolveSettingSource(app, undefined, settingKeys.ui.locale), "application")
+        assert.equal(resolveSettingSource(application("app-1"), undefined, settingKeys.ui.locale), "default")
+    })
+
+    test("does not let an auth file change conflict a vibefly save", async () => {
+        const adapter = new MutableAdapter(application({
+            "settings.json": "settings-1",
+            "settings.vibefly.json": "vibefly-1",
+            "auth.json": "auth-1",
+        }, {}, {ui: {locale: "en"}}))
+        adapter.saveImpl = async (request) => {
+            assert.equal(request.document, "settings.vibefly.json")
+            assert.equal(request.expectedRevision, "vibefly-1")
+            adapter.applicationSnapshot = {
+                ...adapter.applicationSnapshot,
+                vibeflyJson: request.json,
+                revisions: {
+                    ...adapter.applicationSnapshot.revisions,
+                    "settings.vibefly.json": "vibefly-2",
+                    "auth.json": "auth-changed",
+                },
+            }
+            return {ok: true, revision: "vibefly-2"}
+        }
+        const client = new SettingsSyncClient(adapter)
+        await client.start({hasProject: false})
+        adapter.applicationSnapshot = {
+            ...adapter.applicationSnapshot,
+            revisions: {
+                ...adapter.applicationSnapshot.revisions,
+                "auth.json": "auth-changed",
+            },
+        }
+        await client.notify({
+            scope: "application",
+            projectRoot: null,
+            document: "auth.json",
+            revision: "auth-changed",
+        })
+
+        const result = await client.mutate("application", [
+            setSetting(settingKeys.ui.locale, "zh"),
+        ])
+        assert.equal(result.ok, true)
+        assert.equal(result.revisions["settings.vibefly.json"], "vibefly-2")
+        assert.equal(client.resolveSource(settingKeys.ui.locale), "application")
+        assert.equal(client.resolveWriteScope(settingKeys.ui.locale), "application")
     })
 })

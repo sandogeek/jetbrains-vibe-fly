@@ -61,9 +61,6 @@ export function applySettingMutations(
     let settingsChanged = false
     let vibeflyChanged = false
     for (const operation of operations) {
-        if (!operation.key.scopes.includes(snapshot.scope)) {
-            throw new Error(`${operation.key.id} cannot be written at ${snapshot.scope} scope`)
-        }
         const value = operation.kind === "set" ? operation.key.encode(operation.value) : undefined
         if (operation.key.document === "settings") {
             settings = setJsonAtPath(settings, operation.key.path, value)

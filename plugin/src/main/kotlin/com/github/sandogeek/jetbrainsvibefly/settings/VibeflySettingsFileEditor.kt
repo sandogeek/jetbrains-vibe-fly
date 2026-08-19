@@ -45,7 +45,6 @@ class VibeflySettingsFileEditor(
             lateinit var host: SettingsUi2Host
             host = SettingsUi2Host(
                 project = project,
-                host2UiProvider = { browserPanel?.rpc?.host2Ui },
                 host2UiSettingsProvider = { browserPanel?.rpc?.host2UiSettings },
             )
             Disposer.register(this, host)

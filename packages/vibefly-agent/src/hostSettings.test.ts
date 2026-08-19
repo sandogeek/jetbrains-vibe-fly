@@ -20,7 +20,12 @@ function applicationSnapshot(
         modelsJson: "{}",
         authJson: "{}",
         diagnostics: [],
-        revision,
+        revisions: {
+            "settings.json": revision,
+            "settings.vibefly.json": revision,
+            "models.json": revision,
+            "auth.json": revision,
+        },
         ...overrides,
     }
 }
@@ -35,7 +40,10 @@ function projectSnapshot(
         settingsJson: "{}",
         vibeflyJson: "{}",
         diagnostics: [],
-        revision,
+        revisions: {
+            "settings.json": revision,
+            "settings.vibefly.json": revision,
+        },
         ...overrides,
     }
 }
@@ -58,6 +66,10 @@ class FakeHost implements HostSettingsRpc {
     async saveAuth(request: AuthSaveRequest): Promise<SettingsSaveResult> {
         this.saves.push(structuredClone(request))
         return this.save(request)
+    }
+
+    async saveSettingsDocuments(): Promise<SettingsSaveResult> {
+        return {ok: true, revision: "saved"}
     }
 }
 
@@ -109,6 +121,17 @@ async function until(predicate: () => boolean): Promise<void> {
         await new Promise<void>((resolve) => setImmediate(resolve))
     }
     throw new Error("condition was not reached")
+}
+
+function fileChange(
+    scope: "application" | "project",
+    revision: string,
+    document: "settings.json" | "settings.vibefly.json" | "models.json" | "auth.json" = "settings.json",
+    projectRoot: string | null = scope === "application" ? null : "/workspace/project",
+) {
+    return {
+        changes: [{scope, projectRoot, document, revision}],
+    }
 }
 
 function readStorage(
@@ -302,8 +325,8 @@ describe("HostSettingsRuntime", () => {
         host.application = applicationSnapshot("app-diagnostic", {
             diagnostics: [{file: "settings.json", severity: "warning", message: "temporary"}],
         })
-        await controller.handleSettingsChanged("application", null, "app-diagnostic")
-        await controller.handleSettingsChanged("application", null, "app-diagnostic")
+        await controller.handleSettingsChanged(fileChange("application", "app-diagnostic"))
+        await controller.handleSettingsChanged(fileChange("application", "app-diagnostic"))
         expect(reloads).toEqual([])
         expect(runtime.calls).toEqual([])
         expect(host.fetches).toEqual(["application"])
@@ -311,19 +334,11 @@ describe("HostSettingsRuntime", () => {
         host.project = projectSnapshot("project-2", {
             settingsJson: JSON.stringify({compaction: {enabled: true}}),
         })
-        const first = controller.handleSettingsChanged(
-            "project",
-            "/workspace/project",
-            "project-2",
-        )
+        const first = controller.handleSettingsChanged(fileChange("project", "project-2"))
         host.project = projectSnapshot("project-3", {
             settingsJson: JSON.stringify({compaction: {enabled: false}}),
         })
-        const second = controller.handleSettingsChanged(
-            "project",
-            "/workspace/project",
-            "project-3",
-        )
+        const second = controller.handleSettingsChanged(fileChange("project", "project-3"))
         await Promise.all([first, second])
 
         expect(reloads).toEqual(["reload"])
@@ -358,7 +373,7 @@ describe("HostSettingsRuntime", () => {
                 },
             }),
         })
-        await controller.handleSettingsChanged("application", null, "app-2")
+        await controller.handleSettingsChanged(fileChange("application", "app-2", "models.json"))
         expect(runtime.calls.map((call) => `${call.kind}:${call.providerId ?? ""}`)).toEqual([
             "unregister:one",
             "register:one",
@@ -375,7 +390,7 @@ describe("HostSettingsRuntime", () => {
                 },
             }),
         })
-        await controller.handleSettingsChanged("application", null, "app-3")
+        await controller.handleSettingsChanged(fileChange("application", "app-3"))
         expect(runtime.calls.map((call) => `${call.kind}:${call.providerId ?? ""}`)).toEqual([
             "unregister:one",
             "refresh:",
@@ -489,7 +504,7 @@ describe("HostCredentialStore", () => {
         const store = new HostCredentialStore(host, (revision) => {
             persisted.push(revision)
         })
-        await store.replace(host.application.authJson!, host.application.revision)
+        await store.replace(host.application.authJson!, host.application.revisions?.["auth.json"] ?? "")
         let replays = 0
 
         const result = await store.modify("target", async (current) => {
@@ -534,7 +549,7 @@ describe("HostCredentialStore", () => {
             return {ok: true, revision: "rev-3"}
         }
         const store = new HostCredentialStore(host)
-        await store.replace(host.application.authJson!, host.application.revision)
+        await store.replace(host.application.authJson!, host.application.revisions?.["auth.json"] ?? "")
         let replays = 0
 
         const mutation = store.modify("target", async (current) => {
@@ -555,7 +570,7 @@ describe("HostCredentialStore", () => {
         })
         const staleReplacement = store.replace(
             host.application.authJson!,
-            host.application.revision,
+            host.application.revisions?.["auth.json"] ?? "",
         )
         releaseUpdater.resolve()
 
@@ -592,7 +607,7 @@ describe("HostCredentialStore", () => {
         let notification: Promise<void> | undefined
         host.save = async (request) => {
             host.application = applicationSnapshot("rev-2", {authJson: request.authJson})
-            notification = controller.handleSettingsChanged("application", null, "rev-2")
+            notification = controller.handleSettingsChanged(fileChange("application", "rev-2"))
             return {ok: true, revision: "rev-2"}
         }
 
@@ -601,11 +616,11 @@ describe("HostCredentialStore", () => {
             key: "new",
         }))
         await notification
-        await until(() => controller.getApplicationSnapshot().revision === "rev-2")
+        await until(() => controller.getApplicationSnapshot().revisions["settings.json"] === "rev-2")
         await new Promise<void>((resolve) => setImmediate(resolve))
         await new Promise<void>((resolve) => setImmediate(resolve))
 
-        expect(controller.getApplicationSnapshot().revision).toBe("rev-2")
+        expect(controller.getApplicationSnapshot().revisions["settings.json"]).toBe("rev-2")
         expect(await controller.credentials.read("target")).toEqual({
             type: "api_key",
             key: "new",
@@ -634,18 +649,15 @@ describe("HostCredentialStore", () => {
             key: "new",
         }))
         host.project = projectSnapshot("project-2")
-        await controller.handleSettingsChanged(
-            "project",
-            "/workspace/project",
-            "project-2",
-        )
+        await controller.handleSettingsChanged(fileChange("project", "project-2"))
+        await controller.handleSettingsChanged(fileChange("project", "project-2"))
 
         expect(await controller.credentials.read("target")).toEqual({
             type: "api_key",
             key: "new",
         })
 
-        await until(() => controller.getApplicationSnapshot().revision === "app-2")
+        await until(() => controller.getApplicationSnapshot().revisions["settings.json"] === "app-2")
         expect(await controller.credentials.read("target")).toEqual({
             type: "api_key",
             key: "new",
@@ -675,7 +687,7 @@ describe("HostCredentialStore", () => {
             return {ok: true, revision: "rev-3"}
         }
         const store = new HostCredentialStore(host)
-        await store.replace(host.application.authJson!, host.application.revision)
+        await store.replace(host.application.authJson!, host.application.revisions?.["auth.json"] ?? "")
 
         await expect(store.modify("target", async (current) => {
             if (current?.type === "oauth") {

@@ -129,7 +129,10 @@ describe("agent stdout protocol isolation", () => {
                         return {
                             scope,
                             projectRoot: "/workspace/project",
-                            revision: "project-1",
+                            revisions: {
+                                "settings.json": "project-1",
+                                "settings.vibefly.json": "project-1",
+                            } as Record<string, string>,
                         }
                     }
                     return {
@@ -137,10 +140,18 @@ describe("agent stdout protocol isolation", () => {
                         projectRoot: null,
                         modelsJson: "{}",
                         authJson: "{}",
-                        revision: "application-1",
+                        revisions: {
+                            "settings.json": "application-1",
+                            "settings.vibefly.json": "application-1",
+                            "models.json": "application-1",
+                            "auth.json": "application-1",
+                        },
                     }
                 },
                 saveAuth() {
+                    return {ok: true, revision: "application-2"}
+                },
+                saveSettingsDocuments() {
                     return {ok: true, revision: "application-2"}
                 },
             })

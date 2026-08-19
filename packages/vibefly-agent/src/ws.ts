@@ -1,5 +1,6 @@
 /**
  * Agent WebSocket session: ticket store, origin check, single active UI session.
+ * Agent WebSocket session: ticket store, origin check, multiple concurrent UI sessions.
  * Transport + hello handshake live in @sandogeek/simple-rpc-node.
  */
 import type {SimpleRpcPeer} from "@sandogeek/simple-rpc"
@@ -90,8 +91,7 @@ export async function createAgentWsServer(options: {
   hostname?: string
 }): Promise<AgentWsServer> {
   let sessionFactory: ((peer: SimpleRpcPeer) => void | (() => void)) | null = null
-  let active: NodeServerWebSocketRpcSession | null = null
-  let activeCleanup: (() => void) | null = null
+  const sessions = new Map<NodeServerWebSocketRpcSession, (() => void) | null>()
 
   const server = await createNodeServerWebSocketRpc({
     hostname: options.hostname,
@@ -114,30 +114,20 @@ export async function createAgentWsServer(options: {
       return { ok: true }
     },
     onSession(session) {
-      // MVP: single active UI session
-      if (active) {
-        activeCleanup?.()
-        activeCleanup = null
-        active.close(1000, "replaced")
-        active = null
-      }
-      active = session
       try {
-        activeCleanup = sessionFactory?.(session.peer) ?? null
+        sessions.set(session, sessionFactory?.(session.peer) ?? null)
       } catch (e) {
         log.warn("session factory failed", { err: e })
         session.close(4000, "session setup failed")
-        if (active === session) active = null
+        sessions.delete(session)
         return
       }
       log.info("ws session established")
     },
     onSessionClosed(session) {
-      if (active === session) {
-        activeCleanup?.()
-        activeCleanup = null
-        active = null
-      }
+      const cleanup = sessions.get(session)
+      if (!sessions.delete(session)) return
+      cleanup?.()
     },
   })
 
@@ -148,12 +138,11 @@ export async function createAgentWsServer(options: {
       sessionFactory = factory
     },
     close() {
-      if (active) {
-        activeCleanup?.()
-        activeCleanup = null
-        active.close(1000, "server close")
-        active = null
+      for (const [session, cleanup] of sessions) {
+        cleanup?.()
+        session.close(1000, "server close")
       }
+      sessions.clear()
       server.close()
     },
   }

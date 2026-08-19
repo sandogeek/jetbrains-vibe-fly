@@ -7,40 +7,15 @@ import org.junit.Test
 class Ui2HostImplTest {
 
     @Test
-    fun `delegates raw snapshot reads and optimistic saves`() = runBlocking {
-        val initial = UiSettingsSnapshot(
-            scope = "application",
-            settingsJson = "{\"defaultProvider\":\"openai\"}",
-            vibeflyJson = "{\"locale\":\"zh\"}",
-            revision = "revision-1",
-        )
-        var saved: SettingsSaveRequest? = null
+    fun `exposes IDE helpers without a settings data plane`() = runBlocking {
+        var opened: String? = null
         val host = Ui2HostImpl(
-            settingsSnapshotProvider = { scope ->
-                assertEquals("application", scope)
-                initial
-            },
-            settingsSaver = { request ->
-                saved = request
-                SettingsSaveResult(ok = true, revision = "revision-2")
-            },
+            appVersion = "9.9.9",
+            openExternalUrlHandler = { opened = it },
         )
 
-        assertEquals(initial, host.getSettingsSnapshot("application"))
-
-        val request = SettingsSaveRequest(
-            scope = "application",
-            vibeflyJson = "{\"locale\":\"en\"}",
-            expectedRevision = initial.revision,
-        )
-        assertEquals("revision-2", host.saveSettings(request).revision)
-        assertEquals(request, saved)
-    }
-
-    @Test
-    fun `ui snapshot has no raw models or auth fields`() {
-        val names = UiSettingsSnapshot::class.java.declaredFields.map { it.name }.toSet()
-        assertEquals(false, "modelsJson" in names)
-        assertEquals(false, "authJson" in names)
+        assertEquals("9.9.9", host.getAppVersion())
+        host.openExternalUrl("https://example.test")
+        assertEquals("https://example.test", opened)
     }
 }

@@ -34,6 +34,17 @@ export interface GenerateCommitMessageResult {
   message: string;
 }
 
+export interface SettingsFileChange {
+  scope: string;
+  projectRoot?: string | null;
+  document: string;
+  revision: string;
+}
+
+export interface SettingsChangedNotification {
+  changes?: Array<SettingsFileChange>;
+}
+
 export interface ProviderCredentialStatus {
   hasApiKey?: boolean;
   hasOAuth?: boolean;
@@ -165,7 +176,7 @@ export interface AgentSettingsSnapshot {
   vibeflyJson?: string;
   modelsJson?: string | null;
   authJson?: string | null;
-  revision: string;
+  revisions?: Record<string, string>;
   diagnostics?: Array<SettingsDiagnostic>;
 }
 
@@ -181,11 +192,18 @@ export interface SettingsSaveResult {
   error?: string | null;
 }
 
+export interface SettingsDocumentSaveRequest {
+  scope: string;
+  document: string;
+  json: string;
+  expectedRevision: string;
+}
+
 export const host2Agent = defineRpcService("Host2Agent", {
   openWebSocketSession: rpcMethod<[expectedOrigin: string], AgentConnection>(1),
   shutdown: rpcMethod<[], void>(2),
   generateCommitMessage: rpcMethod<[request: GenerateCommitMessageRequest], GenerateCommitMessageResult>(3),
-  settingsChanged: rpcMethod<[scope: string, projectRoot: string | null, revision: string], void>(4),
+  settingsChanged: rpcMethod<[notification: SettingsChangedNotification], void>(4),
   getProvidersSnapshot: rpcMethod<[modelsJson: string, authJson: string], ProvidersSnapshot>(5),
   applyProvidersPatch: rpcMethod<[request: ProvidersPatchRequest, modelsJson: string], ModelsDocumentPatchResult>(6),
   getLoginProviders: rpcMethod<[], LoginProvidersList>(7),
@@ -209,6 +227,7 @@ export const agent2Host = defineRpcService("Agent2Host", {
   reportCommitMessageProgress: rpcMethod<[message: string], void>(4),
   getSettingsSnapshot: rpcMethod<[scope: string], AgentSettingsSnapshot>(5),
   saveAuth: rpcMethod<[request: AuthSaveRequest], SettingsSaveResult>(6),
+  saveSettingsDocuments: rpcMethod<[request: SettingsDocumentSaveRequest], SettingsSaveResult>(7),
 });
 
 export type Agent2Host = RpcClient<typeof agent2Host>;

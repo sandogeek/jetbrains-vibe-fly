@@ -30,49 +30,40 @@ class VibeflyApplicationSettingsService : Disposable {
     internal fun snapshot(refresh: Boolean = false): SettingsScopeSnapshot =
         if (refresh) store.reloadFromDisk() else store.snapshot()
 
-    internal fun saveSettings(request: SettingsSaveRequest): SettingsSaveResult {
-        require(request.scope == SETTINGS_SCOPE_APPLICATION) {
-            "Application settings service cannot save ${request.scope} scope"
-        }
-        val updates = buildMap {
-            request.settingsJson?.let { put(SettingsDocument.SETTINGS, it) }
-            request.vibeflyJson?.let { put(SettingsDocument.VIBEFLY, it) }
-        }
-        return store.saveDocuments(updates, request.expectedRevision).toRpcResult()
-    }
-
     internal fun saveAuth(request: AuthSaveRequest): SettingsSaveResult =
-        saveProviderDocuments(
-            modelsJson = null,
-            authJson = request.authJson,
+        saveDocument(
+            document = SettingsDocument.AUTH,
+            json = request.authJson,
             expectedRevision = request.expectedRevision,
         )
 
-    internal fun saveProviderDocuments(
-        modelsJson: String?,
-        authJson: String?,
+    internal fun saveDocument(
+        document: SettingsDocument,
+        json: String,
         expectedRevision: String,
     ): SettingsSaveResult =
-        store.saveDocuments(
-            updates = buildMap {
-                modelsJson?.let { put(SettingsDocument.MODELS, it) }
-                authJson?.let { put(SettingsDocument.AUTH, it) }
-            },
-            expectedRevision = expectedRevision,
-        ).toRpcResult()
+        store.saveDocument(document, json, expectedRevision).toRpcResult(document)
 
     override fun dispose() {
         store.close()
     }
 
-    private fun publishChanged(snapshot: SettingsScopeSnapshot) {
+    private fun publishChanged(snapshot: SettingsScopeSnapshot, changedDocuments: Set<SettingsDocument>) {
+        if (changedDocuments.isEmpty()) return
         ApplicationManager.getApplication().messageBus
             .syncPublisher(VIBEFLY_SETTINGS_TOPIC)
             .settingsChanged(
                 VibeflySettingsChanged(
                     scope = snapshot.scope,
                     projectRoot = null,
-                    revision = snapshot.revision,
+                    changes = changedDocuments.map { document ->
+                        SettingsFileChange(
+                            scope = snapshot.scope,
+                            projectRoot = null,
+                            document = document.fileName,
+                            revision = snapshot.revision(document),
+                        )
+                    },
                 ),
             )
     }
@@ -85,9 +76,9 @@ class VibeflyApplicationSettingsService : Disposable {
     }
 }
 
-internal fun StoreSaveResult.toRpcResult(): SettingsSaveResult = SettingsSaveResult(
+internal fun StoreSaveResult.toRpcResult(document: SettingsDocument? = null): SettingsSaveResult = SettingsSaveResult(
     ok = ok,
-    revision = snapshot.revision,
+    revision = document?.let(snapshot::revision) ?: snapshot.revisions.values.firstOrNull().orEmpty(),
     conflict = conflict,
     error = error,
 )

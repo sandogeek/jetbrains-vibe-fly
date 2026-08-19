@@ -20,7 +20,7 @@ class SettingsScopeStoreTest {
     val temporaryFolder = TemporaryFolder()
 
     @Test
-    fun `missing files are empty and a multi-document save uses one revision`() {
+    fun `missing files are empty and each file save has its own revision`() {
         val directory = newDirectory("application")
         var changes = 0
         SettingsScopeStore(
@@ -30,39 +30,53 @@ class SettingsScopeStoreTest {
             allowedDocuments = SettingsDocument.entries.toSet(),
             ownerOnlyDirectory = true,
             watcherEnabled = false,
-            onChanged = { changes += 1 },
+            onChanged = { _, _ -> changes += 1 },
         ).use { store ->
             val initial = store.snapshot()
             assertTrue(initial.documents.values.all { it == EMPTY_JSON })
             assertFalse(Files.exists(directory.resolve("settings.json")))
             assertFalse(Files.exists(directory.resolve("auth.json")))
 
-            val saved = store.saveDocuments(
-                mapOf(
-                    SettingsDocument.SETTINGS to "{\"defaultProvider\":\"openai\"}",
-                    SettingsDocument.VIBEFLY to "{\"locale\":\"zh\"}",
-                ),
-                initial.revision,
+            val savedSettings = store.saveDocument(
+                SettingsDocument.SETTINGS,
+                "{\"defaultProvider\":\"openai\"}",
+                initial.revision(SettingsDocument.SETTINGS),
             )
-            assertTrue(saved.ok)
-            assertNotEquals(initial.revision, saved.snapshot.revision)
-            assertEquals(1, changes)
+            val savedVibefly = store.saveDocument(
+                SettingsDocument.VIBEFLY,
+                "{\"locale\":\"zh\"}",
+                initial.revision(SettingsDocument.VIBEFLY),
+            )
+            assertTrue(savedSettings.ok)
+            assertTrue(savedVibefly.ok)
+            assertNotEquals(
+                initial.revision(SettingsDocument.SETTINGS),
+                savedSettings.snapshot.revision(SettingsDocument.SETTINGS),
+            )
+            assertNotEquals(
+                initial.revision(SettingsDocument.VIBEFLY),
+                savedVibefly.snapshot.revision(SettingsDocument.VIBEFLY),
+            )
+            assertEquals(2, changes)
             assertTrue(Files.readString(directory.resolve("settings.json")).contains("openai"))
             assertFalse(hasTemporaryFiles(directory))
 
             val conflict = store.saveDocuments(
                 mapOf(SettingsDocument.SETTINGS to "{\"defaultProvider\":\"other\"}"),
-                initial.revision,
+                initial.revision(SettingsDocument.SETTINGS),
             )
             assertFalse(conflict.ok)
             assertTrue(conflict.conflict)
-            assertEquals(saved.snapshot.revision, conflict.snapshot.revision)
+            assertEquals(
+                savedSettings.snapshot.revision(SettingsDocument.SETTINGS),
+                conflict.snapshot.revision(SettingsDocument.SETTINGS),
+            )
             assertTrue(Files.readString(directory.resolve("settings.json")).contains("openai"))
         }
     }
 
     @Test
-    fun `models and auth save uses one revision`() {
+    fun `models and auth saves use independent revisions`() {
         val directory = newDirectory("provider-documents")
         var changes = 0
         SettingsScopeStore(
@@ -72,19 +86,24 @@ class SettingsScopeStoreTest {
             allowedDocuments = setOf(SettingsDocument.MODELS, SettingsDocument.AUTH),
             ownerOnlyDirectory = true,
             watcherEnabled = false,
-            onChanged = { changes += 1 },
+            onChanged = { _, _ -> changes += 1 },
         ).use { store ->
             val initial = store.snapshot()
-            val saved = store.saveDocuments(
-                mapOf(
-                    SettingsDocument.MODELS to """{"providers":{"private":{"baseUrl":"https://a","api":"openai-completions","models":[{"id":"m"}]}}}""",
-                    SettingsDocument.AUTH to """{"private":{"type":"api_key","key":"secret"}}""",
-                ),
-                initial.revision,
+            val savedModels = store.saveDocument(
+                SettingsDocument.MODELS,
+                """{"providers":{"private":{"baseUrl":"https://a","api":"openai-completions","models":[{"id":"m"}]}}}""",
+                initial.revision(SettingsDocument.MODELS),
             )
-            assertTrue(saved.ok)
-            assertNotEquals(initial.revision, saved.snapshot.revision)
-            assertEquals(1, changes)
+            val savedAuth = store.saveDocument(
+                SettingsDocument.AUTH,
+                """{"private":{"type":"api_key","key":"secret"}}""",
+                initial.revision(SettingsDocument.AUTH),
+            )
+            assertTrue(savedModels.ok)
+            assertTrue(savedAuth.ok)
+            assertNotEquals(initial.revision(SettingsDocument.MODELS), savedModels.snapshot.revision(SettingsDocument.MODELS))
+            assertNotEquals(initial.revision(SettingsDocument.AUTH), savedAuth.snapshot.revision(SettingsDocument.AUTH))
+            assertEquals(2, changes)
             assertTrue(Files.readString(directory.resolve("models.json")).contains("private"))
             assertTrue(Files.readString(directory.resolve("auth.json")).contains("secret"))
         }
@@ -107,7 +126,7 @@ class SettingsScopeStoreTest {
                 mapOf(
                     SettingsDocument.MODELS to """{"providers":{"private":{"baseUrl":"https://a","api":"openai-completions","models":[{"id":"m"}]}}}""",
                 ),
-                initial.revision,
+                initial.revision(SettingsDocument.MODELS),
             )
             assertTrue(saved.ok)
             assertTrue(Files.readString(directory.resolve("models.json")).contains("private"))
@@ -137,14 +156,14 @@ class SettingsScopeStoreTest {
             val invalid = store.reloadFromDisk()
             assertEquals(valid.content(SettingsDocument.SETTINGS), invalid.content(SettingsDocument.SETTINGS))
             assertEquals("Invalid JSON", invalid.diagnostics.single().message)
-            assertNotEquals(valid.revision, invalid.revision)
-            assertEquals(invalid.revision, store.reloadFromDisk().revision)
+            assertNotEquals(valid.revision(SettingsDocument.SETTINGS), invalid.revision(SettingsDocument.SETTINGS))
+            assertEquals(invalid.revision(SettingsDocument.SETTINGS), store.reloadFromDisk().revision(SettingsDocument.SETTINGS))
 
             Files.writeString(settingsPath, "{\"defaultModel\":\"fixed\"}")
             val fixed = store.reloadFromDisk()
             assertTrue(fixed.content(SettingsDocument.SETTINGS).contains("fixed"))
             assertTrue(fixed.diagnostics.isEmpty())
-            assertNotEquals(invalid.revision, fixed.revision)
+            assertNotEquals(invalid.revision(SettingsDocument.SETTINGS), fixed.revision(SettingsDocument.SETTINGS))
         }
     }
 
@@ -165,16 +184,16 @@ class SettingsScopeStoreTest {
             val initial = store.snapshot()
             val result = store.saveDocuments(
                 mapOf(SettingsDocument.SETTINGS to "[broken"),
-                initial.revision,
+                initial.revision(SettingsDocument.SETTINGS),
             )
             assertFalse(result.ok)
             assertFalse(result.conflict)
-            assertEquals(initial.revision, result.snapshot.revision)
+            assertEquals(initial.revision(SettingsDocument.SETTINGS), result.snapshot.revision(SettingsDocument.SETTINGS))
             assertFalse(Files.exists(directory.resolve("settings.json")))
 
             val unsupported = store.saveDocuments(
                 mapOf(SettingsDocument.AUTH to "{}"),
-                initial.revision,
+                initial.revision(SettingsDocument.SETTINGS),
             )
             assertFalse(unsupported.ok)
             assertTrue(unsupported.error.orEmpty().contains("not supported"))
@@ -290,7 +309,7 @@ class SettingsScopeStoreTest {
 
             val result = store.saveDocuments(
                 mapOf(SettingsDocument.SETTINGS to "{\"inside\":true}"),
-                initial.revision,
+                initial.revision(SettingsDocument.SETTINGS),
             )
             assertFalse(result.ok)
             assertTrue(Files.isSymbolicLink(settingsPath))
@@ -317,19 +336,19 @@ class SettingsScopeStoreTest {
             val initial = store.snapshot()
             val result = store.saveDocuments(
                 mapOf(SettingsDocument.AUTH to "{\"openai\":{\"type\":\"api_key\",\"key\":\"secret\"}}"),
-                initial.revision,
+                initial.revision(SettingsDocument.AUTH),
             )
 
             assertFalse(result.ok)
-            assertEquals(initial.revision, result.snapshot.revision)
+            assertEquals(initial.revision(SettingsDocument.AUTH), result.snapshot.revision(SettingsDocument.AUTH))
             assertFalse(Files.exists(directory.resolve(SettingsDocument.AUTH.fileName)))
             assertFalse(hasTemporaryFiles(directory))
         }
     }
 
     @Test
-    fun `multi-document staging failure leaves every target unchanged`() {
-        val directory = newDirectory("multi-document-staging-failure")
+    fun `multi-document save is rejected without changing any file`() {
+        val directory = newDirectory("multi-document-rejected")
         val settingsPath = directory.resolve(SettingsDocument.SETTINGS.fileName)
         val authPath = directory.resolve(SettingsDocument.AUTH.fileName)
         val originalSettings = "{\"defaultProvider\":\"original\"}"
@@ -344,13 +363,8 @@ class SettingsScopeStoreTest {
             directory = directory,
             allowedDocuments = SettingsDocument.entries.toSet(),
             ownerOnlyDirectory = true,
-            permissionSetter = { path, isDirectory ->
-                if (!isDirectory && path.fileName.toString().startsWith(".auth.json.")) {
-                    throw IOException("permission denied")
-                }
-            },
             watcherEnabled = false,
-            onChanged = { changes += 1 },
+            onChanged = { _, _ -> changes += 1 },
         ).use { store ->
             val initial = store.snapshot()
             val result = store.saveDocuments(
@@ -359,11 +373,14 @@ class SettingsScopeStoreTest {
                     SettingsDocument.AUTH to
                             "{\"private\":{\"type\":\"api_key\",\"key\":\"new-secret\"}}",
                 ),
-                initial.revision,
+                initial.revision(SettingsDocument.SETTINGS),
             )
 
             assertFalse(result.ok)
-            assertEquals(initial.revision, result.snapshot.revision)
+            assertFalse(result.conflict)
+            assertTrue(result.error.orEmpty().contains("only one settings file"))
+            assertEquals(initial.revision(SettingsDocument.SETTINGS), result.snapshot.revision(SettingsDocument.SETTINGS))
+            assertEquals(initial.revision(SettingsDocument.AUTH), result.snapshot.revision(SettingsDocument.AUTH))
             assertEquals(originalSettings, Files.readString(settingsPath))
             assertEquals(originalAuth, Files.readString(authPath))
             assertEquals(0, changes)
@@ -372,14 +389,11 @@ class SettingsScopeStoreTest {
     }
 
     @Test
-    fun `multi-document install failure rolls back an earlier replacement`() {
-        val directory = newDirectory("multi-document-install-failure")
+    fun `single-file install failure leaves the target unchanged`() {
+        val directory = newDirectory("single-file-install-failure")
         val settingsPath = directory.resolve(SettingsDocument.SETTINGS.fileName)
-        val vibeflyPath = directory.resolve(SettingsDocument.VIBEFLY.fileName)
         val originalSettings = "{\"defaultProvider\":\"original\"}"
-        val originalVibefly = "{\"locale\":\"en\"}"
         Files.writeString(settingsPath, originalSettings)
-        Files.writeString(vibeflyPath, originalVibefly)
         var failureInjected = false
         var changes = 0
 
@@ -387,39 +401,28 @@ class SettingsScopeStoreTest {
             scope = SETTINGS_SCOPE_APPLICATION,
             projectRoot = null,
             directory = directory,
-            allowedDocuments = setOf(SettingsDocument.SETTINGS, SettingsDocument.VIBEFLY),
+            allowedDocuments = setOf(SettingsDocument.SETTINGS),
             ownerOnlyDirectory = true,
             permissionSetter = { path, isDirectory ->
-                if (!failureInjected && !isDirectory && path == settingsPath &&
-                    Files.readString(settingsPath).contains("replacement")
-                ) {
-                    val stagedVibefly = Files.list(directory).use { paths ->
-                        paths.filter { candidate ->
-                            val name = candidate.fileName.toString()
-                            name.startsWith(".settings.vibefly.json.") && !name.contains(".backup.")
-                        }.findFirst().orElseThrow()
-                    }
-                    Files.delete(stagedVibefly)
+                if (!failureInjected && !isDirectory && path.fileName.toString().startsWith(".settings.json.")) {
                     failureInjected = true
+                    throw IOException("permission denied")
                 }
             },
             watcherEnabled = false,
-            onChanged = { changes += 1 },
+            onChanged = { _, _ -> changes += 1 },
         ).use { store ->
             val initial = store.snapshot()
-            val result = store.saveDocuments(
-                linkedMapOf(
-                    SettingsDocument.SETTINGS to "{\"defaultProvider\":\"replacement\"}",
-                    SettingsDocument.VIBEFLY to "{\"locale\":\"zh\"}",
-                ),
-                initial.revision,
+            val result = store.saveDocument(
+                SettingsDocument.SETTINGS,
+                "{\"defaultProvider\":\"replacement\"}",
+                initial.revision(SettingsDocument.SETTINGS),
             )
 
             assertTrue(failureInjected)
             assertFalse(result.ok)
-            assertEquals(initial.revision, result.snapshot.revision)
+            assertEquals(initial.revision(SettingsDocument.SETTINGS), result.snapshot.revision(SettingsDocument.SETTINGS))
             assertEquals(originalSettings, Files.readString(settingsPath))
-            assertEquals(originalVibefly, Files.readString(vibeflyPath))
             assertEquals(0, changes)
             assertFalse(hasTemporaryFiles(directory))
         }
@@ -464,7 +467,7 @@ class SettingsScopeStoreTest {
 
                 val result = store.saveDocuments(
                     mapOf(SettingsDocument.SETTINGS to "{\"inside\":true}"),
-                    snapshot.revision,
+                    snapshot.revision(SettingsDocument.SETTINGS),
                 )
                 assertFalse(result.ok)
                 assertTrue(Files.exists(settingsPath, LinkOption.NOFOLLOW_LINKS))
@@ -510,7 +513,7 @@ class SettingsScopeStoreTest {
 
             val result = store.saveDocuments(
                 mapOf(SettingsDocument.SETTINGS to "{\"inside\":true}"),
-                snapshot.revision,
+                snapshot.revision(SettingsDocument.SETTINGS),
             )
             assertFalse(result.ok)
             assertTrue(Files.isSameFile(settingsPath, outside))
@@ -547,7 +550,7 @@ class SettingsScopeStoreTest {
         ).use { store ->
             val result = store.saveDocuments(
                 mapOf(SettingsDocument.SETTINGS to "{\"inside\":true}"),
-                store.snapshot().revision,
+                store.snapshot().revision(SettingsDocument.SETTINGS),
             )
             assertFalse(result.ok)
             assertTrue(Files.isSameFile(lockPath, outside))

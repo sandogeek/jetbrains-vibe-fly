@@ -1,5 +1,6 @@
 import {Languages, Search, Settings2, SlidersHorizontal} from "lucide-react"
 import {type SettingMutation} from "@vibefly/uiagent-shared"
+import type {Ui2Agent} from "@vibefly/uiagent-shared"
 import {applyUiLocale, useAppTranslation} from "../i18n"
 import {type ReactNode, useEffect, useRef, useState} from "react"
 
@@ -11,6 +12,7 @@ import type {
     Ui2Host,
 } from "../generated/rpc"
 import {createSettingsUiRpc} from "../rpc/client"
+import {connectAgentRpc} from "../rpc/agent"
 import {bindConsoleToHost} from "../rpc/console"
 import {applyJbTheme} from "../theme"
 import {CommitMessagePage} from "./CommitMessagePage"
@@ -20,6 +22,7 @@ import {emptySettings, initialState, type SettingsState} from "./settingsStore"
 import {SettingsMutationQueue, type SettingsMutateOptions} from "./settingsMutationQueue"
 import {releaseSettingsShellOwnership} from "./settingsShellOwnership"
 import {UiSettingsRuntime, useUiSettingsView} from "./UiSettingsRuntime"
+import {SettingKeyStore} from "./settingKeyStore"
 import {UiProviderSettingsClient} from "./UiProviderSettingsClient"
 import {
     Sidebar,
@@ -72,6 +75,8 @@ export function SettingsShell() {
         let peerClose: (() => void) | undefined
         let unbindConsole: (() => void) | undefined
         let unsubscribeProviderRefresh: (() => void) | undefined
+        let stopAgent: (() => void) | undefined
+        let agentRef: Ui2Agent | null = null
         const queue = new SettingsMutationQueue(
             () => runtime,
             (error) => {
@@ -90,18 +95,6 @@ export function SettingsShell() {
             },
             async setTheme(mode) {
                 applyJbTheme(mode)
-            },
-            async settingsChanged(scope, projectRoot, revision) {
-                try {
-                    await runtime?.notify(scope, projectRoot, revision)
-                } catch (error) {
-                    if (!cancelled) {
-                        setState((current) => ({
-                            ...current,
-                            loadError: error instanceof Error ? error.message : String(error),
-                        }))
-                    }
-                }
             },
         }
         const host2UiSettings: Host2UiSettingsService = {
@@ -132,10 +125,9 @@ export function SettingsShell() {
             const settingsHost = rpc?.ui2HostSettings ?? null
 
             if (host && settingsHost) {
-                const nextRuntime = new UiSettingsRuntime(host)
+                const store = new SettingKeyStore(() => agentRef)
+                const nextRuntime = new UiSettingsRuntime(store)
                 const nextProviders = new UiProviderSettingsClient(settingsHost, nextRuntime, state.catalog)
-                // Install before awaits so Host settingsChanged can reach this effect's runtime.
-                // 在 await 之前安装，以便 Host 的 settingsChanged 能到达本 effect 的 runtime。
                 runtime = nextRuntime
                 providers = nextProviders
                 if (!cancelled) {
@@ -148,7 +140,19 @@ export function SettingsShell() {
                     if (!refresh.ok) throw new Error(refresh.error ?? "Provider refresh failed")
                 }
                 try {
-                    const view = await nextRuntime.start(false)
+                    stopAgent = connectAgentRpc({
+                        getConnection: () => settingsHost.getAgentConnection(),
+                        isStopped: () => cancelled,
+                        onStatus() {},
+                        onReady(agent) {
+                            agentRef = agent
+                            if (agent) void nextRuntime.start()
+                        },
+                        onSettingsInvalidated(change) {
+                            void nextRuntime.notifyInvalidation(change)
+                        },
+                    }).stop
+                    const view = await nextRuntime.start()
                     if (cancelled) return
                     applyUiLocale(view.settings.ui.locale)
                     loadError = view.diagnostics
@@ -181,6 +185,8 @@ export function SettingsShell() {
             // 同步拆除：StrictMode 下安全，因为 cleanup 在下次 setup 之前执行。
             unsubscribeProviderRefresh?.()
             unsubscribeProviderRefresh = undefined
+            stopAgent?.()
+            stopAgent = undefined
             unbindConsole?.()
             unbindConsole = undefined
             if (mutationQueue.current === queue) {

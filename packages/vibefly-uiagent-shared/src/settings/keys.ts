@@ -7,7 +7,6 @@ import {
 import {
     isTaggedRule,
     PI_SETTINGS_SHAPE,
-    type SettingReadLayer,
     type TaggedRule,
     VIBEFLY_SETTINGS_SHAPE,
 } from "./definition.js"
@@ -16,10 +15,7 @@ import {
     type JsonValue,
     parseJsonObjectDocument,
     type SafeSettingsSnapshot,
-    type SettingsScope,
 } from "./schema.js"
-
-export type {SettingReadLayer} from "./definition.js"
 
 export type SettingsDocument = "settings" | "vibefly"
 
@@ -27,8 +23,6 @@ export type SettingKey<T> = {
     readonly id: string
     readonly document: SettingsDocument
     readonly path: readonly string[]
-    readonly scopes: readonly SettingsScope[]
-    readonly readLayer: SettingReadLayer
     readonly decode: (value: JsonValue | undefined) => T
     readonly encode: (value: T) => JsonValue
 }
@@ -97,8 +91,6 @@ function buildSettingKey<T>(
         id: `${document}:${path.join(".")}`,
         document,
         path: Object.freeze([...path]),
-        scopes: meta.scopes,
-        readLayer: meta.readLayer,
         decode: (value: JsonValue | undefined) => decodeWithRule(rule, meta.fallback, value) as T,
         encode: (meta.encode as ((value: T) => JsonValue) | undefined) ?? identityEncode,
     })
@@ -161,6 +153,38 @@ function isSettingKey(value: unknown): value is AnySettingKey {
         && Array.isArray((value as AnySettingKey).path)
         && typeof (value as AnySettingKey).id === "string",
     )
+}
+
+function collectSettingKeyLeaves(tree: unknown, collected: AnySettingKey[] = []): AnySettingKey[] {
+    if (isSettingKey(tree)) {
+        collected.push(tree)
+        return collected
+    }
+    if (!tree || typeof tree !== "object") return collected
+    for (const child of Object.values(tree)) collectSettingKeyLeaves(child, collected)
+    return collected
+}
+
+const SETTING_KEYS_BY_ID = new Map<string, AnySettingKey>()
+
+function registerSettingKeys(tree: unknown): void {
+    for (const key of collectSettingKeyLeaves(tree)) SETTING_KEYS_BY_ID.set(key.id, key)
+}
+
+registerSettingKeys(settingKeys)
+
+export function getSettingKey(id: string): AnySettingKey | undefined {
+    return SETTING_KEYS_BY_ID.get(id)
+}
+
+export function requireSettingKey(id: string): AnySettingKey {
+    const key = getSettingKey(id)
+    if (!key) throw new Error(`Unknown setting key: ${id}`)
+    return key
+}
+
+export function allSettingKeys(): readonly AnySettingKey[] {
+    return [...SETTING_KEYS_BY_ID.values()]
 }
 
 /**

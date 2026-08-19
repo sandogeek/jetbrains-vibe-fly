@@ -185,6 +185,7 @@ export class UiProviderSettingsClient {
             currentRevision = result.revision
                 ? await this.settings.alignApplicationRevision(result.revision)
                 : true
+            if (result.revision) this.settings.setModelsRevision(result.revision)
             safeSnapshot = currentRevision && result.snapshot
                 ? mergeProvidersSnapshot(result.snapshot, this.catalog)
                 : null

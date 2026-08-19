@@ -8,6 +8,7 @@ import com.github.sandogeek.vibefly.jcef.rpc.AgentConnection
 import com.github.sandogeek.vibefly.jcef.rpc.GenerateCommitMessageRequest
 import com.github.sandogeek.vibefly.jcef.rpc.GenerateCommitMessageResult
 import com.github.sandogeek.vibefly.jcef.rpc.Host2Agent
+import com.github.sandogeek.vibefly.jcef.rpc.SettingsChangedNotification
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
@@ -259,7 +260,7 @@ class VibeflyAgentService(private val project: Project) : Disposable {
             val control = host2AgentRef.get()
             if (process == null || !process.isAlive || control == null) return@launch
             try {
-                control.settingsChanged(event.scope, event.projectRoot, event.revision)
+                control.settingsChanged(SettingsChangedNotification(changes = event.changes))
             } catch (error: Exception) {
                 if (!disposed) log.debug("settingsChanged notification failed", error)
             }

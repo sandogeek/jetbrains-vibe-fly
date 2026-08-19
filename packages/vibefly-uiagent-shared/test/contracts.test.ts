@@ -50,6 +50,8 @@ describe("generated UI-Agent contracts", () => {
         setChatModel: 11,
         setChatThinkingLevel: 12,
         markChatSessionRead: 13,
+        readSettingValues: 14,
+        mutateSettings: 15,
       },
     })
     assert.deepEqual(agent2Ui.descriptor, {
@@ -58,6 +60,7 @@ describe("generated UI-Agent contracts", () => {
         onChatEvents: 1,
         requestToolPermission: 2,
         requestUserInput: 3,
+        settingsInvalidated: 4,
       },
     })
   })
@@ -98,6 +101,12 @@ describe("generated UI-Agent contracts", () => {
         throw new Error("not used")
       },
       markChatSessionRead() {},
+      readSettingValues() {
+        return []
+      },
+      mutateSettings() {
+        return {ok: true, clientMutationId: "unused"}
+      },
     })
 
     const proxy = createUi2AgentProxy(clientPeer)

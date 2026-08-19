@@ -1,27 +1,26 @@
 # Host-centralized settings architecture
 
-This document describes the current settings system and the boundaries of settings consumers. Host-owned persistence, four-file layout, revision protocol, and credential isolation are shipped; product capabilities not provided in this round are called out explicitly.
+This document describes the current settings system and consumer boundaries. Host-owned persistence, four-file layout, file-level revisions, and credential isolation are shipped. The settings data plane is **UI → Agent → Host**.
 
 中文版：[setting.md](./setting.md)
 
 ## Goals and constraints
 
 1. Host is the sole writer of application / project config files and holds in-memory snapshots for both scopes.
-2. UI and Agent only read, save, and subscribe via existing SimpleRpc; they never touch settings files directly.
+2. Neither UI nor Agent touches settings files. The WebView only reads and mutates effective `SettingKey` values through the Agent; the Agent holds full snapshots and persists through Host RPC.
 3. pi-native fields live in `settings.json`; Vibe Fly–specific fields live in `settings.vibefly.json`; model definitions and credentials live in `models.json` and `auth.json` respectively. Upstream pi types/source are not modified.
 4. Only `settings.json` and `settings.vibefly.json` support project overrides: objects deep-merge recursively; arrays, scalars, and `null` are wholly replaced by the project layer. `models.json` and `auth.json` are application-only.
-5. Host pushes only small invalidation notices; consumers re-fetch snapshots over RPC and do not receive full config in the notice.
-6. Saves use opaque revision for optimistic concurrency, with file locks, same-directory temp files, and atomic replace.
+5. Host pushes small file-level invalidation notices to Agents only. Agents then tell UIs to re-read affected `SettingKey`s. Notices never carry full config.
+6. Saves use per-file opaque revisions for optimistic concurrency, with file locks, same-directory temp files, and atomic replace. One save writes one file.
 7. Settings hot-reload must not restart all Agents.
 8. Session and workspace state are outside the config snapshot.
 
-UI → Agent business contracts still live only in `packages/vibefly-uiagent-shared`; no Kotlin mirrors. Settings reads belong to UI → Host and Agent → Host; do not introduce a second RPC stack for this.
+UI → Agent business contracts live only in `packages/vibefly-uiagent-shared`; no Kotlin mirrors. Theme, tickets, and Provider login remain UI ↔ Host IDE capabilities.
 
 ## Current implementation boundaries
 
-- Settings and chat pages consume Host snapshots through the same UI runtime; Agent consumes trusted snapshots through the same shared sync core.
-- All current UI settings writes are fixed to application scope. Typed keys already record legal scopes and support `unset`, but this round does not show Global / Project switching, inheritance source, or “restore inheritance” entry points.
-- Settings WebView starts with `hasProject: false`; Chat WebView with `hasProject: true`. Effective fields such as locale can therefore read project overrides on the chat page; pin / MRU always read the application layer.
+- Settings and chat pages subscribe to Agent effective values through `SettingKeyStore`. The Agent consumes Host snapshots through `SettingsSyncClient`.
+- UI writes omit `targetScope`. The Agent chooses scope from the effective source: an existing project override stays on project; otherwise the write goes to application. The settings page does not show source or create/delete project overrides.
 - Provider login lifecycle uses the settings tab's project agent `withControl` and reverse RPC. Provider config and revision convergence are already on the unified UI client. Provider document parse/validate/patch and redacted snapshots are computed by that project Agent; Host passes authoritative `modelsJson` / `authJson` and writes them atomically. The Providers page therefore depends on the current project Agent.
 - No read or migration of old IDE XML settings; session / workspace state is also outside this system.
 
@@ -52,7 +51,7 @@ Project settings do **not** use pi-native `<project>/.pi/settings.json`. The Age
 `settings.json` stores only known pi `Settings` fields (default Provider / Model, thinking, compaction, retry, enabled models, etc.).  
 `settings.vibefly.json` stores product fields such as Commit Message, pin / MRU, and UI locale. `models.json` stores Provider / Model definitions; `auth.json` stores credentials only. Credentials must not enter the other three files.
 
-**Invariant:** `settings.json` and `settings.vibefly.json` **must not** hold credentials or secret-bearing fields. Host passthroughs these documents to the UI (JSON syntax / object root checks only) without field whitelist projection; UI saves replace whole provided documents.
+**Invariant:** `settings.json` and `settings.vibefly.json` **must not** hold credentials or secret-bearing fields. Host only checks JSON syntax / object root. The WebView never receives these raw documents.
 
 ### Merge semantics
 
@@ -85,54 +84,42 @@ Host provides two service levels:
 - One project service per open project; loads the two files under `<project>/.vibefly/`; releases watchers and subscriptions when the project closes.
 - Project service depends on application service. When the application snapshot changes, every project consumer’s effective cache must invalidate.
 
-Application service caches four raw JSON documents; project service caches two. When consumers request project config they fetch application and project snapshots separately, then shared `SettingsSyncClient` computes effective config. UI and Agent therefore share identical override rules without inventing a project layer for `models.json` / `auth.json`.
+Application service caches four raw JSON documents; project service caches two. The Agent fetches both snapshots and computes effective values and `SettingKey` sources in `SettingsSyncClient`. The UI no longer holds or merges raw JSON.
 
 ### Snapshot model
 
-RPC uses raw JSON strings and opaque revisions so Kotlin does not copy the full settings schema. Conceptual model:
+Trusted Host ↔ Agent snapshots use raw JSON strings and **per-file** opaque revisions so Kotlin does not copy the full settings schema:
 
 ```ts
 type SettingsScope = "application" | "project"
+type SettingsFile = "settings.json" | "settings.vibefly.json" | "models.json" | "auth.json"
 
 type SettingsDiagnostic = {
-  file: "settings.json" | "settings.vibefly.json" | "models.json" | "auth.json"
+  file: SettingsFile
   severity: "error" | "warning"
   message: string
 }
 
-type ApplicationSettingsSnapshot = {
-  scope: "application"
-  projectRoot: null
+type AgentSettingsSnapshot = {
+  scope: SettingsScope
+  projectRoot: string | null
   settingsJson: string
   vibeflyJson: string
-  modelsJson: string
-  authJson: string
-  revision: string
+  modelsJson?: string
+  authJson?: string
+  revisions: Partial<Record<SettingsFile, string>>
   diagnostics: SettingsDiagnostic[]
 }
-
-type ProjectSettingsSnapshot = {
-  scope: "project"
-  projectRoot: string
-  settingsJson: string
-  vibeflyJson: string
-  revision: string
-  diagnostics: SettingsDiagnostic[]
-}
-
-type SettingsSnapshot = ApplicationSettingsSnapshot | ProjectSettingsSnapshot
 ```
 
 - Application snapshots must have `projectRoot: null`; project snapshots must carry a normalized absolute project root.
 - Each `*Json` field is the last valid raw JSON for that scope, not the merged result.
 - Project snapshots have no `modelsJson` / `authJson`; project versions of those must be rejected on input or write.
 - Missing files yield `{}` for that raw layer without error.
-- `revision` is for equality only; consumers must not parse, sort, or invent revisions.
-- Any observable content or diagnostics change must change revision; no-op duplicate watcher events must not mint a new revision.
+- Each file has its own revision, used only for equality. Consumers must not parse, sort, or invent revisions.
+- An observable content or diagnostics change updates only that file’s revision; no-op duplicate watcher events must not mint a new revision.
 
-Effective project revision is composed from application revision and project revision and exists only in shared `SettingsSyncClient` cache. Either layer change invalidates the effective cache.
-
-The types above are the full model for Host internals and the trusted Agent. Providers RPC returns a complete single Provider entry (`configJson` = `models.json.providers[id]` object, which may include `apiKey`, headers, unknown fields); `auth.json`, OAuth tokens, and the credential store never enter the WebView—only redacted auth status (`ProviderCredentialStatus`). UI and Agent projections share the same scope revision so the UI still invalidates and refreshes when auth files change.
+These types exist only on Host internals and the trusted Agent control plane. The WebView never receives raw settings JSON. Providers RPC returns a complete Provider entry (`configJson`) and redacted auth status; `auth.json`, OAuth tokens, and the credential store never enter the WebView.
 
 ### Invalid JSON
 
@@ -154,7 +141,7 @@ One invalid file must not block updates to another file in the same scope.
 - Reads and writes share one lock protocol. If the lock cannot be taken, retry with a bound; never read another process’s incomplete temp state.
 - Writes create a temp file in the target’s directory, flush, then atomically replace; if atomic move is unavailable, log a warning and use a safe fallback.
 - Application directory permissions stay user-only; `auth.json` must remain owner-only after create/replace; logs and diagnostics must never include file contents or secrets.
-- Multi-file saves validate all JSON first, write under a scope-level mutex, then publish one new revision and notice.
+- One save writes a single file and compares only that file’s expected revision. `models.json` and `auth.json` are persisted separately; a later failure does not roll back an earlier success.
 - Watcher callbacks caused by Host’s own writes are deduped by content comparison so they do not re-bump revision or loop notifications.
 - `projectRoot` is resolved and normalized only by Host from an opened IDE Project (UI JCEF session binding) or Agent-injected `VIBEFLY_PROJECT_ROOT`; UI / Agent request params must not carry arbitrary paths or escape `<project>/.vibefly/`.
 
@@ -165,30 +152,29 @@ All interfaces keep `Caller2Callee` service names and existing transports: JCEF 
 ### Read and save
 
 ```text
-Ui2Host.getSettingsSnapshot(scope) -> UiSettingsSnapshot
-Ui2Host.saveSettings(request) -> SettingsSaveResult
+Ui2Agent.readSettingValues(keyIds) -> SettingValueResult[]
+Ui2Agent.mutateSettings(request) -> SettingMutationResult
+Agent2Ui.settingsInvalidated(change) -> void
+
 Ui2HostSettings.applyProvidersPatch(request, expectedRevision) -> ProvidersPatchResult
+Ui2HostSettings.setProviderApiKey(request) -> ProvidersPatchResult
+Ui2HostSettings.mutateCustomProvider(request, expectedRevision) -> ProvidersPatchResult
 
 Host2Agent.getProvidersSnapshot(modelsJson, authJson) -> ProvidersSnapshot
-Host2Agent.applyProvidersPatch(request, modelsJson, authJson) -> ProviderDocumentsPatchResult
+Host2Agent.applyProvidersPatch(request, modelsJson) -> ModelsDocumentPatchResult
+Host2Agent.setProviderApiKey(request) -> ProviderApiKeyResult
+Host2Agent.mutateCustomProvider(request, modelsJson, authJson) -> ProviderDocumentsPatchResult
 Agent2Host.getSettingsSnapshot(scope) -> AgentSettingsSnapshot
+Agent2Host.saveSettingsDocuments(request) -> SettingsSaveResult
 Agent2Host.saveAuth(request) -> SettingsSaveResult
 ```
 
-When `scope = "project"`, Host uses the session-bound project root: UI from the WebView’s Project; Agent from process env `VIBEFLY_PROJECT_ROOT`. Callers pass only `scope`, never a path. Project scope without a bound project is rejected.
+When `scope = "project"`, Host uses the session-bound project root from Agent env `VIBEFLY_PROJECT_ROOT`. Callers pass only `scope`, never a path. Project scope without a bound project is rejected.
 
-UI save requests at least include:
+The settings data plane no longer goes through `Ui2Host`. UI sends registered `keyId`s only; the Agent computes effective values and sources, then submits one-file saves to Host.
+`Agent2Host.saveSettingsDocuments` saves one document and its expected revision per request.
 
-```ts
-type SettingsSaveRequest = {
-  scope: SettingsScope
-  settingsJson?: string
-  vibeflyJson?: string
-  expectedRevision: string
-}
-```
-
-Neither `UiSettingsSnapshot` nor `SettingsSaveRequest` may contain raw `modelsJson` or `authJson`. UI reads full Provider entries (`configJson`) and auth status via Providers RPC; Provider edits use patches with `expectedRevision`, where `ProviderPatch.configJson` wholly replaces `models.json.providers[id]` (not field merge), preserving unknown keys as supplied. `UiSettingsSnapshot`’s `settingsJson` / `vibeflyJson` match disk raw documents (no field projection); `SettingsSaveRequest` whole-file replaces provided documents (omitted files unchanged). `AgentSettingsSnapshot` carries full application four files and project two files on the trusted local stdio control plane.
+UI reads full Provider entries (`configJson`) and auth status via Providers RPC. `AgentSettingsSnapshot` carries full application four files and project two files on the trusted local stdio control plane.
 
 When the Agent logs in, logs out, or refreshes credentials, the Host-backed credential adapter uses dedicated `Agent2Host.saveAuth`, which allows only application scope, `authJson`, and `expectedRevision`. On conflict the adapter re-fetches the latest application snapshot, replays the provider-level change on the latest credentials map, and retries—never overwriting concurrent credential writes with a stale whole file.
 
@@ -204,8 +190,8 @@ Under lock, Host compares `expectedRevision` to the current scope revision:
 ### Invalidation notices
 
 ```text
-Host2Ui.settingsChanged(scope, projectRoot, revision) -> void
-Host2Agent.settingsChanged(scope, projectRoot, revision) -> void
+Host2Agent.settingsChanged(notification) -> void
+Agent2Ui.settingsInvalidated(change) -> void
 ```
 
 Notices carry no JSON. `projectRoot` is identity only: `null` for application, normalized absolute path for project—so consumers can key caches; callers do not echo paths back. Consumers compare revision and, if local is not that revision, re-fetch via the reverse RPC. Notices may be coalesced or duplicated; correctness depends on re-read, not on every event being delivered.
@@ -226,28 +212,28 @@ Any application file change must fan out to all settings panels, chat panels, an
 - Immutable update helpers that preserve unknown keys.
 - Diagnostics aggregation.
 
-Core APIs are `SettingsSyncClient<TSnapshot>` and `SettingsSyncAdapter<TSnapshot>`. Adapters provide `fetch(scope)`; writable consumers also provide `save(request)`. The UI adapter calls `Ui2Host` with the safe projection; the Agent adapter calls `Agent2Host` with the full projection. Both reuse revision, cache, and merge behavior without adding UI ↔ Agent settings RPC. `modelsJson`, `authJson`, credential helpers, and Provider document snapshot/patch APIs export only from `@vibefly/uiagent-shared/agent` and never enter the WebView root bundle.
+Core APIs are `SettingsSyncClient<TSnapshot>` and `SettingsSyncAdapter<TSnapshot>`. Only the Agent holds full snapshots and calls `Agent2Host`. The UI consumes typed keys through `Ui2Agent.readSettingValues` / `mutateSettings` and no longer holds JSON or implements merge. `modelsJson`, `authJson`, credential helpers, and Provider document snapshot/patch APIs export only from `@vibefly/uiagent-shared/agent` and never enter the WebView root bundle.
 
 Same-scope fetch/save is serial; different scopes may run in parallel. `mutate()` replays semantic ops on the target raw layer by typed key; one request can save settings/vibefly together while preserving unknown keys; on conflict it re-fetches and replays up to four times. After a successful save it still fetches Host’s authoritative snapshot and never fabricates revision client-side. Selectors notify only when the selected value changes, so diagnostics-only revisions do not wake unrelated consumers.
 
-Current typed keys cover default Provider/Model, four Commit Message fields, pin/MRU, and UI locale. Default model, Commit, and locale read from the effective layer; pin/MRU always read from application. Keys declare legal write scopes and `unset` semantics as a foundation for later “restore inheritance”.
+Current typed keys cover default Provider/Model, four Commit Message fields, pin/MRU, and UI locale. All of them read from the effective layer and allow a project override. `unset` remains the foundation for later “restore inheritance”.
 
 ## UI flow
 
 ### First load
 
 1. WebView establishes `Ui2Host` / `Host2Ui` sessions.
-2. UI adapter fetches redacted application snapshot; with project context, also fetches project snapshot.
-3. `UiSettingsRuntime` composes the safe snapshot adapter, `SettingsSyncClient`, optimistic draft, and selector subscriptions; Providers page consumes only redacted models and auth status.
+2. Settings and chat pages connect to the Agent with a Host ticket.
+3. `SettingKeyStore` batch-reads subscribed `SettingKey`s from the Agent; the Providers page consumes only redacted models and auth status.
 4. Diagnostics present separately from effective config; errors must not brick the whole settings page.
 
 ### Save
 
-1. Form writes currently always target application scope; Provider / Model edits are also application-only.
-2. `UiSettingsRuntime` hands typed mutations to `SettingsSyncClient`, applied on the application raw layer with unknown keys preserved.
-3. UI calls `Ui2Host.saveSettings` with that layer’s read revision as `expectedRevision`.
-4. On success, fetch Host’s authoritative snapshot; on conflict, auto-replay local semantic mutations on the latest layer up to four times.
-5. Other panels refresh themselves via `Host2Ui.settingsChanged`.
+1. UI submits a typed mutation and does not choose a scope.
+2. The Agent picks the target file from the effective source and applies the mutation on the latest raw layer.
+3. The Agent calls `Agent2Host.saveSettingsDocuments` with that file’s expected revision.
+4. After Host confirms, the Agent converges and notifies every UI settings consumer.
+5. The UI refreshes only affected subscribed keys. Conflict replay stays on the Agent, up to four attempts.
 
 General / Commit pages still use 300ms debounce and flush on unmount; Provider default model and chat pin/MRU enter the runtime’s unified save queue immediately. `IdeSettings` is only a view model projected from typed keys; it no longer owns JSON paths or revision retry.
 

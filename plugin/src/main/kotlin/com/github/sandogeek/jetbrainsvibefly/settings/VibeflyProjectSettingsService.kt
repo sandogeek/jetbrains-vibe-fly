@@ -1,8 +1,8 @@
 package com.github.sandogeek.jetbrainsvibefly.settings
 
 import com.github.sandogeek.jetbrainsvibefly.agent.VibeflyAgentDirectory
-import com.github.sandogeek.vibefly.jcef.rpc.SettingsSaveRequest
 import com.github.sandogeek.vibefly.jcef.rpc.SettingsSaveResult
+import com.github.sandogeek.vibefly.jcef.rpc.SettingsFileChange
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
@@ -25,34 +25,39 @@ class VibeflyProjectSettingsService(project: Project) : Disposable {
         return if (refresh) active.reloadFromDisk() else active.snapshot()
     }
 
-    internal fun saveSettings(request: SettingsSaveRequest): SettingsSaveResult {
-        require(request.scope == SETTINGS_SCOPE_PROJECT) {
-            "Project settings service cannot save ${request.scope} scope"
-        }
+    internal fun saveDocument(
+        document: SettingsDocument,
+        json: String,
+        expectedRevision: String,
+    ): SettingsSaveResult {
         val active = store ?: return SettingsSaveResult(
             ok = false,
             revision = "unavailable",
             error = "Project settings are unavailable",
         )
-        val updates = buildMap {
-            request.settingsJson?.let { put(SettingsDocument.SETTINGS, it) }
-            request.vibeflyJson?.let { put(SettingsDocument.VIBEFLY, it) }
-        }
-        return active.saveDocuments(updates, request.expectedRevision).toRpcResult()
+        return active.saveDocument(document, json, expectedRevision).toRpcResult(document)
     }
 
     override fun dispose() {
         store?.close()
     }
 
-    private fun publishChanged(snapshot: SettingsScopeSnapshot) {
+    private fun publishChanged(snapshot: SettingsScopeSnapshot, changedDocuments: Set<SettingsDocument>) {
+        if (changedDocuments.isEmpty()) return
         ApplicationManager.getApplication().messageBus
             .syncPublisher(VIBEFLY_SETTINGS_TOPIC)
             .settingsChanged(
                 VibeflySettingsChanged(
                     scope = snapshot.scope,
                     projectRoot = snapshot.projectRoot,
-                    revision = snapshot.revision,
+                    changes = changedDocuments.map { document ->
+                        SettingsFileChange(
+                            scope = snapshot.scope,
+                            projectRoot = snapshot.projectRoot,
+                            document = document.fileName,
+                            revision = snapshot.revision(document),
+                        )
+                    },
                 ),
             )
     }

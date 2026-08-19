@@ -1,6 +1,7 @@
 package com.github.sandogeek.jetbrainsvibefly.settings
 
 import com.github.sandogeek.jetbrainsvibefly.agent.VibeflyAgentService
+import com.github.sandogeek.vibefly.jcef.AgentOrigin
 import com.github.sandogeek.vibefly.jcef.rpc.*
 import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.Disposable
@@ -18,37 +19,19 @@ import java.util.concurrent.atomic.AtomicReference
  */
 class SettingsUi2Host(
     private val project: Project,
-    private val host2UiProvider: () -> Host2Ui? = { null },
     private val host2UiSettingsProvider: () -> Host2UiSettings? = { null },
 ) : Ui2Host by Ui2HostImpl(), Ui2HostSettings, Disposable {
 
     private val log = logger<SettingsUi2Host>()
     private val activeControl = AtomicReference<Host2Agent?>(null)
-    private val settingsNotificationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val boundProjectRoot = project
-        .takeUnless(Project::isDisposed)
-        ?.let(VibeflyProjectSettingsService::getInstance)
-        ?.projectRoot
 
     init {
         VibeflyApplicationSettingsService.getInstance()
-        ApplicationManager.getApplication().messageBus
-            .connect(this)
-            .subscribe(
-                VIBEFLY_SETTINGS_TOPIC,
-                VibeflySettingsListener(::forwardSettingsChanged),
-            )
     }
 
     override suspend fun logFromWeb(message: String) {
         log.info("WebView: $message")
     }
-
-    override suspend fun getSettingsSnapshot(scope: String): UiSettingsSnapshot =
-        SettingsHostAccess.uiSnapshot(scope, project)
-
-    override suspend fun saveSettings(request: SettingsSaveRequest): SettingsSaveResult =
-        SettingsHostAccess.saveSettings(request, project)
 
     override suspend fun refreshProviders(): ProvidersRefreshResult {
         val requestId = providerRequestSequence.incrementAndGet()
@@ -71,7 +54,7 @@ class SettingsUi2Host(
             ProvidersRefreshResult(
                 ok = true,
                 snapshot = snapshot,
-                revision = settings.revision,
+                revision = settings.revision(SettingsDocument.MODELS),
             )
         } catch (e: Exception) {
             log.warn(
@@ -105,7 +88,7 @@ class SettingsUi2Host(
             return ProvidersPatchResult(
                 ok = false,
                 error = patched.error ?: "Invalid provider config patch",
-                revision = current.revision,
+                revision = current.revision(SettingsDocument.MODELS),
             )
         }
 
@@ -113,7 +96,7 @@ class SettingsUi2Host(
             return ProvidersPatchResult(
                 ok = false,
                 error = "Agent omitted modelsJson for a models change",
-                revision = current.revision,
+                revision = current.revision(SettingsDocument.MODELS),
             )
         }
 
@@ -208,21 +191,21 @@ class SettingsUi2Host(
             return ProvidersPatchResult(
                 ok = false,
                 error = patched.error ?: "Invalid custom provider mutation",
-                revision = current.revision,
+                revision = current.revision(SettingsDocument.MODELS),
             )
         }
         if (patched.modelsChanged && patched.modelsJson == null) {
             return ProvidersPatchResult(
                 ok = false,
                 error = "Agent omitted modelsJson for a models change",
-                revision = current.revision,
+                revision = current.revision(SettingsDocument.MODELS),
             )
         }
         if (patched.authChanged && patched.authJson == null) {
             return ProvidersPatchResult(
                 ok = false,
                 error = "Agent omitted authJson for an auth change",
-                revision = current.revision,
+                revision = current.revision(SettingsDocument.MODELS),
             )
         }
 
@@ -233,22 +216,16 @@ class SettingsUi2Host(
         )
     }
 
-    override fun dispose() {
-        settingsNotificationScope.cancel()
+    override suspend fun getAgentConnection(): AgentConnection? {
+        return try {
+            VibeflyAgentService.getInstance(project).openSession(AgentOrigin.currentPanel())
+        } catch (error: Exception) {
+            log.warn("getAgentConnection failed", error)
+            null
+        }
     }
 
-    private fun forwardSettingsChanged(event: VibeflySettingsChanged) {
-        val applies = event.scope == SETTINGS_SCOPE_APPLICATION ||
-                (event.scope == SETTINGS_SCOPE_PROJECT && event.projectRoot == boundProjectRoot)
-        if (!applies) return
-        val host2Ui = host2UiProvider() ?: return
-        settingsNotificationScope.launch {
-            try {
-                host2Ui.settingsChanged(event.scope, event.projectRoot, event.revision)
-            } catch (error: Exception) {
-                log.debug("Host2Ui.settingsChanged failed", error)
-            }
-        }
+    override fun dispose() {
     }
 
     private suspend fun ProviderLoginResult.withHostSnapshot(control: Host2Agent): ProviderLoginResult {
@@ -259,7 +236,7 @@ class SettingsUi2Host(
                 settings.content(SettingsDocument.MODELS),
                 settings.content(SettingsDocument.AUTH),
             ),
-            revision = settings.revision,
+            revision = settings.revision(SettingsDocument.AUTH),
             conflict = false,
         )
     }
@@ -272,7 +249,7 @@ class SettingsUi2Host(
                 settings.content(SettingsDocument.MODELS),
                 settings.content(SettingsDocument.AUTH),
             ),
-            revision = settings.revision,
+            revision = settings.revision(SettingsDocument.AUTH),
             conflict = false,
         )
     }
@@ -281,11 +258,11 @@ class SettingsUi2Host(
         current: SettingsScopeSnapshot,
         expectedRevision: String,
     ): ProvidersPatchResult? {
-        if (current.revision == expectedRevision) return null
+        if (current.revision(SettingsDocument.MODELS) == expectedRevision) return null
         return ProvidersPatchResult(
             ok = false,
             error = "Settings revision conflict",
-            revision = current.revision,
+            revision = current.revision(SettingsDocument.MODELS),
             conflict = true,
         )
     }
@@ -295,24 +272,45 @@ class SettingsUi2Host(
         authJson: String?,
         expectedRevision: String,
     ): ProvidersPatchResult {
-        val result = VibeflyApplicationSettingsService.getInstance().saveProviderDocuments(
-            modelsJson = modelsJson,
-            authJson = authJson,
-            expectedRevision = expectedRevision,
-        )
-        if (!result.ok || result.conflict) {
-            return ProvidersPatchResult(
-                ok = result.ok,
-                error = result.error,
-                revision = result.revision,
-                conflict = result.conflict,
+        val application = VibeflyApplicationSettingsService.getInstance()
+        var modelsRevision = expectedRevision
+        if (modelsJson != null) {
+            val saved = application.saveDocument(
+                SettingsDocument.MODELS,
+                modelsJson,
+                expectedRevision,
             )
+            if (!saved.ok || saved.conflict) {
+                return ProvidersPatchResult(
+                    ok = saved.ok,
+                    error = saved.error,
+                    revision = saved.revision,
+                    conflict = saved.conflict,
+                )
+            }
+            modelsRevision = saved.revision
+        }
+        if (authJson != null) {
+            val currentAuthRevision = application.snapshot().revision(SettingsDocument.AUTH)
+            val saved = application.saveDocument(
+                SettingsDocument.AUTH,
+                authJson,
+                currentAuthRevision,
+            )
+            if (!saved.ok || saved.conflict) {
+                return ProvidersPatchResult(
+                    ok = saved.ok,
+                    error = saved.error,
+                    revision = modelsRevision,
+                    conflict = saved.conflict,
+                )
+            }
         }
         return try {
             VibeflyAgentService.getInstance(project).withControl { control ->
                 attachProvidersSnapshot(
                     control,
-                    ProvidersPatchResult(ok = true, revision = result.revision),
+                    ProvidersPatchResult(ok = true, revision = modelsRevision),
                 )
             }
         } catch (error: Exception) {
@@ -320,7 +318,7 @@ class SettingsUi2Host(
             ProvidersPatchResult(
                 ok = true,
                 error = error.message ?: error.toString(),
-                revision = result.revision,
+                revision = modelsRevision,
             )
         }
     }
@@ -336,7 +334,7 @@ class SettingsUi2Host(
                 settings.content(SettingsDocument.MODELS),
                 settings.content(SettingsDocument.AUTH),
             ),
-            revision = settings.revision,
+            revision = settings.revision(SettingsDocument.MODELS),
             conflict = false,
         )
     }

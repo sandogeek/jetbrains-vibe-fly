@@ -94,22 +94,18 @@ export type SettingsFileName =
     | "models.json"
     | "auth.json"
 
+export type SettingsFileRevisions = Partial<Record<SettingsFileName, string>>
+
 export type SettingsDiagnostic = {
     file: SettingsFileName
     severity: "error" | "warning"
     message: string
 }
 
-export type SettingsChanged = {
-    scope: SettingsScope
-    projectRoot: string | null
-    revision: string
-}
-
 type SafeSettingsSnapshotFields = {
     settingsJson: string
     vibeflyJson: string
-    revision: string
+    revisions: SettingsFileRevisions
     diagnostics: SettingsDiagnostic[]
 }
 
@@ -200,9 +196,10 @@ export type VibeflySettings = SchemaObject<typeof VIBEFLY_SETTINGS_SHAPE>
 export type EffectiveSettings = {
     settings: PiSettings
     vibefly: VibeflySettings
-    revision: string
-    applicationRevision: string
-    projectRevision: string | null
+    revisions: {
+        application: SettingsFileRevisions
+        project: SettingsFileRevisions | null
+    }
     diagnostics: SettingsDiagnostic[]
 }
 
@@ -220,10 +217,10 @@ export function parseVibeflySettingsJson(
 }
 
 export function createEffectiveRevision(
-    applicationRevision: string,
-    projectRevision: string | null,
+    applicationRevisions: SettingsFileRevisions,
+    projectRevisions: SettingsFileRevisions | null,
 ): string {
-    return JSON.stringify([applicationRevision, projectRevision])
+    return JSON.stringify([applicationRevisions, projectRevisions])
 }
 
 /** application 为底，project 覆盖；诊断来自两侧快照与解析结果 */
@@ -248,9 +245,10 @@ export function computeEffectiveSettings(
     return {
         settings,
         vibefly,
-        applicationRevision: application.revision,
-        projectRevision: project?.revision ?? null,
-        revision: createEffectiveRevision(application.revision, project?.revision ?? null),
+        revisions: {
+            application: {...application.revisions},
+            project: project ? {...project.revisions} : null,
+        },
         diagnostics: aggregateSettingsDiagnostics(
             application.diagnostics,
             project?.diagnostics,

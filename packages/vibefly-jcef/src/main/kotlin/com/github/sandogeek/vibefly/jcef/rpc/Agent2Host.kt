@@ -34,4 +34,8 @@ interface Agent2Host {
     /** Persist application credentials through the Host-owned settings store. */
     @RpcFun(6)
     suspend fun saveAuth(request: AuthSaveRequest): SettingsSaveResult
+
+    /** Persist one settings document through the Host-owned store. */
+    @RpcFun(7)
+    suspend fun saveSettingsDocuments(request: SettingsDocumentSaveRequest): SettingsSaveResult
 }

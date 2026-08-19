@@ -23,7 +23,7 @@ interface Host2Agent {
 
     /** Small invalidation notice; the Agent fetches the current snapshot separately. */
     @RpcFun(4)
-    suspend fun settingsChanged(scope: String, projectRoot: String?, revision: String)
+    suspend fun settingsChanged(notification: SettingsChangedNotification)
 
     @RpcFun(5)
     suspend fun getProvidersSnapshot(modelsJson: String, authJson: String): ProvidersSnapshot

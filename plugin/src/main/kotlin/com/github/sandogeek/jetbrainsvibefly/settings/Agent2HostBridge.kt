@@ -108,6 +108,9 @@ private class ProjectBoundAgent2Host(
 
     override suspend fun saveAuth(request: AuthSaveRequest): SettingsSaveResult =
         VibeflyApplicationSettingsService.getInstance().saveAuth(request)
+
+    override suspend fun saveSettingsDocuments(request: SettingsDocumentSaveRequest): SettingsSaveResult =
+        SettingsHostAccess.saveSettingsDocument(request, project)
 }
 
 /**

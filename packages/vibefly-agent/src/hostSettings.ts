@@ -5,10 +5,12 @@ import {
     isJsonObject,
     type JsonObject,
     type JsonValue,
-    type SettingsChanged,
+    fileRevision,
+    normalizeSettingsChangedNotification,
     SettingsSyncClient,
     type SettingsSyncAdapter,
     type SettingsSyncState,
+    type SettingsDocumentSaveRequest,
 } from "@vibefly/uiagent-shared"
 import {
     type AgentApplicationSettingsSnapshot,
@@ -30,23 +32,13 @@ import type {
 import {log} from "./log.js"
 
 type PiSettingsStorage = Parameters<typeof PiSettingsManager.fromStorage>[0]
-type PiInMemorySettings = Parameters<typeof PiSettingsManager.inMemory>[0]
-
-// Keep the Host bridge coupled to pi's public factory signatures at compile time.
-// A pi upgrade that changes either input fails here instead of at session creation.
-type Assert<T extends true> = T
-type PiSettingsManagerContract = {
-    fromStorage(storage: PiSettingsStorage): PiSettingsManager
-    inMemory(settings?: PiInMemorySettings): PiSettingsManager
-}
-type PiSettingsManagerContractCheck = Assert<
-    typeof PiSettingsManager extends PiSettingsManagerContract ? true : false
->
 
 export interface HostSettingsRpc {
     getSettingsSnapshot(scope: string): Promise<WireSettingsSnapshot>
 
     saveAuth(request: AuthSaveRequest): Promise<SettingsSaveResult>
+
+    saveSettingsDocuments(request: SettingsDocumentSaveRequest): Promise<SettingsSaveResult>
 }
 
 type ProviderConfigInput = Parameters<ModelRuntime["registerProvider"]>[1]
@@ -464,7 +456,7 @@ export class HostCredentialStore implements CredentialStore {
         if (snapshot.scope !== "application") {
             throw new Error("Host returned a project snapshot for application credentials")
         }
-        return this.#replaceNow(snapshot.authJson, snapshot.revision)
+        return this.#replaceNow(snapshot.authJson, fileRevision(snapshot.revisions, "auth.json"))
     }
 
     #enqueue<T>(operation: () => Promise<T>): Promise<T> {
@@ -555,6 +547,7 @@ export class HostSettingsRuntime {
         const adapter: SettingsSyncAdapter<AgentSettingsSnapshot> = {
             fetch: async (scope) =>
                 normalizeAgentSettingsSnapshot(await host.getSettingsSnapshot(scope)),
+            save: async (request) => host.saveSettingsDocuments(request),
         }
         this.snapshots = new SettingsSyncClient(adapter)
         this.#reloadLiveSessions = options.reloadLiveSessions ?? (async () => {
@@ -566,7 +559,14 @@ export class HostSettingsRuntime {
                 // revision through the same client as a fallback; duplicate events
                 // are suppressed by snapshot revision and semantic fingerprints.
                 setImmediate(() => {
-                    void this.handleSettingsChanged("application", null, revision).catch(() => {
+                    void this.handleSettingsChanged({
+                        changes: [{
+                            scope: "application",
+                            projectRoot: null,
+                            document: "auth.json",
+                            revision,
+                        }],
+                    }).catch(() => {
                     })
                 })
             },
@@ -604,16 +604,16 @@ export class HostSettingsRuntime {
         await this.models.attach(runtime, this.#applicationSnapshot().modelsJson)
     }
 
-    handleSettingsChanged(
-        scope: string,
-        projectRoot: string | null,
-        revision: string,
-    ): Promise<void> {
-        if (scope !== "application" && scope !== "project") {
-            return Promise.reject(new Error(`Unknown settings scope: ${scope}`))
-        }
-        const change: SettingsChanged = {scope, projectRoot, revision}
-        return this.snapshots.notify(change).then(() => this.#drain())
+    async handleSettingsChanged(raw: {
+        changes?: Array<{
+            scope?: string
+            projectRoot?: string | null
+            document?: string
+            revision?: string
+        }> | null
+    }): Promise<void> {
+        await this.snapshots.notify(normalizeSettingsChangedNotification(raw))
+        return await this.#drain()
     }
 
     /** Re-read both Host scopes after the control service starts accepting notifications. */
@@ -667,13 +667,14 @@ export class HostSettingsRuntime {
         const settingsChanged = this.#initialized && settingsFingerprint !== this.#settingsFingerprint
         const modelsChanged = this.#initialized && modelsFingerprint !== this.#modelsFingerprint
         const authChanged = this.#initialized && authFingerprint !== this.#authFingerprint
-        const applicationAdvanced = previous?.application.revision !== application.revision
+        const applicationAdvanced = fileRevision(previous?.application.revisions, "auth.json")
+            !== fileRevision(application.revisions, "auth.json")
 
         // One snapshot transaction always applies bridges in this order.
         this.settingsStorage.replace(effective.settings)
         await this.credentials.runExclusive(async (replaceCredentials) => {
             if (!this.#initialized || applicationAdvanced) {
-                replaceCredentials(application.authJson, application.revision)
+                replaceCredentials(application.authJson, fileRevision(application.revisions, "auth.json"))
             }
         })
         if (modelsChanged) await this.models.apply(application.modelsJson)
@@ -687,7 +688,7 @@ export class HostSettingsRuntime {
         if (settingsChanged || modelsChanged || authChanged) {
             await this.#reloadLiveSessions(modelsChanged || authChanged)
             log.info("host settings applied", {
-                scopeRevision: effective.revision,
+                sequence: current.sequence,
                 settingsChanged,
                 modelsChanged,
                 authChanged,

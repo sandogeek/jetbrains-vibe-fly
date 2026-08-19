@@ -25,11 +25,7 @@ import {
     type ValueRule,
 } from "../json-schema.js"
 
-export type SettingReadLayer = "effective" | "application"
-
 export type ManagedFieldMeta<T> = {
-    readonly readLayer: SettingReadLayer
-    readonly scopes: readonly ("application" | "project")[]
     readonly fallback: T
     readonly encode?: (value: T) => JsonValue
 }
@@ -42,9 +38,6 @@ export type TaggedRule<TValue = unknown, TRule extends SchemaRule = SchemaRule> 
 /** 只给叶子 rule 打 tag，避免 InferRule<SchemaRule> 无限展开。 */
 type ManagedLeafRule = ValueRule<any> | ArrayRule<ValueRule<any>>
 
-const EFFECTIVE_SCOPES = Object.freeze(["application", "project"] as const)
-const APPLICATION_SCOPES = Object.freeze(["application"] as const)
-
 /** 稳定空数组 fallback，pin / MRU 缺失或整表 reject 时复用同一引用。 */
 const EMPTY_STRING_ARRAY: string[] = Object.freeze([]) as unknown as string[]
 
@@ -55,8 +48,6 @@ export function tagged<const TRule extends ManagedLeafRule>(
     return Object.freeze({
         ...rule,
         __managed: Object.freeze({
-            readLayer: meta.readLayer,
-            scopes: Object.freeze([...meta.scopes]),
             fallback: meta.fallback,
             ...(meta.encode ? {encode: meta.encode} : {}),
         }),
@@ -73,21 +64,8 @@ function effective<const TRule extends ManagedLeafRule>(
     encode?: (value: InferRule<TRule>) => JsonValue,
 ): TaggedRule<InferRule<TRule>, TRule> {
     return tagged(rule, {
-        readLayer: "effective",
-        scopes: EFFECTIVE_SCOPES,
         fallback,
         encode,
-    })
-}
-
-function applicationOnly<const TRule extends ManagedLeafRule>(
-    rule: TRule,
-    fallback: InferRule<TRule>,
-): TaggedRule<InferRule<TRule>, TRule> {
-    return tagged(rule, {
-        readLayer: "application",
-        scopes: APPLICATION_SCOPES,
-        fallback,
     })
 }
 
@@ -267,8 +245,8 @@ export const VIBEFLY_COMMIT_RULE = objectRule({
 })
 
 export const VIBEFLY_MODEL_PREFERENCES_RULE = objectRule({
-    recentModelSpecs: applicationOnly(STRING_ARRAY_RULE, EMPTY_STRING_ARRAY),
-    pinnedModelSpecs: applicationOnly(STRING_ARRAY_RULE, EMPTY_STRING_ARRAY),
+    recentModelSpecs: effective(STRING_ARRAY_RULE, EMPTY_STRING_ARRAY),
+    pinnedModelSpecs: effective(STRING_ARRAY_RULE, EMPTY_STRING_ARRAY),
 })
 
 export const VIBEFLY_UI_RULE = objectRule({

@@ -29,6 +29,7 @@ import {cancelActiveLogin, getLoginProviders, loginProvider, logoutProvider,} fr
 import {setProviderApiKey} from "./providerCredentials.js"
 import {createAgentWsServer, createTicketStore, isValidOrigin,} from "./ws.js"
 import {HostSettingsRuntime} from "./hostSettings.js"
+import {AgentSettingsFacade} from "./settingsFacade.js"
 
 /** Fire-and-forget reverse RPC; host resets idle timeout on each call. */
 const progressOpts = rpcOptions({ timeoutMs: 5_000 })
@@ -86,6 +87,7 @@ async function main(): Promise<void> {
   )
   hostSettings.setReloadLiveSessions((modelCatalogChanged) =>
       chatSessions.reloadLiveSessions(modelCatalogChanged))
+  const settingsFacade = new AgentSettingsFacade(hostSettings)
 
   const controlImpl: Host2AgentService = {
     openWebSocketSession(expectedOrigin: string): AgentConnection {
@@ -113,8 +115,8 @@ async function main(): Promise<void> {
         },
       })
     },
-    settingsChanged(scope: string, projectRoot: string | null, revision: string) {
-      return hostSettings.handleSettingsChanged(scope, projectRoot, revision)
+    settingsChanged(notification) {
+      return settingsFacade.notifyFromHost(notification)
     },
     getProvidersSnapshot(modelsJson: string, authJson: string) {
       return getProvidersSnapshot(modelsJson, authJson)
@@ -143,51 +145,76 @@ async function main(): Promise<void> {
   }
   wsServer.setSessionFactory((wsPeer) => {
     const agent2Ui: Agent2Ui = createAgent2UiProxy(wsPeer)
-    chatSessions.attach(agent2Ui)
+    const unlistenSettings = settingsFacade.hub.add(agent2Ui)
+    let chatBound = false
+    const bindChat = () => {
+      if (chatBound) return
+      chatBound = true
+      chatSessions.attach(agent2Ui)
+    }
     const ui2AgentImpl: Ui2AgentService = {
       ping(text: string) {
         return `pong:${text}`
       },
       listChatSessions(request) {
+        bindChat()
         return chatSessions.listChatSessions(request)
       },
       listRecentChatSessions(request) {
+        bindChat()
         return chatSessions.listRecentChatSessions(request)
       },
       openChatSession(request) {
+        bindChat()
         return chatSessions.openChatSession(request)
       },
       createChatSession(request) {
+        bindChat()
         return chatSessions.createChatSession(request)
       },
       releaseChatSession(sessionId) {
+        bindChat()
         return chatSessions.releaseChatSession(sessionId)
       },
       sendChatMessage(request) {
+        bindChat()
         return chatSessions.sendChatMessage(request)
       },
       cancelQueuedTurn(sessionId) {
+        bindChat()
         chatSessions.cancelQueuedTurn(sessionId)
       },
       abortChatTurn(sessionId) {
+        bindChat()
         return chatSessions.abortChatTurn(sessionId)
       },
       listChatModels(sessionId) {
+        bindChat()
         return chatSessions.listChatModels(sessionId)
       },
       setChatModel(sessionId, modelId) {
+        bindChat()
         return chatSessions.setChatModel(sessionId, modelId)
       },
       setChatThinkingLevel(sessionId, level) {
+        bindChat()
         return chatSessions.setChatThinkingLevel(sessionId, level)
       },
       markChatSessionRead(sessionId) {
+        bindChat()
         chatSessions.markChatSessionRead(sessionId)
+      },
+      readSettingValues(keyIds) {
+        return settingsFacade.readSettingValues(keyIds)
+      },
+      mutateSettings(request) {
+        return settingsFacade.mutateSettings(request)
       },
     }
     registerUi2AgentService(wsPeer, ui2AgentImpl)
     return () => {
-      void chatSessions.disconnect()
+      unlistenSettings()
+      if (chatBound) chatSessions.detach(agent2Ui)
     }
   })
 

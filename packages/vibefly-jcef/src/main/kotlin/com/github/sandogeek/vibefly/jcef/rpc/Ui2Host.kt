@@ -15,14 +15,6 @@ interface Ui2Host {
     @RpcFun(2)
     suspend fun logFromWeb(message: String)
 
-    /** Read a WebView-safe raw settings snapshot. Project paths come from the bound panel. */
-    @RpcFun(3)
-    suspend fun getSettingsSnapshot(scope: String): UiSettingsSnapshot
-
-    /** Save settings with optimistic concurrency against the target scope revision. */
-    @RpcFun(4)
-    suspend fun saveSettings(request: SettingsSaveRequest): SettingsSaveResult
-
     @RpcFun(5)
     suspend fun openExternalUrl(url: String)
 }

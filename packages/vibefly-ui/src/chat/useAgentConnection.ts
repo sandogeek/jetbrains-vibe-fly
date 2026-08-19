@@ -12,8 +12,8 @@ import {log} from "../log"
 import {type AgentStatus, connectAgentRpc} from "../rpc/agent"
 import {createChatUiRpc} from "../rpc/client"
 import {bindConsoleToHost} from "../rpc/console"
-import {settingsChanged as toSettingsChanged} from "../settings/hostSettings"
 import {UiSettingsRuntime, useUiSettingsView} from "../settings/UiSettingsRuntime"
+import {SettingKeyStore} from "../settings/settingKeyStore"
 import type {ModelPreferences} from "../settings/settingsStore"
 import {applyJbTheme} from "../theme"
 import {createDemoTab} from "./demoSession"
@@ -101,22 +101,22 @@ export function useAgentConnection(
     [offlineRef],
   )
 
-  const loadModelPreferences = useCallback(
-    async (ui2Host: Ui2Host) => {
-      try {
-        let runtime = settingsRuntimeRef.current
-        if (!runtime) {
-          runtime = new UiSettingsRuntime(ui2Host)
-          settingsRuntimeRef.current = runtime
-          setSettingsStore(runtime)
+    const loadModelPreferences = useCallback(
+      async () => {
+        try {
+          let runtime = settingsRuntimeRef.current
+          if (!runtime) {
+            runtime = new UiSettingsRuntime(new SettingKeyStore(() => agentRef.current))
+            settingsRuntimeRef.current = runtime
+            setSettingsStore(runtime)
+          }
+          await runtime.start()
+        } catch (preferencesError) {
+          log.warn("model preferences unavailable", preferencesError)
         }
-        await runtime.start(true)
-      } catch (preferencesError) {
-        log.warn("model preferences unavailable", preferencesError)
-      }
-    },
-    [settingsRuntimeRef],
-  )
+      },
+      [agentRef, settingsRuntimeRef],
+    )
 
   useEffect(() => {
     if (!settingsView) return
@@ -132,7 +132,7 @@ export function useAgentConnection(
         projectRootRef.current = await ui2HostChat.getProjectRoot()
         const [workspace] = await Promise.all([
           ui2HostChat.getChatWorkspaceState(),
-          loadModelPreferences(ui2Host),
+          loadModelPreferences(),
         ])
         if (isDisposed()) return
         setHostStatus("connected")
@@ -142,6 +142,7 @@ export function useAgentConnection(
           isStopped: isDisposed,
           onReady(proxy) {
             agentRef.current = proxy
+            if (proxy) void settingsRuntimeRef.current?.start()
           },
           onStatus(status) {
             setAgentStatus(status)
@@ -159,6 +160,9 @@ export function useAgentConnection(
               setInputReply("")
               updatePendingInput({request, resolve})
             })
+          },
+          onSettingsInvalidated(change) {
+            void settingsRuntimeRef.current?.notifyInvalidation(change)
           },
         })
         stopAgentRef.current = connection.stop
@@ -256,16 +260,6 @@ export function useAgentConnection(
         async setTheme(mode) {
           applyJbTheme(mode)
         },
-        async settingsChanged(scope, projectRoot, revision) {
-          const change = toSettingsChanged(scope, projectRoot, revision)
-          const runtime = settingsRuntimeRef.current
-          if (!runtime || !change) return
-          try {
-            await runtime.notify(change.scope, change.projectRoot, change.revision)
-          } catch (settingsError) {
-            log.warn("settings refresh failed", settingsError)
-          }
-        },
       },
       host2UiChat: {
         async addChatContexts(sessionId, incoming) {
@@ -296,7 +290,7 @@ export function useAgentConnection(
       hostChatRef.current = rpc.ui2HostChat
       peerRef.current = rpc.peer
       unbindConsoleRef.current = bindConsoleToHost(rpc.ui2Host)
-      const runtime = new UiSettingsRuntime(rpc.ui2Host)
+      const runtime = new UiSettingsRuntime(new SettingKeyStore(() => agentRef.current))
       settingsRuntimeRef.current = runtime
       setSettingsStore(runtime)
       void bootstrap(rpc.ui2Host, rpc.ui2HostChat, () => disposed)

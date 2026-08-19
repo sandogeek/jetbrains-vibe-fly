@@ -4,35 +4,6 @@
 import type { RpcClient, RpcService, SimpleRpcPeer } from "@sandogeek/simple-rpc";
 import { defineRpcService, rpcMethod } from "@sandogeek/simple-rpc";
 
-export interface SettingsDiagnostic {
-  file: string;
-  severity: string;
-  message: string;
-}
-
-export interface UiSettingsSnapshot {
-  scope: string;
-  projectRoot?: string | null;
-  settingsJson?: string;
-  vibeflyJson?: string;
-  revision: string;
-  diagnostics?: Array<SettingsDiagnostic>;
-}
-
-export interface SettingsSaveRequest {
-  scope: string;
-  settingsJson?: string | null;
-  vibeflyJson?: string | null;
-  expectedRevision: string;
-}
-
-export interface SettingsSaveResult {
-  ok: boolean;
-  revision: string;
-  conflict?: boolean;
-  error?: string | null;
-}
-
 export interface AgentConnection {
   url: string;
   ticket: string;
@@ -144,8 +115,6 @@ export interface LoginInputResponse {
 export const ui2Host = defineRpcService("Ui2Host", {
   getAppVersion: rpcMethod<[], string>(1),
   logFromWeb: rpcMethod<[message: string], void>(2),
-  getSettingsSnapshot: rpcMethod<[scope: string], UiSettingsSnapshot>(3),
-  saveSettings: rpcMethod<[request: SettingsSaveRequest], SettingsSaveResult>(4),
   openExternalUrl: rpcMethod<[url: string], void>(5),
 });
 
@@ -182,6 +151,7 @@ export const ui2HostSettings = defineRpcService("Ui2HostSettings", {
   logoutProvider: rpcMethod<[request: ProviderLogoutRequest], ProviderLogoutResult>(5),
   setProviderApiKey: rpcMethod<[request: ProviderApiKeyRequest], ProvidersPatchResult>(6),
   mutateCustomProvider: rpcMethod<[request: CustomProviderMutationRequest, expectedRevision: string], ProvidersPatchResult>(7),
+  getAgentConnection: rpcMethod<[], AgentConnection | null>(8),
 });
 
 export type Ui2HostSettings = RpcClient<typeof ui2HostSettings>;
@@ -193,7 +163,6 @@ export function createUi2HostSettingsProxy(peer: SimpleRpcPeer): Ui2HostSettings
 export const host2Ui = defineRpcService("Host2Ui", {
   setStatus: rpcMethod<[message: string], void>(1),
   setTheme: rpcMethod<[mode: string], void>(2),
-  settingsChanged: rpcMethod<[scope: string, projectRoot: string | null, revision: string], void>(3),
 });
 
 export type Host2UiService = RpcService<typeof host2Ui>;
