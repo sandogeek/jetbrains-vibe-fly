@@ -1,4 +1,4 @@
-import type {Dispatch, MutableRefObject, SetStateAction} from "react"
+import type {Dispatch, RefObject, SetStateAction} from "react"
 import type {Ui2Host} from "../generated/rpc"
 import type {UiProviderSettingsClient} from "./UiProviderSettingsClient"
 import type {UiSettingsRuntime} from "./UiSettingsRuntime"
@@ -13,8 +13,8 @@ export function releaseSettingsShellOwnership(options: {
     runtime: UiSettingsRuntime | null
     providers: UiProviderSettingsClient | null
     ui2Host: Ui2Host | null
-    settingsRuntime: MutableRefObject<UiSettingsRuntime | null>
-    providerClient: MutableRefObject<UiProviderSettingsClient | null>
+    settingsRuntime: RefObject<UiSettingsRuntime | null>
+    providerClient: RefObject<UiProviderSettingsClient | null>
     setSettingsStore: Dispatch<SetStateAction<UiSettingsRuntime | null>>
     setUi2Host: Dispatch<SetStateAction<Ui2Host | null>>
 }): void {

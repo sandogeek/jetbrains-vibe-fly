@@ -1,6 +1,6 @@
 import {describe, test} from "node:test"
 import {expect} from "expect"
-import type {Dispatch, MutableRefObject, SetStateAction} from "react"
+import type {Dispatch, RefObject, SetStateAction} from "react"
 import {settingKeys, setSetting} from "@vibefly/uiagent-shared"
 import type {Ui2Host} from "../generated/rpc"
 import {releaseSettingsShellOwnership} from "./settingsShellOwnership"
@@ -31,8 +31,8 @@ function createStateSlot<T>(initial: T): {
  */
 describe("SettingsShell ownership under StrictMode remount", () => {
     test("async cleanup from first mount does not wipe second mount ownership", async () => {
-        const settingsRuntime: MutableRefObject<UiSettingsRuntime | null> = {current: null}
-        const providerClient: MutableRefObject<UiProviderSettingsClient | null> = {current: null}
+        const settingsRuntime: RefObject<UiSettingsRuntime | null> = {current: null}
+        const providerClient: RefObject<UiProviderSettingsClient | null> = {current: null}
         const settingsStore = createStateSlot<UiSettingsRuntime | null>(null)
         const ui2Host = createStateSlot<Ui2Host | null>(null)
 
@@ -82,8 +82,8 @@ describe("SettingsShell ownership under StrictMode remount", () => {
     })
 
     test("cleanup clears ownership when this effect still owns the shared refs", () => {
-        const settingsRuntime: MutableRefObject<UiSettingsRuntime | null> = {current: null}
-        const providerClient: MutableRefObject<UiProviderSettingsClient | null> = {current: null}
+        const settingsRuntime: RefObject<UiSettingsRuntime | null> = {current: null}
+        const providerClient: RefObject<UiProviderSettingsClient | null> = {current: null}
         const settingsStore = createStateSlot<UiSettingsRuntime | null>(null)
         const ui2Host = createStateSlot<Ui2Host | null>(null)
 

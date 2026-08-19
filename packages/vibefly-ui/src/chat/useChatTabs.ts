@@ -1,5 +1,5 @@
 import type {RecentChatSession, Ui2Agent} from "@vibefly/uiagent-shared"
-import {useCallback, useMemo, useRef, useState, type MutableRefObject} from "react"
+import {useCallback, useMemo, useRef, useState, type RefObject} from "react"
 
 import {useAppTranslation} from "../i18n"
 import type {ChatTab, ThinkingOption} from "./types"
@@ -11,9 +11,9 @@ function errorText(error: unknown): string {
 }
 
 export function useChatTabs(options: {
-  agentRef: MutableRefObject<Ui2Agent | null>
-  offlineRef: MutableRefObject<boolean>
-  projectRootRef: MutableRefObject<string>
+  agentRef: RefObject<Ui2Agent | null>
+  offlineRef: RefObject<boolean>
+  projectRootRef: RefObject<string>
   persistWorkspace: () => Promise<void>
   loadModels: (sessionId: string, force?: boolean) => Promise<void>
   setError: (error: string | null) => void
