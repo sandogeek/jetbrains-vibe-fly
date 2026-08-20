@@ -16,6 +16,7 @@ import {
 import {
     defaultSettingValues,
     readSettingFromSnapshot,
+    requireSettingKey,
     settingKeys,
     type SettingValuesOf,
 } from "../src/settings/keys.js"
@@ -29,6 +30,7 @@ import {
     type SettingsSyncAdapter,
 } from "../src/settings/sync-client.js"
 import {
+    computeSettingSources,
     layerCoversPath,
     resolveSettingSource,
     resolveSettingSourceFromLayers,
@@ -1083,6 +1085,50 @@ describe("setting source tracking", () => {
         assert.equal(resolveSettingSource(app, proj, settingKeys.ui.locale), "project")
         assert.equal(resolveSettingSource(app, undefined, settingKeys.ui.locale), "application")
         assert.equal(resolveSettingSource(application("app-1"), undefined, settingKeys.ui.locale), "default")
+    })
+
+    test("computes a source map from raw layers for all setting keys", () => {
+        const app = application("app-1", {defaultModel: "app-model"}, {
+            commit: {languageMode: "en", customPrompt: "app"},
+            ui: {locale: "zh"},
+        })
+        const proj = project("project-1", {}, {
+            commit: {customPrompt: "project"},
+            ui: {locale: "zh"},
+        })
+        const sources = computeSettingSources(app, proj)
+        assert.equal(sources.get(settingKeys.defaultModel.id), "application")
+        assert.equal(sources.get(settingKeys.ui.locale.id), "project")
+        assert.equal(sources.get(settingKeys.commit.customPrompt.id), "project")
+        assert.equal(sources.get(settingKeys.commit.languageMode.id), "application")
+        assert.equal(sources.get(settingKeys.commit.commitModelSpec.id), "default")
+        for (const [keyId, source] of sources) {
+            assert.equal(source, resolveSettingSource(app, proj, requireSettingKey(keyId)))
+        }
+    })
+
+    test("source map treats project null replacement as covering nested keys", () => {
+        const app = application("app-1", {}, {
+            commit: {languageMode: "en", customPrompt: "app"},
+        })
+        const proj = project("project-1", {}, {commit: null})
+        const sources = computeSettingSources(app, proj)
+        assert.equal(sources.get(settingKeys.commit.languageMode.id), "project")
+        assert.equal(sources.get(settingKeys.commit.customPrompt.id), "project")
+        assert.equal(sources.get(settingKeys.ui.locale.id), "default")
+    })
+
+    test("stores precomputed sources on sync state", async () => {
+        const adapter = new MutableAdapter(
+            application("app-1", {defaultModel: "app-model"}, {ui: {locale: "en"}}),
+            project("project-1", {}, {ui: {locale: "zh"}}),
+        )
+        const client = new SettingsSyncClient(adapter)
+        const state = await client.start({hasProject: true})
+        assert.equal(state.sources.get(settingKeys.defaultModel.id), "application")
+        assert.equal(state.sources.get(settingKeys.ui.locale.id), "project")
+        assert.equal(client.resolveSource(settingKeys.ui.locale), "project")
+        assert.equal(client.resolveSource(settingKeys.commit.languageMode), "default")
     })
 
     test("does not let an auth file change conflict a vibefly save", async () => {

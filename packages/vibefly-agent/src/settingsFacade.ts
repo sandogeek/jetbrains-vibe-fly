@@ -4,7 +4,6 @@ import {
     defaultWriteScope,
     fileRevision,
     requireSettingKey,
-    resolveSettingSource,
     selectSetting,
     setSetting,
     type SettingMutation,
@@ -53,7 +52,7 @@ export class AgentSettingsFacade {
         return keyIds.map((keyId) => {
             const key = requireSettingKey(keyId)
             const value = selectSetting(key)(state)
-            const source = resolveSettingSource(state.application, state.project, key)
+            const source = state.sources.get(key.id) ?? "default"
             const document = settingDocumentFile(key.document)
             return {
                 keyId,

@@ -9,9 +9,9 @@ import {
 import {type AnySettingKey, projectSettingValues, type SettingKey, type SettingValuesOf} from "./keys.js"
 import {applySettingMutations, type SettingMutation} from "./mutation.js"
 import {
+    computeSettingSources,
     defaultWriteScope,
     fileRevision,
-    resolveSettingSource,
     sameFileRevisions,
     type SettingSource,
     settingDocumentFile,
@@ -42,6 +42,7 @@ export type SettingsSyncState<TSnapshot extends SafeSettingsSnapshot = SafeSetti
     application: Extract<TSnapshot, {scope: "application"}>
     project?: Extract<TSnapshot, {scope: "project"}>
     effective: EffectiveSettings
+    sources: ReadonlyMap<string, SettingSource>
     hasProject: boolean
     sequence: number
 }
@@ -218,7 +219,7 @@ export class SettingsSyncClient<TSnapshot extends SafeSettingsSnapshot = SafeSet
 
     resolveSource(key: AnySettingKey): SettingSource {
         const state = this.getState()
-        return resolveSettingSource(state.application, state.project, key)
+        return state.sources.get(key.id) ?? "default"
     }
 
     resolveWriteScope(key: AnySettingKey): SettingsScope {
@@ -255,6 +256,7 @@ export class SettingsSyncClient<TSnapshot extends SafeSettingsSnapshot = SafeSet
             application: application as Extract<TSnapshot, {scope: "application"}>,
             project: project as Extract<TSnapshot, {scope: "project"}> | undefined,
             effective: computeEffectiveSettings(application as never, project as never),
+            sources: computeSettingSources(application, project),
             hasProject,
             sequence,
         }

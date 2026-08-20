@@ -3,7 +3,7 @@
  * 文件级设置协议：revision、来源追踪，以及 UI/Agent DTO。
  */
 import {hasOwn, isJsonObject, type JsonObject, type JsonValue} from "../json.js"
-import {type AnySettingKey, type SettingsDocument} from "./keys.js"
+import {allSettingKeys, type AnySettingKey, type SettingsDocument} from "./keys.js"
 import {
     parseJsonObjectDocument,
     type SafeSettingsSnapshot,
@@ -151,6 +151,44 @@ export function resolveSettingSource(
         project ? rawDocumentObject(project, key.document) : undefined,
         key.path,
     )
+}
+
+/**
+ * Parse each raw document once and resolve every registered SettingKey source.
+ * Must use raw JSON, not the validated merged tree: a project scalar / array /
+ * null parent still covers nested paths even when schema validation later
+ * replaces that node with a default object.
+ * 每个原始文档只解析一次，并为全部已注册 SettingKey 解析来源。必须走 raw JSON，
+ * 不能看校验后的 merge 树：project 层的标量 / 数组 / null 父节点即使随后被
+ * schema 替换成默认对象，仍然覆盖其下路径。
+ */
+export function computeSettingSources(
+    application: SafeSettingsSnapshot,
+    project: SafeSettingsSnapshot | undefined,
+): ReadonlyMap<string, SettingSource> {
+    const layers = {
+        settings: {
+            application: rawDocumentObject(application, "settings"),
+            project: project ? rawDocumentObject(project, "settings") : undefined,
+        },
+        vibefly: {
+            application: rawDocumentObject(application, "vibefly"),
+            project: project ? rawDocumentObject(project, "vibefly") : undefined,
+        },
+    }
+    const sources = new Map<string, SettingSource>()
+    for (const key of allSettingKeys()) {
+        const documentLayers = layers[key.document]
+        sources.set(
+            key.id,
+            resolveSettingSourceFromLayers(
+                documentLayers.application,
+                documentLayers.project,
+                key.path,
+            ),
+        )
+    }
+    return sources
 }
 
 export function defaultWriteScope(source: SettingSource): SettingsScope {
