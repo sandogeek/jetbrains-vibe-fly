@@ -137,7 +137,7 @@ describe("SettingsShell ownership under StrictMode remount", () => {
         // 第一次挂载：局部 runtime + 队列（镜像 SettingsShell effect 局部变量）
         let runtime1: FakeRuntime | null = createFakeRuntime()
         const queue1 = new SettingsMutationQueue(
-            () => runtime1 as unknown as UiSettingsRuntime | null,
+            () => runtime1,
             () => undefined,
             300,
         )
@@ -148,7 +148,7 @@ describe("SettingsShell ownership under StrictMode remount", () => {
         const runtime2 = createFakeRuntime()
         let runtime2Local: FakeRuntime | null = runtime2
         const queue2 = new SettingsMutationQueue(
-            () => runtime2Local as unknown as UiSettingsRuntime | null,
+            () => runtime2Local,
             () => undefined,
             300,
         )

@@ -1,16 +1,14 @@
 import {describe, test} from "node:test"
 import {expect} from "expect"
 import {settingKeys, setSetting, type SettingMutation} from "@vibefly/uiagent-shared"
-import {SettingsMutationQueue} from "./settingsMutationQueue"
-import type {UiSettingsRuntime} from "./UiSettingsRuntime"
-import type {SettingPersistOptions} from "./settingKeyStore"
+import {SettingsMutationQueue, type SettingsMutationRuntime} from "./settingsMutationQueue"
 
 type FakeRuntime = {
     staged: SettingMutation[][]
     persisted: SettingMutation[][]
-    persistOptions: Array<SettingPersistOptions | undefined>
+    persistOptions: Array<{alreadyStaged?: boolean} | undefined>
     stage: (operations: readonly SettingMutation[]) => void
-    persist: (operations: readonly SettingMutation[], options?: SettingPersistOptions) => Promise<void>
+    persist: SettingsMutationRuntime["persist"]
 }
 
 function createFakeRuntime(options?: {
@@ -32,10 +30,6 @@ function createFakeRuntime(options?: {
     return runtime
 }
 
-function asRuntime(fake: FakeRuntime): UiSettingsRuntime {
-    return fake as unknown as UiSettingsRuntime
-}
-
 function wait(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms))
 }
@@ -44,7 +38,7 @@ describe("SettingsMutationQueue", () => {
     test("merges same-key edits within debounce and saves the last value", async () => {
         const runtime = createFakeRuntime()
         const errors: unknown[] = []
-        const queue = new SettingsMutationQueue(() => asRuntime(runtime), (error) => errors.push(error), 30)
+        const queue = new SettingsMutationQueue(() => runtime, (error) => errors.push(error), 30)
 
         queue.enqueue([setSetting(settingKeys.ui.locale, "en")])
         queue.enqueue([setSetting(settingKeys.ui.locale, "zh")])
@@ -58,7 +52,7 @@ describe("SettingsMutationQueue", () => {
 
     test("merges different keys into one save", async () => {
         const runtime = createFakeRuntime()
-        const queue = new SettingsMutationQueue(() => asRuntime(runtime), () => undefined, 30)
+        const queue = new SettingsMutationQueue(() => runtime, () => undefined, 30)
 
         queue.enqueue([setSetting(settingKeys.ui.locale, "zh")])
         queue.enqueue([setSetting(settingKeys.commit.customPrompt, "hello")])
@@ -72,7 +66,7 @@ describe("SettingsMutationQueue", () => {
 
     test("immediate flushes and clears existing debounce drafts", async () => {
         const runtime = createFakeRuntime()
-        const queue = new SettingsMutationQueue(() => asRuntime(runtime), () => undefined, 100)
+        const queue = new SettingsMutationQueue(() => runtime, () => undefined, 100)
 
         queue.enqueue([setSetting(settingKeys.ui.locale, "en")])
         queue.enqueue([
@@ -102,7 +96,7 @@ describe("SettingsMutationQueue", () => {
                 if (persistCount === 1) await firstGate
             },
         })
-        const queue = new SettingsMutationQueue(() => asRuntime(runtime), () => undefined, 10)
+        const queue = new SettingsMutationQueue(() => runtime, () => undefined, 10)
 
         queue.enqueue([setSetting(settingKeys.commit.customPrompt, "first")], {immediate: true})
         await wait(0)
@@ -118,7 +112,7 @@ describe("SettingsMutationQueue", () => {
 
     test("close saves pending debounce mutations", async () => {
         const runtime = createFakeRuntime()
-        const queue = new SettingsMutationQueue(() => asRuntime(runtime), () => undefined, 300)
+        const queue = new SettingsMutationQueue(() => runtime, () => undefined, 300)
 
         queue.enqueue([setSetting(settingKeys.ui.locale, "zh")])
         await queue.close()
@@ -136,7 +130,7 @@ describe("SettingsMutationQueue", () => {
         })
         const errors: unknown[] = []
         const queue = new SettingsMutationQueue(
-            () => asRuntime(runtime),
+            () => runtime,
             (error) => errors.push(error),
             10,
         )
@@ -151,7 +145,7 @@ describe("SettingsMutationQueue", () => {
 
     test("flush persists once with alreadyStaged after each enqueue stages immediately", async () => {
         const runtime = createFakeRuntime()
-        const queue = new SettingsMutationQueue(() => asRuntime(runtime), () => undefined, 30)
+        const queue = new SettingsMutationQueue(() => runtime, () => undefined, 30)
 
         queue.enqueue([setSetting(settingKeys.ui.locale, "en")])
         queue.enqueue([setSetting(settingKeys.ui.locale, "zh")])

@@ -1,8 +1,19 @@
 import {mergeSettingMutations, type SettingMutation} from "@vibefly/uiagent-shared"
-import type {UiSettingsRuntime} from "./UiSettingsRuntime"
 
 export type SettingsMutateOptions = {
     immediate?: boolean
+}
+
+/**
+ * Persist/stage surface the queue schedules against. Implemented by UiSettingsRuntime.
+ * Queue 调度所依赖的 persist/stage 面。由 UiSettingsRuntime 实现。
+ */
+export type SettingsMutationRuntime = {
+    stage(operations: readonly SettingMutation[]): void
+    persist(
+        operations: readonly SettingMutation[],
+        options?: {alreadyStaged?: boolean},
+    ): Promise<void>
 }
 
 const DEFAULT_DEBOUNCE_MS = 300
@@ -16,7 +27,7 @@ const DEFAULT_DEBOUNCE_MS = 300
  * Runtime.stage() 做乐观 UI；Runtime.persist() 写 Host。
  */
 export class SettingsMutationQueue {
-    readonly #runtime: () => UiSettingsRuntime | null
+    readonly #runtime: () => SettingsMutationRuntime | null
     readonly #onError: (error: unknown) => void
     readonly #debounceMs: number
     #pending: SettingMutation[] = []
@@ -25,7 +36,7 @@ export class SettingsMutationQueue {
     #closed = false
 
     constructor(
-        runtime: () => UiSettingsRuntime | null,
+        runtime: () => SettingsMutationRuntime | null,
         onError: (error: unknown) => void,
         debounceMs = DEFAULT_DEBOUNCE_MS,
     ) {
