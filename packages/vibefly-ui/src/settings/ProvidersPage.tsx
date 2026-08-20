@@ -19,11 +19,14 @@ import {
     badgeLabel,
     classifyProviders,
     filterBuiltInProviders,
+    isConnected,
     modelSpec,
     parseModelSpec,
-    primaryBadge
+    primaryBadge,
+    providerRowSubtitle,
+    shouldShowProviderId,
 } from "./providerLogic"
-import {description, displayName} from "./providerLabels"
+import {displayName} from "./providerLabels"
 import type {SettingsMutateOptions} from "./settingsMutationQueue"
 import type {ProviderSnapshot, ProvidersSnapshot} from "./providerSnapshots"
 import type {UiProviderSettingsClient} from "./UiProviderSettingsClient"
@@ -284,27 +287,51 @@ function ProviderRow({snap, onConnect, onEdit, onDisconnect, onDelete}: {
     const {t} = useAppTranslation("providers");
     const labels = providerUiLabels(t);
     const badge = primaryBadge(snap);
-    const connected = !snap.isCatalog || Boolean(snap.credential?.hasApiKey || snap.credential?.hasOAuth)
-    return <li
-        className="flex flex-wrap items-start justify-between gap-2 rounded border border-border bg-surface/40 px-3 py-2">
-        <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2"><span
-                className="font-medium text-fg">{displayName(snap.id)}</span><span
-                className="rounded bg-bg px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted">{badgeLabel(badge, labels)}</span><span
-                className="font-mono text-[11px] text-muted">{snap.id}</span></div>
-            <p className="m-0 mt-0.5 text-xs text-muted">{description(snap.id)}</p></div>
-        <div className="flex shrink-0 flex-wrap gap-1">{!connected &&
-            <button type="button" className="rounded border border-border px-2 py-1 text-xs text-fg hover:border-accent"
-                    onClick={onConnect}>{t("common:connect")}</button>}{connected && <>
-            <button type="button" className="rounded border border-border px-2 py-1 text-xs text-fg hover:border-accent"
-                    onClick={onEdit}>{t("common:edit")}</button>
-            <button type="button"
-                    className="rounded border border-border px-2 py-1 text-xs text-muted hover:border-accent"
-                    onClick={onDisconnect}>{t("common:disconnect")}</button>
-        </>}{!snap.isCatalog && <button type="button"
-                                        className="rounded border border-border px-2 py-1 text-xs text-red-400 hover:border-red-400"
-                                        onClick={onDelete}>{t("common:delete")}</button>}</div>
-    </li>
+    const connected = isConnected(snap)
+    const showId = shouldShowProviderId(snap.id)
+    const subtitle = providerRowSubtitle(snap, labels)
+    return (
+        <li className="flex flex-wrap items-start justify-between gap-2 rounded border border-border bg-surface/40 px-3 py-2">
+            <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-medium text-fg">{displayName(snap.id)}</span>
+                    {badge ? (
+                        <span className="rounded bg-bg px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted">
+                            {badgeLabel(badge, labels)}
+                        </span>
+                    ) : null}
+                    {showId ? (
+                        <span className="font-mono text-[11px] text-muted">{snap.id}</span>
+                    ) : null}
+                </div>
+                {subtitle ? (
+                    <p className="m-0 mt-0.5 text-xs text-muted">{subtitle}</p>
+                ) : null}
+            </div>
+            <div className="flex shrink-0 flex-wrap gap-1">
+                {!connected && (
+                    <button type="button"
+                            className="rounded border border-border px-2 py-1 text-xs text-fg hover:border-accent"
+                            onClick={onConnect}>{t("common:connect")}</button>
+                )}
+                {connected && (
+                    <>
+                        <button type="button"
+                                className="rounded border border-border px-2 py-1 text-xs text-fg hover:border-accent"
+                                onClick={onEdit}>{t("common:edit")}</button>
+                        <button type="button"
+                                className="rounded border border-border px-2 py-1 text-xs text-muted hover:border-accent"
+                                onClick={onDisconnect}>{t("common:disconnect")}</button>
+                    </>
+                )}
+                {!snap.isCatalog && (
+                    <button type="button"
+                            className="rounded border border-border px-2 py-1 text-xs text-red-400 hover:border-red-400"
+                            onClick={onDelete}>{t("common:delete")}</button>
+                )}
+            </div>
+        </li>
+    )
 }
 
 function formatProviderError(

@@ -32,46 +32,26 @@ const DISPLAY_NAMES: Record<string, string> = {
 }
 
 /**
- * English strings aligned with VibeflyBundle.properties provider.description.*
- * 与 VibeflyBundle.properties 中 provider.description.* 对齐的英文字符串。
+ * Hidden product-name aliases for the built-in provider search box.
+ * Not shown in the list; only terms that are not already in id / displayName.
+ * 内置提供商搜索框的隐藏产品名别名。不展示在列表中；只收录 id / 显示名里没有的词。
  */
-const DESCRIPTIONS: Record<string, string> = {
-    openai: "GPT models via OpenAI API",
-    anthropic: "Direct access to Claude models",
-    google: "Gemini models via Google AI",
-    "google-gemini": "Gemini models via Google AI",
-    deepseek: "DeepSeek chat and reasoner models",
-    groq: "Fast inference via Groq",
-    mistral: "Mistral and Mixtral models",
-    xai: "Grok models via xAI",
-    openrouter: "Unified access to many model providers",
-    ollama: "Local models via Ollama",
-    azure: "Azure-hosted OpenAI models",
-    "amazon-bedrock": "Models on Amazon Bedrock",
-    "github-copilot": "Models via GitHub Copilot",
-    cohere: "Command models via Cohere",
-    together: "Open models via Together AI",
-    fireworks: "Fast open models via Fireworks",
-    perplexity: "Sonar models via Perplexity",
-    huggingface: "Models via Hugging Face Inference",
-    cerebras: "Fast inference via Cerebras",
-    minimax: "MiniMax language models",
-    moonshot: "Kimi models via Moonshot",
-    qwen: "Qwen models",
-    zai: "Z.ai models",
-    "vercel-ai-gateway": "Models via Vercel AI Gateway",
-    opencode: "OpenCode provider catalog",
-    "kimi-coding": "Kimi Coding models",
+const SEARCH_ALIASES: Record<string, readonly string[]> = {
+    anthropic: ["claude"],
+    openai: ["gpt"],
+    google: ["gemini"],
+    "google-gemini": ["gemini"],
+    xai: ["grok"],
+    moonshot: ["kimi"],
+    zai: ["glm"],
 }
-
-const DEFAULT_DESCRIPTION = "Bundled models from pi catalog"
 
 export function displayName(id: string): string {
     const key = id.toLowerCase()
     return DISPLAY_NAMES[key] ?? id
 }
 
-export function description(id: string): string {
+export function searchAliases(id: string): readonly string[] {
     const key = id.toLowerCase()
-    return DESCRIPTIONS[key] ?? DEFAULT_DESCRIPTION
+    return SEARCH_ALIASES[key] ?? []
 }

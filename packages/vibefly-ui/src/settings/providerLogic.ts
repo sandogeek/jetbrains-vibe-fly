@@ -1,7 +1,9 @@
 import type {ProviderSnapshot} from "./providerSnapshots"
-import {description, displayName} from "./providerLabels"
+import {displayName, searchAliases} from "./providerLabels"
 
-export type ProviderBadge = "custom" | "api_key" | "oauth" | "configured"
+export type ProviderBadge = "custom" | "api_key" | "oauth"
+
+const SUBTITLE_SEPARATOR = " · "
 
 export type ClassifiedProviders = {
     connected: ProviderSnapshot[]
@@ -41,27 +43,31 @@ export function filterBuiltInProviders(
         return (
             provider.id.toLowerCase().includes(needle) ||
             displayName(provider.id).toLowerCase().includes(needle) ||
-            description(provider.id).toLowerCase().includes(needle)
+            searchAliases(provider.id).some((alias) => alias.toLowerCase().includes(needle))
         )
     })
 }
 
-export function primaryBadge(snap: ProviderSnapshot): ProviderBadge {
+export function primaryBadge(snap: ProviderSnapshot): ProviderBadge | null {
     if (!snap.isCatalog) return "custom"
     if (snap.credential?.hasApiKey) return "api_key"
     if (snap.credential?.hasOAuth) return "oauth"
-    return "configured"
+    return null
 }
 
 export type ProviderUiLabels = {
     badgeCustom: string
     badgeApiKey: string
     badgeOauth: string
-    badgeConfigured: string
     credApiKeySet: (origin: string) => string
     credNoApiKey: string
     credOauthPresent: string
     credLoginAvailable: string
+    rowLoginOrApiKey: string
+    rowApiKeyRequired: string
+    rowApiKeySet: string
+    rowOauthSignedIn: string
+    rowCustomModelCount: (count: number) => string
     idRequired: string
     idCatalogConflict: string
     idCustomConflict: string
@@ -76,8 +82,6 @@ export function badgeLabel(badge: ProviderBadge, labels?: ProviderUiLabels): str
             return labels?.badgeApiKey ?? "API KEY"
         case "oauth":
             return labels?.badgeOauth ?? "OAUTH"
-        case "configured":
-            return labels?.badgeConfigured ?? "CONFIGURED"
     }
 }
 
@@ -98,6 +102,63 @@ export function credentialStatusText(snap: ProviderSnapshot, labels?: ProviderUi
         parts.push(labels?.credLoginAvailable ?? "Login available")
     }
     return parts.join(" · ")
+}
+
+/**
+ * List-row subtitle: how to connect, or what is already configured.
+ * 列表行小字：如何连接，或当前已配置了什么。
+ */
+export function providerRowSubtitle(snap: ProviderSnapshot, labels?: ProviderUiLabels): string {
+    if (!snap.isCatalog) {
+        return customProviderRowSubtitle(snap, labels)
+    }
+    if (!isConnected(snap)) {
+        if (snap.supportsLogin) {
+            return labels?.rowLoginOrApiKey ?? "Sign in or enter an API key"
+        }
+        return labels?.rowApiKeyRequired ?? "API key required"
+    }
+    const parts: string[] = []
+    if (snap.credential?.hasApiKey) {
+        parts.push(labels?.rowApiKeySet ?? "API key set")
+    }
+    if (snap.credential?.hasOAuth) {
+        parts.push(labels?.rowOauthSignedIn ?? "Signed in with OAuth")
+    }
+    return parts.join(SUBTITLE_SEPARATOR)
+}
+
+function customProviderRowSubtitle(snap: ProviderSnapshot, labels?: ProviderUiLabels): string {
+    const parts: string[] = []
+    const baseUrl = snap.baseUrl?.trim()
+    if (baseUrl) parts.push(baseUrl)
+    const api = snap.api?.trim()
+    if (api) parts.push(api)
+    const modelCount = snap.models?.length ?? 0
+    if (modelCount > 0) {
+        parts.push(labels?.rowCustomModelCount(modelCount) ?? `${modelCount} models`)
+    }
+    if (snap.credential?.hasApiKey) {
+        parts.push(labels?.rowApiKeySet ?? "API key set")
+    } else {
+        parts.push(labels?.credNoApiKey ?? "No API key")
+    }
+    if (snap.credential?.hasOAuth) {
+        parts.push(labels?.rowOauthSignedIn ?? "Signed in with OAuth")
+    }
+    return parts.join(SUBTITLE_SEPARATOR)
+}
+
+/**
+ * Hide the mono id when it is the same as the display name after normalizing case and [-_].
+ * 将大小写与 [-_] 归一化后，id 与显示名相同时隐藏 mono id。
+ */
+export function shouldShowProviderId(id: string): boolean {
+    return normalizeProviderLabel(id) !== normalizeProviderLabel(displayName(id))
+}
+
+function normalizeProviderLabel(value: string): string {
+    return value.toLowerCase().replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim()
 }
 
 export function parseModelSpec(raw: string): { provider: string; model: string } {
