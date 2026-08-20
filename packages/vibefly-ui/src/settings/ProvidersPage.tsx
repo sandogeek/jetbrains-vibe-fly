@@ -291,7 +291,7 @@ function ProviderRow({snap, onConnect, onEdit, onDisconnect, onDelete}: {
     const showId = shouldShowProviderId(snap.id)
     const subtitle = providerRowSubtitle(snap, labels)
     return (
-        <li className="flex flex-wrap items-start justify-between gap-2 rounded border border-border bg-surface/40 px-3 py-2">
+        <li className="flex flex-wrap items-center justify-between gap-2 rounded border border-border bg-surface/40 px-3 py-2">
             <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                     <span className="font-medium text-fg">{displayName(snap.id)}</span>
@@ -308,7 +308,7 @@ function ProviderRow({snap, onConnect, onEdit, onDisconnect, onDelete}: {
                     <p className="m-0 mt-0.5 text-xs text-muted">{subtitle}</p>
                 ) : null}
             </div>
-            <div className="flex shrink-0 flex-wrap gap-1">
+            <div className="flex shrink-0 flex-wrap items-center gap-1">
                 {!connected && (
                     <button type="button"
                             className="rounded border border-border px-2 py-1 text-xs text-fg hover:border-accent"
