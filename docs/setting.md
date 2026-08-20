@@ -2,31 +2,108 @@
 
 本文描述当前设置系统及设置消费层的实现边界。Host 集中落盘、四文件布局、文件级 revision 和凭据隔离已经落地；设置数据面走 **UI → Agent → Host**。
 
+此前 UI 和 Agent 分别持有完整设置快照，并各自完成 JSON 解析、application/project 合并、revision 收敛和失效刷新。UI 实际只消费少量 `SettingKey`，却需要维护完整 JSON 和一套同步逻辑。当前架构将设置系统划分为三个明确角色：
+
+- **Host**：唯一文件落盘方和最终一致性权威，负责文件锁、校验、watcher、last-good 内容、原子替换和 revision。
+- **Agent**：当前 Project UI 的设置 facade，持有完整快照，负责 effective 计算、来源追踪、typed mutation、冲突重放和 UI 通知。
+- **UI**：只持有已订阅 `SettingKey` 的值和展示状态，不再持有或合并完整 JSON。
+
+> “UI 不再与 Host 直接交互”仅指设置数据面。主题、IDE 上下文、Agent 连接票据等 IDE 能力仍可通过 UI 与 Host 之间的现有 RPC 提供。
+
 English: [setting.en.md](./setting.en.md)
 
 ## 目标与约束
 
 1. Host 是 application / project 配置文件的唯一落盘方，并持有两个作用域的内存快照。
-2. UI 和 Agent 都不直接访问设置文件。WebView 只按 `SettingKey` 经 Agent 读写 effective 值；Agent 持有完整快照并经 Host RPC 落盘。
-3. pi 原生字段保存在 `settings.json`，Vibe Fly 专有字段保存在 `settings.vibefly.json`，模型定义和凭据分别保存在
+2. UI 和 Agent 都不直接访问设置文件。WebView 只按 `SettingKey` 经 Agent 读写 effective 值，不接收或保存原始设置 JSON；Agent 持有完整快照并经 Host RPC 落盘。
+3. UI 按 `SettingKey` 消费设置，一个 key 可以有多个订阅者。读取、修改和失效订阅统一通过 Agent 完成。
+4. pi 原生字段保存在 `settings.json`，Vibe Fly 专有字段保存在 `settings.vibefly.json`，模型定义和凭据分别保存在
    `models.json`、`auth.json`；不修改上游 pi 类型或源码。
-4. 只有 `settings.json` 和 `settings.vibefly.json` 支持 project 覆盖：对象递归合并，数组、标量和 `null` 由 project 层整体替换。
-   `models.json` 和 `auth.json` 只有 application 层。
-5. Host 只向 Agent 推送小型文件级失效通知；Agent 再通知 UI 重新读取受影响的 `SettingKey`。通知不携带完整配置。
-6. 保存使用文件级 opaque revision 做乐观并发控制，并配合文件锁、同目录临时文件和原子替换。一次保存只写一个文件。
-7. 设置热更新不得通过重启全部 Agent 实现。
-8. 会话和 workspace 状态不纳入配置快照。
+5. 只有 `settings.json` 和 `settings.vibefly.json` 支持 project 覆盖：对象递归合并，数组、标量和 `null` 由 project 层整体替换。
+   `models.json` 和 `auth.json` 只有 application 层。Agent 统一计算 effective 值及其来源，UI 不再实现 application/project 合并。
+6. Host 只向 Agent 推送小型文件级失效通知；Agent 再通知 UI 重新读取受影响的 `SettingKey`。通知不携带完整配置。
+7. 保存使用文件级 opaque revision 做乐观并发控制，并配合文件锁、同目录临时文件和原子替换。一次保存只写一个文件，不提供跨文件原子事务。
+8. 设置热更新不得通过重启全部 Agent 实现。
+9. 会话和 workspace 状态不纳入配置快照。
+10. 在通知重复、乱序、合并、断线重连及多方并发写入时，最终仍能显示 Host 已确认的最新值。
 
 UI -> Agent 的业务契约只存在于 `packages/vibefly-uiagent-shared`，不新增 Kotlin 镜像。主题、票据、Provider 登录等 IDE 能力仍走 UI ↔ Host。
 
-## 当前实现边界
+## 非目标与安全边界
+
+- 不让 UI 或 Agent 直接访问设置文件。
+- 不把 Host 替换成普通 Agent 进程；Host 仍是 application 设置的全局权威。
+- 不将 `auth.json`、OAuth token 或其他凭据暴露给 WebView。
+- 不把 Provider 登录、取消登录、登出等控制流程强行建模为普通 `SettingKey` mutation。
+- 不把会话状态或 workspace 状态纳入设置快照。
+- 不依靠重启 Agent 完成设置热更新。
+- 不提供跨文件原子保存或回滚。
+- 不在设置 UI 中提供作用域切换、来源展示或创建 / 删除 project override；project override 只能通过直接编辑文件完成。
+- 不读取或迁移旧 IDE XML settings。
+- 不修改四文件格式、revision 算法或原子落盘协议。
+- 不能让 UI -> Host 和 UI -> Agent 两条设置写链路并存；设置数据面只有 Agent 一个写入口。
+
+## 组件职责
+
+### Host
+
+Host 负责：
+
+- 管理 application 和 project 设置目录；
+- 保存各文件最后一次成功解析的原始 JSON；
+- 对 RPC 写入执行 JSON 校验；
+- 处理文件锁、同目录临时文件、flush 和原子替换；
+- 监听外部文件变化并更新 last-good 快照；
+- 为每个设置文件维护独立 opaque revision；
+- 对单文件保存执行乐观并发控制；
+- 向对应 Project Agent 发送小型文件失效通知。
+
+Host 不理解完整 TypeScript 设置 schema，也不计算 effective 值和 `SettingKey` 来源。
+
+### Agent
+
+Agent 负责：
+
+- 从 Host 拉取 application/project 完整快照；
+- 持有当前 Project 的完整原始 JSON 缓存；
+- 解析 typed settings 并计算 effective 值；
+- 计算每个 `SettingKey` 的 effective 来源；
+- 向 UI 提供批量 key 读取和 typed mutation RPC；
+- 在最新原始层上应用 mutation，并将待保存文档提交给 Host；
+- revision conflict 时重新拉取、重放 mutation 并有限重试；
+- 收敛到 Host 返回的 revision 后，再通知所有 UI 设置消费者；
+- 继续向 pi runtime、模型和凭据桥接应用设置热更新。
+
+Agent 是当前 Project UI 的设置协调者，不是 application 设置的全局落盘权威。多个 Project Agent 对共享 application 文件的并发写入仍由 Host 的文件锁和 revision CAS 仲裁。
+
+### UI
+
+UI 负责：
+
+- 注册和注销 `SettingKey` 订阅；
+- 缓存已订阅 key 的 confirmed value、版本和状态；
+- 将 typed mutation 发送给 Agent；
+- 收到 Agent 失效通知后，批量重新读取受影响的已订阅 key；
+- 处理 loading、saving 和 error 等展示状态；
+- 对文本框等连续输入控件维护组件级临时编辑缓冲。
+
+UI 不负责：
+
+- 保存完整 JSON；
+- 合并 application/project；
+- 直接推测或生成 revision；
+- 在本地伪造 Host 已确认的设置值；
+- 读取原始 `auth.json`；
+- 提供作用域切换，或通过界面创建 / 删除 project override。
+
+### 当前实现边界
 
 - 设置页和聊天页通过 `SettingKeyStore` 订阅 Agent 的 effective 值；Agent 通过 `SettingsSyncClient` 消费 Host 的完整快照。
 - 设置页不再出现在 IDE Settings 对话框中。聊天页齿轮打开当前 Project 唯一的编辑器 Tab：每个 Project 缓存同一个 `LightVirtualFile`，重复打开只聚焦已有 Tab。关闭 Tab 时释放 RPC、Host 和浏览器。
 - UI 写入省略 `targetScope`，由 Agent 按 effective source 选择 scope：已有 project override 时维持写入 project，否则写入 application。设置页不展示来源，也不提供创建 / 删除 project override。
 - 设置 Tab 的 Host / Agent 操作显式绑定该 Tab 所属 Project，不再回退到“任取一个已打开 Project”。Provider 登录生命周期使用该 Project agent 的 `withControl` 和反向 RPC。Provider 配置和 revision 收敛已进入统一 UI client。
   Provider 文档解析、校验、patch 与脱敏 snapshot 由该 Project Agent 计算；Host 按文件分别落盘 `models.json` / `auth.json`。Provider 页面因此依赖当前 Project Agent。
-- 不读取或迁移旧 IDE XML settings；session / workspace 状态也不属于本设置系统。
+- Provider 登录走当前 Project agent 的 `withControl`，反向 RPC 和取消流程保持现状。Host2Agent Provider RPC 是文档纯变换；`applyProvidersPatch` 只变换 `models.json`，凭据写入走独立认证命令。
 
 ## 文件与作用域
 
@@ -80,6 +157,101 @@ effectiveAuth = application.authJson
 
 合并算法和 schema 只实现一次，放在 `packages/vibefly-uiagent-shared`，供 UI 与 Agent 使用。Kotlin Host 只校验 JSON
 语法、管理原始文档和通用 RPC DTO，不镜像完整 TypeScript schema。effective 合并只在 Agent 执行；UI 只消费 `SettingKey` 结果。
+
+### 文件级 revision 与 CAS
+
+每个文件维护一个独立 opaque revision：
+
+```ts
+type SettingsFile =
+  | "settings.json"
+  | "settings.vibefly.json"
+  | "models.json"
+  | "auth.json"
+
+type SettingsFileRevisions = Partial<Record<SettingsFile, string>>
+```
+
+revision 规则：
+
+- 只允许比较是否相等；
+- 不允许解析、排序或由消费者生成；
+- 文件有效内容或该文件 diagnostics 发生可观察变化时，生成新的 revision；
+- 重复 watcher 事件若未产生可观察变化，不生成新 revision。
+
+单文件保存只比较目标文件的 expected revision。例如修改 `settings.vibefly.json` 时，不应因 `auth.json` 变化而冲突。
+
+一次保存请求只针对单个目标文件：
+
+1. 请求只携带该文件的 expected revision；
+2. Host 在对应 scope 级锁和文件锁临界区内刷新当前状态；
+3. Host 只比较该目标文件 revision；
+4. revision 不匹配时返回 conflict，不写入该文件；
+5. 匹配后校验并原子落盘该文件；
+6. 仅当该文件发生可观察变化时生成新 revision；
+7. 一次通知仍可携带多个 changed file，例如 watcher 在短时间内观察到多个文件变化。
+
+需要同时更新 `models.json` 与 `auth.json` 时，按文件分别保存。后一次保存失败不会回滚前一次已成功写入的文件。
+
+### SettingKey 与 effective 来源
+
+`SettingKey` 是 schema、读取和 mutation 的唯一 typed 标识，至少包含：
+
+```ts
+type SettingKey<T> = {
+  id: string
+  document: "settings" | "vibefly"
+  path: readonly string[]
+  decode(value: unknown): T
+  encode(value: T): unknown
+}
+```
+
+每个已注册 key 都允许 application 与 project 覆盖。UI 只能向 Agent 发送已注册的稳定 `keyId`，不能提交任意 JSON path。Agent 使用共享注册表解析 key。
+
+Agent 返回 effective 值时，同时返回来源：
+
+```ts
+type SettingValueResult<T = unknown> = {
+  keyId: string
+  value: T
+  source: "application" | "project" | "default"
+  document: "settings.json" | "settings.vibefly.json"
+  revisions: {
+    application: string
+    project: string | null
+  }
+  sequence: number
+}
+```
+
+来源必须根据原始层的 JSON 结构计算，不能通过 application/project 的最终值是否相等来推断：
+
+- project 显式包含该覆盖路径时，来源为 `project`，即使值恰好与 application 相同；
+- project 未覆盖且 application 包含该路径时，来源为 `application`；
+- 两层都未提供、最终值来自 `decode(undefined)` 时，来源为 `default`。
+
+来源判断必须与 deep merge 语义一致，包括父级被标量、数组或 `null` 整体替换的情况。
+
+默认写入规则：
+
+- 当前来源为 `project`：写入 project；
+- 当前来源为 `application`：写入 application；
+- 当前来源为 `default`：默认写入 application。
+
+此规则只能维持已有覆盖关系，不能让继承自 application 的值自动创建 project override。
+
+设置 UI **不提供**明确的作用域能力：
+
+- 不提供 “Override in Project”、Global / Project 切换或其它首次创建 project override 的入口；
+- 不提供 “Restore Inherited Value”，也不通过界面 `unset` 删除 project override；
+- 设置页不展示当前来源，也不把 `SettingValueResult.source` 做成作用域交互。
+
+创建或删除 project override 只能通过直接编辑 project 设置文件完成：
+
+- 首次覆盖：编辑 `<project>/.vibefly/settings.json` 或 `settings.vibefly.json`，写入对应路径；
+- 恢复继承：从上述文件中删除对应路径；
+- Host watcher 收敛后，后续 UI 编辑按当时 effective source 写入。没有既有 project override 时，普通编辑写入 application。
 
 ## Host 服务与快照
 
@@ -185,6 +357,22 @@ Agent2Host.saveAuth(request) -> SettingsSaveResult
 设置数据面不再经过 `Ui2Host`。UI 只发送已注册 `keyId`；Agent 计算 effective 值与来源，并把单文件保存提交给 Host。
 `Agent2Host.saveSettingsDocuments` 每次只保存一个文档及其 expected revision。
 
+UI/Agent 设置契约只定义在 `packages/vibefly-uiagent-shared`。概念请求：
+
+```ts
+type SettingMutationRequest = {
+  clientMutationId: string
+  operations: Array<
+    | {kind: "set"; keyId: string; value: unknown; targetScope?: "application" | "project"}
+    | {kind: "unset"; keyId: string; targetScope?: "application" | "project"}
+  >
+}
+```
+
+UI 不传入 `targetScope`。普通编辑一律省略该字段，由 Agent 按 effective 来源决定目标 scope。`targetScope` 不作为设置 UI 的产品能力暴露；创建或删除 project override 需直接编辑 project 设置文件。
+
+Provider 和凭据 RPC 继续保持独立接口，但必须共用文件级 revision 和单文件 CAS 语义。
+
 UI 通过 Providers RPC 读取完整 Provider entry（`configJson`）与鉴权状态；Provider 编辑使用带 `expectedRevision` 的 patch，其中
 `ProviderPatch.configJson` 整条目替换 `models.json.providers[id]`（非字段合并），未知键按调用方提供的 JSON 原样保留。
 `applyProvidersPatch` 只修改 `models.json`。API Key 走 `setProviderApiKey`（Agent credential store → `saveAuth`）；
@@ -218,6 +406,19 @@ Agent2Ui.settingsInvalidated(change) -> void
 
 application 文件变化 fan-out 给所有存活的 project Agent；project 变化只发给对应 Agent。Agent 收敛后再广播 `settingsInvalidated` 给当前 Project 的所有 UI 连接。
 
+失效通知不携带完整 JSON，也不要求 UI 根据通知内容直接计算值：
+
+```ts
+type AgentSettingsInvalidation = {
+  changes: Array<{
+    scope: "application" | "project"
+    document: SettingsFile
+    revision: string
+  }>
+  sequence: number
+}
+```
+
 `SettingsSyncClient.notify()` 可在 `start()` 前接收通知，并按 scope 保留最新目标 revision；首次快照完成后自动追平。断线重连仍执行完整初始读取，因此不依赖 Host 保存历史事件。
 
 ## 共享 TypeScript 设置核心
@@ -244,6 +445,32 @@ application 文件变化 fan-out 给所有存活的 project Agent；project 变�
 
 ## UI 流程
 
+### 订阅模型
+
+UI 使用 key 级缓存，而不是完整设置对象：
+
+```ts
+type SettingSubscriptionEntry<T = unknown> = {
+  value: T
+  sequence: number
+  status: "loading" | "ready" | "saving" | "error"
+  error?: string
+  listeners: Set<() => void>
+}
+```
+
+订阅规则：
+
+1. 同一个 `SettingKey` 只维护一个缓存 entry；
+2. 一个 entry 可以注册多个 listener；
+3. 第一个 listener 注册时，从 Agent 读取该 key；
+4. 后续 listener 直接复用缓存；
+5. 最后一个 listener 注销后，可以删除缓存，也可以保留有限时间作为热缓存；
+6. 收到失效通知后，只刷新对应 document 的已订阅 key；
+7. 同一批需要刷新的 key 必须去重，并通过一个批量 RPC 读取，避免 N 个 key 产生 N 次 RPC。
+
+`source` 只存在于 `SettingValueResult`。订阅表服务的是值同步和展示状态，不缓存来源。UI 写入省略 `targetScope`，由 Agent 按 effective source 选择 scope。设置页不展示来源，也不提供 “Override in Project” / “Restore Inherited Value”。`document` 是 `SettingKey` 的静态属性，失效过滤按 key 归属的 document 进行，不必再抄进 entry。
+
 ### 首次加载
 
 1. WebView 建立 `Ui2Host` / `Host2Ui` 会话。
@@ -262,6 +489,114 @@ application 文件变化 fan-out 给所有存活的 project Agent；project 变�
 General / Commit 页面仍使用 300ms debounce 并在卸载时 flush；Provider 默认模型以及聊天 pin/MRU 立即进入 runtime 的统一保存队列。`IdeSettings` 只是 typed keys 投影得到的视图模型，不再负责 JSON path 或 revision retry。
 
 `UiProviderSettingsClient` 统一 Provider refresh、API Key、自定义 Provider mutation、login/logout 后的 application revision 对齐。自定义 Provider mutation 最多冲突重放四次；API Key / login / logout 不由 UI 自动重试（credential store 内部最多重放五次）。只有 settings client 已收敛到 RPC 返回 revision 时才接受其 Provider snapshot，application 失效后由 SettingsShell 的单一订阅触发合并刷新。
+
+### 编辑状态
+
+“UI 不直接修改本地值”指 UI 不伪造新的 confirmed setting value，不代表所有输入控件都必须等待完整落盘链路后才能显示用户输入。
+
+应区分：
+
+- **confirmed value**：Agent 从 Host 已确认快照计算出的值；
+- **edit buffer**：输入框、文本域等组件的临时输入；
+- **pending mutation**：已提交但尚未得到 Agent 确认的操作。
+
+控件策略：
+
+- Checkbox、Select 等离散控件可以立即进入 `saving` 状态，confirmed value 在 Agent 确认后变化；
+- TextInput、TextArea 使用组件级 edit buffer，并在 debounce、blur 或明确 Save 时提交；
+- 保存失败时保留用户 edit buffer 并展示错误，不能静默回退导致输入丢失；
+- 收到外部新值且本地存在未提交 edit buffer 时，应提示冲突或保留编辑态，不能直接覆盖用户正在输入的内容。
+
+### 数据流
+
+初始读取与订阅：
+
+```text
+UI 订阅 SettingKey
+  -> UI 将 keyId 加入订阅表
+  -> UI 批量调用 Agent.readSettingValues
+  -> Agent 从已收敛的完整快照计算 value + source
+  -> UI 更新对应 key entry
+  -> UI 通知该 key 的所有 listener
+```
+
+UI 修改设置：
+
+```text
+UI 提交 typed mutation
+  -> Agent 根据 key 和 effective source 选择 scope/document
+  -> Agent 在最新原始层上应用 semantic mutation
+  -> Agent 携带目标文件 expected revision 请求 Host 保存
+  -> Host 在锁内刷新、CAS、校验并原子落盘
+  -> Host 返回实际文件 revision，并发布失效通知
+  -> Agent 收敛到 Host 返回的 revision
+  -> Agent 应用新 effective 设置到运行时
+  -> Agent 通知所有 UI 设置消费者
+  -> UI 批量重新读取受影响的已订阅 key
+  -> UI 更新 confirmed value 并重新渲染
+```
+
+mutation RPC 只有在 Agent 已经收敛到 Host 确认的 revision 后才算成功。Host 通知可作为正常刷新入口，保存返回值必须作为通知丢失时的收敛兜底。
+
+外部文件修改：
+
+```text
+外部程序修改文件
+  -> Host watcher 读取并校验
+  -> Host 更新对应文件 last-good 内容、diagnostics 和 revision
+  -> Host 通知所有受影响的 Project Agent
+  -> Agent 拉取并收敛该 scope/file
+  -> Agent 重新计算 effective 和来源
+  -> Agent 通知 UI
+  -> UI 重新读取受影响的已订阅 key
+```
+
+无效 JSON 不覆盖 Host 的 last-good 内容，但 diagnostics 和该文件 revision 仍应发生变化并触发通知。
+
+### 最新值与并发保证
+
+revision 是 opaque token，不能根据字符串大小判断新旧。最新值保证由串行队列、重读和本地单调 sequence 共同完成。
+
+Agent 为每个 `(scope, document)` 维护串行刷新队列：
+
+1. 收到 Host 通知后记录目标 revision，并将文件标记为 dirty；
+2. 同一文件任一时刻最多执行一个拉取；
+3. 拉取期间收到新通知时，不并发拉取，而是在当前拉取完成后再次检查；
+4. 只有快照达到目标 revision，或连续读取到稳定的另一个 revision 时，本轮同步才结束；
+5. 每次发布新的已收敛视图时增加 Agent 本地单调 `sequence`；
+6. Agent 先更新自身缓存和运行时，再通知 UI。
+
+Host 通知可以重复、乱序或合并。Agent 的正确性依赖重新读取 Host 权威快照，而不是依赖每条通知都按顺序送达。
+
+UI 为每个 document 维护刷新 epoch：
+
+1. 收到 Agent 通知时增加对应 document 的 epoch；
+2. 同一 document 只保留一个进行中的批量读取；
+3. 若读取期间又收到通知，当前读取结束后必须再执行一轮；
+4. 读取结果的 `sequence` 小于该 key 已应用 sequence 时，丢弃该结果；
+5. 较早发起的异步请求不能覆盖较晚通知对应的结果；
+6. Agent 断线重连后，对全部已订阅 key 做一次完整 bootstrap，不依赖断线期间的历史通知。
+
+Agent 在 revision conflict 时：
+
+1. 重新读取冲突文件；
+2. 在最新原始层上重新应用本次 typed mutation；
+3. 使用最新 revision 重试；
+4. 只进行有限次数重试；
+5. 仍失败时向 UI 返回明确错误，不得使用旧整文件覆盖其他写入者的修改。
+
+### 多 UI 连接
+
+设置页和聊天页是独立 WebView。Agent 必须支持多个并存的 UI WebSocket，否则设置页建立连接会替换聊天连接。
+
+连接模型需要满足：
+
+- 设置失效通知可以广播给当前 Agent 的所有 UI 连接；
+- 聊天事件只发送给绑定对应聊天消费者的连接；
+- tool permission 和 user input 等交互式请求只能发送给正确的活动聊天连接，不能广播；
+- 每个连接独立注册和释放资源；
+- 任一设置 UI 断开不能影响聊天 session 和其他设置订阅者；
+- 所有连接继续使用本机地址、一次性 ticket 和 origin 校验。
 
 ## Agent 与 pi 热重载
 
@@ -290,6 +625,15 @@ pi 登录、登出以及 token refresh 通过 Host-backed credential store 的 p
 Host-backed storage 应通过 pi 的公开扩展点或本仓 `vibefly-*` 适配层实现。不得修改上游包源码；若上游没有所需扩展点，按仓库约束使用包管理器
 patch / 独立 patch 目录并说明原因。
 
+## Provider 与凭据
+
+- `models.json` 可以由 Agent 持有和解析，但 UI 只能读取允许暴露的 Provider 投影；
+- `auth.json` 只存在于 Host 与受信任 Agent 控制面，不能进入 UI 设置读取结果；
+- API Key 继续使用专门的 credential mutation，不作为普通 key value 返回；
+- OAuth 登录、取消和登出继续属于 Provider auth 控制面；
+- 自定义 Provider 需要同时修改 `models.json` 和 `auth.json` 时，按文件分别保存，不要求全有或全无；
+- Provider UI 的刷新和保存也使用对应文件 revision，不再依赖整个 application scope revision。
+
 ## 启动与旧状态
 
 不迁移 IDE XML settings 中的任何数据。Host 运行时只认 JSON 文件；旧 XML state class 在代码切换后可删除或闲置，但不参与读取、合并或
@@ -300,14 +644,6 @@ fallback。
 3. 已有 `models.json`、`auth.json`（Agent 目录下）由 application service 接管加载、watcher、revision、诊断和后续写入；不重写、不移动。
 4. sessions 与 `ChatWorkspaceState` 不在配置快照内，本架构不触碰。
 5. 用户首次在 UI 保存时才按正常校验、锁和原子写协议落盘对应文件。
-
-## 本轮不包含
-
-- 不增加 Global / Project scope 切换、继承来源展示或恢复继承 UI。
-- Provider 登录走当前 Project agent 的 `withControl`，反向 RPC 和取消流程保持现状。
-- 不修改四文件格式、revision 算法或原子落盘协议。Host2Agent Provider RPC 改为文档纯变换，Ui2HostSettings WebView 契约保持不变。
-  `applyProvidersPatch` 现在只变换 `models.json`；凭据写入走独立认证命令。
-- 不迁移旧 XML 数据，也不让 UI 获得原始 `authJson`。
 
 ## 验证场景
 
@@ -325,6 +661,13 @@ fallback。
 | UI secret 隔离          | UI 快照和 WebView 日志中均不存在原始凭据、API Key 或 token                                         |
 | Agent live reload       | Host-backed pi storage 更新且存活 `AgentSession.reload()` 最多调用一次，进程 PID 不变              |
 | 重连 / 漏通知           | 消费者首次读取当前 snapshot 后收敛，不依赖历史事件重放                                             |
+| key 多订阅              | 同一 `SettingKey` 的多个组件订阅只产生一次读取，并都能收到更新                                     |
+| 文件级 CAS              | 修改 `auth.json` 不会导致 `settings.vibefly.json` 的保存产生 revision conflict                     |
+| 单文件保存              | 一次保存请求只写入单个文件；跨文件修改按独立保存处理，不回滚已成功写入的文件                       |
+| 作用域维持              | 没有既有 project override 时 UI 编辑写入 application；已有 override 时维持写入 project             |
+| 多 UI 并存              | 设置页与聊天页可以同时连接 Agent，打开或关闭设置页不会中断聊天                                     |
+| 文本编辑缓冲            | 文本输入保存失败或外部更新时，不会静默丢失用户尚未提交的编辑内容                                   |
+| WebView 无原始 JSON     | WebView bundle 和运行时状态中不存在原始 `settings.json`、`settings.vibefly.json` 或 `auth.json`   |
 
 文档和实现收尾检查：
 
