@@ -14,7 +14,17 @@ export type SettingEntryStatus = "loading" | "ready" | "saving" | "error"
 
 type SettingEntry = {
     value: unknown
+    /**
+     * Last applied Agent sequence for this key. A read result with a smaller
+     * sequence is stale or reordered and must be discarded.
+     * 该 key 已应用的 Agent sequence。读结果 sequence 更小时视为过期或乱序，丢弃。
+     */
     sequence: number
+    /**
+     * Local optimistic-write generation. Captured at read start; if it changes
+     * before the result arrives, that in-flight read must not clobber this value.
+     * 本地乐观写入 generation。读取开始时快照；结果返回前若已变化，该在途读取不得覆盖当前值。
+     */
     writeGeneration: number
     status: SettingEntryStatus
     error?: string
@@ -67,7 +77,17 @@ function jsonValuesEqual(left: unknown, right: unknown): boolean {
 
 export class SettingKeyStore {
     readonly #entries = new Map<string, SettingEntry>()
+    /**
+     * Per-document refresh epoch. Bumped when a read starts; a result whose
+     * captured epoch no longer matches is stale and triggers another round.
+     * 每个 document 的刷新 epoch。读取开始时递增；结果带回的 epoch 已对不上则过期，再读一轮。
+     */
     readonly #documentEpochs = new Map<string, number>()
+    /**
+     * In-flight bulk read per document. Overlapping reads of the same file wait
+     * and retry, so they do not race by bumping each other's epoch.
+     * 每个 document 进行中的批量读取。同文件重叠读必须等待后重试，避免互相抬 epoch。
+     */
     readonly #inflight = new Map<string, Promise<void>>()
     readonly #defaultValues = new Map<string, unknown>()
 
