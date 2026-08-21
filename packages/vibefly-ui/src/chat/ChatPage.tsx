@@ -18,6 +18,15 @@ type HiddenTabs = {
     right: ChatSessionSummary[]
 }
 
+const RUNNING_TITLE_SHIMMER_CLASS = "shimmer shimmer-color-accent shimmer-repeat-delay-800"
+
+function sessionTitleClassName(
+    baseClass: string,
+    state: ChatSessionSummary["state"],
+): string {
+    return state === "running" ? `${baseClass} ${RUNNING_TITLE_SHIMMER_CLASS}` : baseClass
+}
+
 function measureHiddenTabs(
     container: HTMLElement,
     tabs: { summary: ChatSessionSummary }[],
@@ -209,7 +218,10 @@ function ChatPageView({controller}: { controller: ChatController }) {
                                             void actions.closeSession(tab.summary.sessionId)
                                         }}
                                     >
-                                        <TruncatedText className="session-title" text={tab.summary.title}/>
+                                        <TruncatedText
+                                            className={sessionTitleClassName("session-title", tab.summary.state)}
+                                            text={tab.summary.title}
+                                        />
                                         {tab.summary.queuePosition ? (
                                             <span className="queue-badge">{tab.summary.queuePosition}</span>
                                         ) : null}
@@ -387,7 +399,10 @@ function TabsListItem({
                     onSelect(tab.sessionId)
                 }}
             >
-                <TruncatedText className="tabs-list-item-title" text={tab.title}/>
+                <TruncatedText
+                    className={sessionTitleClassName("tabs-list-item-title", tab.state)}
+                    text={tab.title}
+                />
             </button>
             <button
                 type="button"
