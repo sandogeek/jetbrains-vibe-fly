@@ -10,10 +10,11 @@ import java.nio.file.Path
 
 @Service(Service.Level.APP)
 class VibeflyApplicationSettingsService : Disposable {
+    private val directory = Path.of(VibeflyAgentDirectory.current())
     private val store = SettingsScopeStore(
         scope = SETTINGS_SCOPE_APPLICATION,
         projectRoot = null,
-        directory = Path.of(VibeflyAgentDirectory.current()),
+        directory = directory,
         allowedDocuments = setOf(
             SettingsDocument.SETTINGS,
             SettingsDocument.VIBEFLY,
@@ -41,8 +42,13 @@ class VibeflyApplicationSettingsService : Disposable {
         document: SettingsDocument,
         json: String,
         expectedRevision: String,
-    ): SettingsSaveResult =
-        store.saveDocument(document, json, expectedRevision).toRpcResult(document)
+    ): SettingsSaveResult {
+        val result = store.saveDocument(document, json, expectedRevision).toRpcResult(document)
+        if (result.ok) {
+            SettingsOpenEditorRefresh.refresh(directory.resolve(document.fileName))
+        }
+        return result
+    }
 
     override fun dispose() {
         store.close()

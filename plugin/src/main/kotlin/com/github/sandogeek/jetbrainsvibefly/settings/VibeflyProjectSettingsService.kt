@@ -35,7 +35,16 @@ class VibeflyProjectSettingsService(project: Project) : Disposable {
             revision = "unavailable",
             error = "Project settings are unavailable",
         )
-        return active.saveDocument(document, json, expectedRevision).toRpcResult(document)
+        val result = active.saveDocument(document, json, expectedRevision).toRpcResult(document)
+        if (result.ok) {
+            val root = projectRoot
+            if (root != null) {
+                SettingsOpenEditorRefresh.refresh(
+                    Path.of(root).resolve(PROJECT_SETTINGS_DIRECTORY_NAME).resolve(document.fileName),
+                )
+            }
+        }
+        return result
     }
 
     override fun dispose() {

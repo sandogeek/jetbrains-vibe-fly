@@ -58,6 +58,8 @@ Host 负责：
 - 对单文件保存执行乐观并发控制；
 - 向对应 Project Agent 发送小型文件失效通知。
 
+Host 经 NIO 原子替换落盘后，会刷新已打开对应设置文件的 IDE 编辑器。
+
 Host 不理解完整 TypeScript 设置 schema，也不计算 effective 值和 `SettingKey` 来源。
 
 ### Agent
@@ -103,7 +105,7 @@ UI 不负责：
 - 设置页和聊天页通过 `SettingKeyStore` 订阅 Agent 的 effective 值；Agent 通过 `SettingsSyncClient` 消费 Host 的完整快照。
 - 设置页不再出现在 IDE Settings 对话框中。聊天页齿轮打开当前 Project 唯一的编辑器 Tab：每个 Project 缓存同一个 `LightVirtualFile`，重复打开只聚焦已有 Tab。关闭 Tab 时释放 RPC、Host 和浏览器。
 - UI 写入省略 `targetScope`，由 Agent 按 effective source 选择 scope：已有 project override 时维持写入 project，否则写入 application。设置页不展示来源，也不提供创建 / 删除 project override。
-  侧栏提供“打开配置文件”入口：全局可打开 `settings.json` / `settings.vibefly.json` / `models.json`，项目可打开 `.vibefly/settings.json` / `settings.vibefly.json`。文件缺失时 Host 用 last-good JSON 落盘后再打开。
+  侧栏提供“打开配置文件”入口：全局可打开 `settings.json` / `settings.vibefly.json` / `models.json`，项目可打开 `.vibefly/settings.json` / `settings.vibefly.json`。文件缺失时 Host 用 last-good JSON 落盘后再打开。UI 落盘后 Host 会刷新已打开该文件的编辑器。
 - 设置 Tab 的 Host / Agent 操作显式绑定该 Tab 所属 Project，不再回退到“任取一个已打开 Project”。Provider 登录生命周期使用该 Project agent 的 `withControl` 和反向 RPC。Provider 配置和 revision 收敛已进入统一 UI client。
   Provider 文档解析、校验、patch 与脱敏 snapshot 由该 Project Agent 计算；Host 按文件分别落盘 `models.json` / `auth.json`。Provider 页面因此依赖当前 Project Agent。
 - Provider 登录走当前 Project agent 的 `withControl`，反向 RPC 和取消流程保持现状。Host2Agent Provider RPC 是文档纯变换；`applyProvidersPatch` 只变换 `models.json`，凭据写入走独立认证命令。
@@ -326,6 +328,7 @@ Host 始终保留每个文件最后一次成功解析的内容：
 - 同一 scope 的短时间连续事件去抖后合并读取；去抖只减少重复工作，不能吞掉最终状态。
 - 读取和写入遵循同一个锁协议。拿不到锁时有限重试，不能读取另一进程尚未完成的临时状态。
 - 写入先在目标文件同目录创建临时文件，flush 后原子替换目标文件；平台不支持原子 move 时记录 warning 并使用安全回退。
+  Host 自身写入不经过 VFS（application 目录也不在项目内），保存成功后会脏标记并同步刷新对应 VirtualFile，reload 已打开编辑器的 Document。
 - application 目录权限保持为仅当前用户可访问，`auth.json` 创建和替换后必须保持 owner-only 权限；日志和 diagnostics
   不能包含文件内容或 secret。
 - 一次保存只写入单个文件，并只比较该文件的 expected revision。需要同时更新 `models.json` 与 `auth.json` 时按文件分别保存，后一次失败不回滚前一次。
