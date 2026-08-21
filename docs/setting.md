@@ -87,6 +87,8 @@ UI 负责：
 - 处理 loading、saving 和 error 等展示状态；
 - 对文本框等连续输入控件维护组件级临时编辑缓冲。
 
+设置页侧栏可以请求 Host 在 IDE 中打开受信任的设置 JSON。这是 IDE 能力，不是设置数据面：WebView 只传 `scope` 与文件名，不传路径，也不打开 `auth.json`。
+
 UI 不负责：
 
 - 保存完整 JSON；
@@ -101,6 +103,7 @@ UI 不负责：
 - 设置页和聊天页通过 `SettingKeyStore` 订阅 Agent 的 effective 值；Agent 通过 `SettingsSyncClient` 消费 Host 的完整快照。
 - 设置页不再出现在 IDE Settings 对话框中。聊天页齿轮打开当前 Project 唯一的编辑器 Tab：每个 Project 缓存同一个 `LightVirtualFile`，重复打开只聚焦已有 Tab。关闭 Tab 时释放 RPC、Host 和浏览器。
 - UI 写入省略 `targetScope`，由 Agent 按 effective source 选择 scope：已有 project override 时维持写入 project，否则写入 application。设置页不展示来源，也不提供创建 / 删除 project override。
+  侧栏提供“打开配置文件”入口：全局可打开 `settings.json` / `settings.vibefly.json` / `models.json`，项目可打开 `.vibefly/settings.json` / `settings.vibefly.json`。文件缺失时 Host 用 last-good JSON 落盘后再打开。
 - 设置 Tab 的 Host / Agent 操作显式绑定该 Tab 所属 Project，不再回退到“任取一个已打开 Project”。Provider 登录生命周期使用该 Project agent 的 `withControl` 和反向 RPC。Provider 配置和 revision 收敛已进入统一 UI client。
   Provider 文档解析、校验、patch 与脱敏 snapshot 由该 Project Agent 计算；Host 按文件分别落盘 `models.json` / `auth.json`。Provider 页面因此依赖当前 Project Agent。
 - Provider 登录走当前 Project agent 的 `withControl`，反向 RPC 和取消流程保持现状。Host2Agent Provider RPC 是文档纯变换；`applyProvidersPatch` 只变换 `models.json`，凭据写入走独立认证命令。
@@ -249,6 +252,8 @@ type SettingValueResult<T = unknown> = {
 
 创建或删除 project override 只能通过直接编辑 project 设置文件完成：
 
+设置页提供“打开配置文件”入口，由 Host 在 IDE 编辑器中打开对应 JSON，但不开放 Global / Project 切换或表单内 override。
+
 - 首次覆盖：编辑 `<project>/.vibefly/settings.json` 或 `settings.vibefly.json`，写入对应路径；
 - 恢复继承：从上述文件中删除对应路径；
 - Host watcher 收敛后，后续 UI 编辑按当时 effective source 写入。没有既有 project override 时，普通编辑写入 application。
@@ -342,6 +347,7 @@ Agent2Ui.settingsInvalidated(change) -> void
 Ui2HostSettings.applyProvidersPatch(request, expectedRevision) -> ProvidersPatchResult
 Ui2HostSettings.setProviderApiKey(request) -> ProvidersPatchResult
 Ui2HostSettings.mutateCustomProvider(request, expectedRevision) -> ProvidersPatchResult
+Ui2HostSettings.openSettingsFile(scope, document) -> OpenSettingsFileResult
 
 Host2Agent.getProvidersSnapshot(modelsJson, authJson) -> ProvidersSnapshot
 Host2Agent.applyProvidersPatch(request, modelsJson) -> ModelsDocumentPatchResult
@@ -353,6 +359,8 @@ Agent2Host.saveAuth(request) -> SettingsSaveResult
 ```
 
 `scope = "project"` 时，Host 使用会话绑定的 project root：Agent 来自进程环境 `VIBEFLY_PROJECT_ROOT`。调用方只传 `scope`，不传路径。无绑定 project 却请求 project scope 时拒绝。
+
+`Ui2HostSettings.openSettingsFile` 同样只传 scope 与文件名，由 Host 解析受信任路径并在 IDE 编辑器打开；不打开 `auth.json`。
 
 设置数据面不再经过 `Ui2Host`。UI 只发送已注册 `keyId`；Agent 计算 effective 值与来源，并把单文件保存提交给 Host。
 `Agent2Host.saveSettingsDocuments` 每次只保存一个文档及其 expected revision。

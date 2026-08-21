@@ -63,3 +63,10 @@ data class SettingsSaveResult(
     val conflict: Boolean = false,
     val error: String? = null,
 )
+
+/** Result of asking Host to open a trusted settings JSON file in the IDE editor. */
+@Serializable
+data class OpenSettingsFileResult(
+    val ok: Boolean,
+    val error: String? = null,
+)

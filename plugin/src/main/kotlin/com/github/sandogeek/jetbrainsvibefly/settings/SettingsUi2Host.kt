@@ -1,14 +1,22 @@
 package com.github.sandogeek.jetbrainsvibefly.settings
 
+import com.github.sandogeek.jetbrainsvibefly.agent.VibeflyAgentDirectory
 import com.github.sandogeek.jetbrainsvibefly.agent.VibeflyAgentService
+import com.github.sandogeek.jetbrainsvibefly.util.Edt
 import com.github.sandogeek.vibefly.jcef.AgentOrigin
 import com.github.sandogeek.vibefly.jcef.rpc.*
 import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.logger
+import com.intellij.openapi.fileEditor.FileEditorManager
+import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.vfs.LocalFileSystem
 import kotlinx.coroutines.*
+import java.nio.file.Files
+import java.nio.file.LinkOption
+import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
@@ -227,7 +235,92 @@ class SettingsUi2Host(
         }
     }
 
+    override suspend fun openSettingsFile(scope: String, document: String): OpenSettingsFileResult {
+        val resolved = SettingsFileOpener.resolve(
+            scope = scope,
+            document = document,
+            applicationDirectory = Path.of(VibeflyAgentDirectory.current()),
+            projectRoot = VibeflyProjectSettingsService.getInstance(project).projectRoot,
+        )
+        val target = resolved.file
+        if (!resolved.ok || target == null) {
+            return OpenSettingsFileResult(ok = false, error = resolved.error ?: "Unable to open settings file")
+        }
+        return try {
+            materializeIfMissing(target)?.let { error ->
+                return OpenSettingsFileResult(ok = false, error = error)
+            }
+            val virtualFile = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(target.path)
+                ?: return OpenSettingsFileResult(
+                    ok = false,
+                    error = "Failed to open ${target.document.fileName}",
+                )
+            val opened = Edt.run {
+                FileEditorManager.getInstance(project).openTextEditor(
+                    OpenFileDescriptor(project, virtualFile),
+                    true,
+                ) != null
+            }
+            if (opened) {
+                OpenSettingsFileResult(ok = true)
+            } else {
+                OpenSettingsFileResult(ok = false, error = "Failed to open ${target.document.fileName}")
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            log.warn("openSettingsFile failed scope=$scope document=$document", error)
+            OpenSettingsFileResult(ok = false, error = error.message ?: error.toString())
+        }
+    }
+
     override fun dispose() {
+    }
+
+    /**
+     * Persist last-good JSON when the trusted file is missing, using the existing
+     * settings store lock / permissions / watcher path instead of a raw write.
+     */
+    private fun materializeIfMissing(target: ResolvedSettingsFile): String? {
+        if (Files.isSymbolicLink(target.path)) {
+            return "Settings file cannot be a symbolic link"
+        }
+        if (Files.exists(target.path, LinkOption.NOFOLLOW_LINKS) &&
+            !Files.isRegularFile(target.path, LinkOption.NOFOLLOW_LINKS)
+        ) {
+            return "${target.document.fileName} is not a regular file"
+        }
+        if (Files.isRegularFile(target.path, LinkOption.NOFOLLOW_LINKS)) {
+            return null
+        }
+        val snapshot = when (target.scope) {
+            SETTINGS_SCOPE_APPLICATION -> VibeflyApplicationSettingsService.getInstance().snapshot()
+            SETTINGS_SCOPE_PROJECT -> {
+                val projectSettings = VibeflyProjectSettingsService.getInstance(project)
+                if (projectSettings.projectRoot == null) {
+                    return "Project has no valid base path"
+                }
+                projectSettings.snapshot()
+            }
+            else -> return "Unsupported settings scope: ${target.scope}"
+        }
+        val saved = when (target.scope) {
+            SETTINGS_SCOPE_APPLICATION -> VibeflyApplicationSettingsService.getInstance().saveDocument(
+                target.document,
+                snapshot.content(target.document),
+                snapshot.revision(target.document),
+            )
+            SETTINGS_SCOPE_PROJECT -> VibeflyProjectSettingsService.getInstance(project).saveDocument(
+                target.document,
+                snapshot.content(target.document),
+                snapshot.revision(target.document),
+            )
+            else -> return "Unsupported settings scope: ${target.scope}"
+        }
+        if (saved.ok || Files.isRegularFile(target.path, LinkOption.NOFOLLOW_LINKS)) {
+            return null
+        }
+        return saved.error ?: "Failed to create ${target.document.fileName}"
     }
 
     private suspend fun ProviderLoginResult.withHostSnapshot(control: Host2Agent): ProviderLoginResult {

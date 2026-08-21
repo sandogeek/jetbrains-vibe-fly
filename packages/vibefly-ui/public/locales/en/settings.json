@@ -12,5 +12,9 @@
   "hostUnavailableShort": "Host RPC unavailable",
   "refreshFailed": "Refresh failed",
   "saveFailed": "Settings save failed",
-  "changedExternally": "Settings changed externally; review the latest values and try again"
+  "changedExternally": "Settings changed externally; review the latest values and try again",
+  "openSettingsFile": "Open settings file",
+  "openSettingsFileApplication": "Global",
+  "openSettingsFileProject": "Project",
+  "openFileFailed": "Unable to open settings file"
 }

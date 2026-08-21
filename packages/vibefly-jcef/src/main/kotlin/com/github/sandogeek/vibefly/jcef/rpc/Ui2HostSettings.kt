@@ -42,4 +42,8 @@ interface Ui2HostSettings {
     /** Issue a short-lived Agent WebSocket session for the settings panel. */
     @RpcFun(8)
     suspend fun getAgentConnection(): AgentConnection?
+
+    /** Open a trusted application or project settings JSON file in the IDE editor. */
+    @RpcFun(9)
+    suspend fun openSettingsFile(scope: String, document: String): OpenSettingsFileResult
 }

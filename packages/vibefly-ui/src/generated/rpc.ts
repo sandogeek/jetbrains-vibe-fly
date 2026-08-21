@@ -98,6 +98,11 @@ export interface CustomProviderMutationRequest {
   apiKey?: string | null;
 }
 
+export interface OpenSettingsFileResult {
+  ok: boolean;
+  error?: string | null;
+}
+
 export interface HostChatContextItem {
   id: string;
   kind: string;
@@ -153,6 +158,7 @@ export const ui2HostSettings = defineRpcService("Ui2HostSettings", {
   setProviderApiKey: rpcMethod<[request: ProviderApiKeyRequest], ProvidersPatchResult>(6),
   mutateCustomProvider: rpcMethod<[request: CustomProviderMutationRequest, expectedRevision: string], ProvidersPatchResult>(7),
   getAgentConnection: rpcMethod<[], AgentConnection | null>(8),
+  openSettingsFile: rpcMethod<[scope: string, document: string], OpenSettingsFileResult>(9),
 });
 
 export type Ui2HostSettings = RpcClient<typeof ui2HostSettings>;

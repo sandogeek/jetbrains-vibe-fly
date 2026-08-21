@@ -12,5 +12,9 @@
   "hostUnavailableShort": "Host RPC 不可用",
   "refreshFailed": "刷新失败",
   "saveFailed": "设置保存失败",
-  "changedExternally": "设置已被外部修改，请确认最新值后重试"
+  "changedExternally": "设置已被外部修改，请确认最新值后重试",
+  "openSettingsFile": "打开配置文件",
+  "openSettingsFileApplication": "全局",
+  "openSettingsFileProject": "项目",
+  "openFileFailed": "无法打开配置文件"
 }

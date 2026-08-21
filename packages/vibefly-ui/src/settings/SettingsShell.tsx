@@ -9,6 +9,7 @@ import type {
     Host2UiSettingsService,
     LoginInputResponse,
     Ui2Host,
+    Ui2HostSettings,
 } from "../generated/rpc"
 import {createSettingsUiRpc} from "../rpc/client"
 import {connectAgentRpc} from "../rpc/agent"
@@ -16,6 +17,7 @@ import {bindConsoleToHost} from "../rpc/console"
 import {applyJbTheme} from "../theme"
 import {CommitMessagePage} from "./CommitMessagePage"
 import {GeneralPage} from "./GeneralPage"
+import {OpenSettingsFileMenu} from "./OpenSettingsFileMenu"
 import {ProvidersPage} from "./ProvidersPage"
 import {initialState, type SettingsState} from "./settingsStore"
 import {SettingsMutationQueue, type SettingsMutateOptions} from "./settingsMutationQueue"
@@ -61,6 +63,7 @@ export function SettingsShell() {
     const settingsRuntimeRef = useRef<UiSettingsRuntime | null>(null)
     const providerClient = useRef<UiProviderSettingsClient | null>(null)
     const mutationQueue = useRef<SettingsMutationQueue | null>(null)
+    const ui2HostSettingsRef = useRef<Ui2HostSettings | null>(null)
 
     useEffect(() => {
         let cancelled = false
@@ -113,6 +116,7 @@ export function SettingsShell() {
         const rpc = createSettingsUiRpc({host2Ui, host2UiSettings})
         if (rpc) {
             ui2HostInstance = rpc.ui2Host
+            ui2HostSettingsRef.current = rpc.ui2HostSettings
             setUi2Host(rpc.ui2Host)
             peerClose = () => rpc.peer.close()
             unbindConsole = bindConsoleToHost(rpc.ui2Host)
@@ -267,6 +271,10 @@ export function SettingsShell() {
                     </SidebarGroup>
                 </SidebarContent>
                 <SidebarFooter>
+                    <OpenSettingsFileMenu
+                        host={ui2Host ? ui2HostSettingsRef.current : null}
+                        onError={(status) => setState((current) => ({...current, status}))}
+                    />
                     {state.status &&
                         <div className="truncate px-2 text-[11px] text-muted group-data-[collapsible=icon]:hidden"
                              title={state.status}>{state.status}</div>}
