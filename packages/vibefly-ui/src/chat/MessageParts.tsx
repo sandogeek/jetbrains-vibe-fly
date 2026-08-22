@@ -25,6 +25,7 @@ import {defaultRemarkPlugins, type StreamdownProps} from "streamdown"
 
 import {useAppTranslation} from "../i18n"
 import type {ToolArtifact} from "../chatMessageAdapter"
+import {runningShimmerClassName} from "../lib/shimmer"
 
 /** Preserve Streamdown GFM (tables, strikethrough, task lists) while adding soft breaks. */
 const remarkPlugins: NonNullable<StreamdownProps["remarkPlugins"]> = [
@@ -87,7 +88,7 @@ export function ChatMessageView() {
             <div className="assistant-content">
                 <MessagePrimitive.Parts components={assistantMessagePartsComponents}/>
                 {isRunning && !hasVisibleContent ? (
-                    <span className="shimmer text-muted/55 shimmer-color-accent shimmer-repeat-delay-800">
+                    <span className={runningShimmerClassName}>
                         {t("chat:generating")}
                     </span>
                 ) : null}
@@ -139,13 +140,7 @@ function ReasoningPart({text}: { text: string }) {
                 }}
             >
                 <Brain size={15}/>
-                <span
-                    className={
-                        isRunning
-                            ? "shimmer text-muted/55 shimmer-color-accent shimmer-repeat-delay-800"
-                            : undefined
-                    }
-                >
+                <span className={isRunning ? runningShimmerClassName : undefined}>
                     {t("chat:reasoning")}
                 </span>
                 <ChevronDown size={14}/>
@@ -201,9 +196,7 @@ function ToolPart(part: ToolCallMessagePartProps) {
                 <Wrench size={14}/>
                 <strong
                     className={
-                        status === "running" || status === "pending"
-                            ? "shimmer text-muted/55 shimmer-color-accent shimmer-repeat-delay-800"
-                            : undefined
+                        status === "running" || status === "pending" ? runningShimmerClassName : undefined
                     }
                 >
                     {part.toolName}

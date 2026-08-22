@@ -4,6 +4,7 @@ import {type RefObject, useCallback, useEffect, useRef, useState} from "react"
 
 import {ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger,} from "@/components/ui/context-menu"
 import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,} from "@/components/ui/tooltip"
+import {runningShimmerClassName} from "@/lib/shimmer"
 import {useAppTranslation} from "../i18n"
 import {AssistantChat} from "./AssistantChat"
 import {type ChatController, useChatController} from "./useChatController"
@@ -370,7 +371,7 @@ function ChatPageView({controller}: { controller: ChatController }) {
                                 </div>
                             </div>
                         </div>
-                        <span className="shimmer text-muted/55 shimmer-color-accent shimmer-repeat-delay-800">
+                        <span className={runningShimmerClassName}>
                             {t("chat:loadingSession")}
                         </span>
                     </div>

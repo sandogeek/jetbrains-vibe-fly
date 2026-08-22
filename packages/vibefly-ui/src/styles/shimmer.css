@@ -13,14 +13,7 @@
  * Classes: shimmer, shimmer-bg, shimmer-container, vf-shimmer-host
  * Utilities: shimmer-color-*, shimmer-repeat-delay-*, shimmer-duration-*,
  *            shimmer-speed-*, shimmer-spread-*, shimmer-angle-*, shimmer-invert
- * Optional vars: --shimmer-x, --shimmer-y (px offsets for diagonal group alignment)
  */
-
-@property --shimmer-track-height {
-    syntax: "<length>";
-    inherits: true;
-    initial-value: 200px;
-}
 
 @property --shimmer-angle {
     syntax: "<angle>";
@@ -49,20 +42,23 @@
  * background-size must stay a valid % / length calc. Do not use tan()/abs()
  * here — if that sub-expression is invalid, size falls back to 100% and
  * animating position from 100% to 0% is a no-op (static mid-text highlight).
+ *
+ * Bounds (JCEF-safe max/clamp only; no tan/abs/typed arithmetic):
+ *   speed        >= 0.001    never divide duration by zero
+ *   duration     >= 1        milliseconds; keeps background-size defined
+ *   repeat-delay >= 0
+ *   spread       >= 1px
+ *   angle        -45deg to 45deg so `90deg + angle` stays a horizontal sweep
  */
 .shimmer {
-    --_shimmer-speed: var(--shimmer-speed, 200);
-    --_shimmer-duration: var(--shimmer-duration, calc(200000 / var(--_shimmer-speed)));
-    --_shimmer-repeat-delay: var(--shimmer-repeat-delay, calc(20000 / var(--_shimmer-speed)));
-    --_shimmer-spread: var(--shimmer-spread, calc(4ch + 80px));
-    --_shimmer-angle: var(--shimmer-angle, 15deg);
-    --_shimmer-track-height: var(--shimmer-track-height);
-    --_shimmer-xy-offset: calc(
-        (var(--shimmer-x, 0) + var(--shimmer-y, 0)) * 1px
-    );
-    --_shimmer-center: calc(50% - var(--_shimmer-xy-offset));
+    --_shimmer-speed: max(0.001, var(--shimmer-speed, 200));
+    --_shimmer-duration: max(1, var(--shimmer-duration, calc(200000 / var(--_shimmer-speed))));
+    --_shimmer-repeat-delay: max(0, var(--shimmer-repeat-delay, calc(20000 / var(--_shimmer-speed))));
+    --_shimmer-spread: max(1px, var(--shimmer-spread, calc(4ch + 80px)));
+    --_shimmer-angle: clamp(-45deg, var(--shimmer-angle, 15deg), 45deg);
+    --_shimmer-center: 50%;
     --_shimmer-bg: currentColor;
-    --_shimmer-fg: var(--shimmer-color, color-mix(in srgb, currentColor 28%, white));
+    --_shimmer-fg: var(--shimmer-color, var(--vf-shimmer-text));
     --_shimmer-mix-96: color-mix(in srgb, var(--_shimmer-fg) 4%, var(--_shimmer-bg));
     --_shimmer-mix-83: color-mix(in srgb, var(--_shimmer-fg) 17%, var(--_shimmer-bg));
     --_shimmer-mix-67: color-mix(in srgb, var(--_shimmer-fg) 33%, var(--_shimmer-bg));
@@ -104,24 +100,16 @@
     animation: vf-shimmer calc((var(--_shimmer-duration) + var(--_shimmer-repeat-delay)) * 1ms) linear 0s infinite backwards;
 }
 
-html[data-jb-theme="light"] .shimmer:not(.shimmer-bg) {
-    --_shimmer-fg: var(--shimmer-color, color-mix(in srgb, currentColor 55%, black));
-}
-
 /* Skeleton: sweep on ::after so Tailwind fill colors on the host stay intact. */
 .shimmer-bg {
-    --_shimmer-speed: var(--shimmer-speed, 1000);
-    --_shimmer-duration: var(--shimmer-duration, calc(800000 / var(--_shimmer-speed)));
-    --_shimmer-repeat-delay: var(--shimmer-repeat-delay, calc(20000 / var(--_shimmer-speed)));
-    --_shimmer-spread: var(--shimmer-spread, 480px);
+    --_shimmer-speed: max(0.001, var(--shimmer-speed, 1000));
+    --_shimmer-duration: max(1, var(--shimmer-duration, calc(800000 / var(--_shimmer-speed))));
+    --_shimmer-repeat-delay: max(0, var(--shimmer-repeat-delay, calc(20000 / var(--_shimmer-speed))));
+    --_shimmer-spread: max(1px, var(--shimmer-spread, 480px));
     --_shimmer-bg: transparent;
-    --_shimmer-fg: var(--shimmer-color, color-mix(in srgb, var(--vf-fg) 16%, transparent));
+    --_shimmer-fg: var(--shimmer-color, var(--vf-shimmer-skeleton));
     position: relative;
     overflow: hidden;
-}
-
-html[data-jb-theme="dark"] .shimmer-bg {
-    --_shimmer-fg: var(--shimmer-color, color-mix(in srgb, var(--vf-fg) 28%, transparent));
 }
 
 .shimmer-bg::after {
@@ -140,16 +128,11 @@ html[data-jb-theme="dark"] .shimmer-bg {
 /*
  * Shared coordinate system: every skeleton ::after is 100cqw wide and centered
  * on its (typically container-centered) host, so overflow:hidden windows all
- * look into the same moving band. --shimmer-x / --shimmer-y still shift the
- * highlight for left-aligned or diagonally staggered layouts.
+ * look into the same moving band.
  */
 .shimmer-container {
     position: relative;
     container-type: inline-size;
-}
-
-.shimmer-container .shimmer {
-    --shimmer-track-height: max(50cqw, 200px);
 }
 
 .shimmer-container .shimmer-bg::after {
@@ -182,18 +165,14 @@ html[data-jb-theme="dark"] .shimmer-bg {
     pointer-events: none;
     user-select: none;
     --_shimmer-bg: transparent;
-    --_shimmer-fg: var(--shimmer-color, color-mix(in srgb, var(--vf-accent) 42%, white));
+    --_shimmer-fg: var(--shimmer-color, var(--vf-shimmer-title));
     background-color: transparent;
 }
 
-html[data-jb-theme="light"] .vf-shimmer-host > .shimmer {
-    --_shimmer-fg: var(--shimmer-color, var(--vf-accent));
-}
-
 @utility shimmer-color-* {
-    --alpha: 100%;
-    --alpha: calc(--modifier(integer) * 1%);
-    --shimmer-color: --alpha(--value(--color, [color]) / var(--alpha, 100%));
+    --shimmer-alpha: 100%;
+    --shimmer-alpha: calc(--modifier(integer) * 1%);
+    --shimmer-color: --alpha(--value(--color, [color]) / var(--shimmer-alpha, 100%));
 }
 
 @utility shimmer-repeat-delay-* {
@@ -226,7 +205,7 @@ html[data-jb-theme="light"] .shimmer-invert:not(.shimmer-bg) {
     --shimmer-color: color-mix(in srgb, currentColor 55%, black);
 }
 
-@media (prefers-reduced-motion: reduce) {
+@media (prefers-reduced-motion: reduce), (forced-colors: active), print {
     .shimmer,
     .shimmer-bg {
         animation: none !important;
