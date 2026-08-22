@@ -25,6 +25,10 @@ dependencies {
     intellijPlatform {
         intellijIdea("2025.3.6.1")
         testFramework(TestFrameworkType.Platform)
+        // 2025.3+: VcsCommitMetadata / VcsLogProvider live in this content module
+        // (no longer on app.jar). Required for compile classpath and PluginClassLoader.
+        bundledModule("intellij.platform.vcs.log")
+        bundledModule("intellij.platform.vcs.log.graph")
         // vibefly-jcef is a platform.module subproject. Plain implementation() packages it under
         // lib/modules/ only; without a plugin.xml content-module entry that is not on the main
         // PluginClassLoader (NoClassDefFoundError for AgentOrigin / VibeflyBrowserPanel, etc.).

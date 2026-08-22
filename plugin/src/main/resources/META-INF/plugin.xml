@@ -13,6 +13,12 @@
     <!-- 2025.3+: module alias when JCEF is bundled. 2026.2+: separate plugin that must
          be a PluginClassLoader parent for JBCefBrowser. -->
     <depends>com.intellij.modules.jcef</depends>
+    <!-- 2025.3+: VcsCommitMetadata / VcsLogProvider moved out of app.jar into this
+         platform content module; PluginClassLoader needs it as a parent. -->
+    <dependencies>
+        <module name="intellij.platform.vcs.log"/>
+        <module name="intellij.platform.vcs.log.graph"/>
+    </dependencies>
 
 
     <resource-bundle>messages.VibeflyBundle</resource-bundle>

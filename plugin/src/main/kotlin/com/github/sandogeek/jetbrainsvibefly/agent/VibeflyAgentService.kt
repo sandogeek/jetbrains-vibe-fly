@@ -314,10 +314,18 @@ class VibeflyAgentService(private val project: Project) : Disposable {
     override fun dispose() {
         disposed = true
         settingsNotificationScope.cancel()
-        runBlocking {
-            mutex.withLock {
-                stopLocked()
+        // 2025.3+ project close runs on a cancelled Job. runBlocking inherits that Job
+        // and would throw JobCancellationException — ObjectTree forbids CE from dispose().
+        try {
+            runBlocking(NonCancellable) {
+                mutex.withLock {
+                    stopLocked()
+                }
             }
+        } catch (e: CancellationException) {
+            log.debug("agent dispose cancelled", e)
+        } catch (e: Exception) {
+            log.debug("agent dispose failed", e)
         }
     }
 
