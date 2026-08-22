@@ -265,6 +265,53 @@
     font-weight: 650;
 }
 
+.session-title-shimmer-container {
+    position: relative;
+    display: block;
+}
+
+.session-title-shimmer {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    color: transparent;
+    background-image: linear-gradient(
+        100deg,
+        transparent 0%,
+        transparent 38%,
+        var(--vf-accent) 50%,
+        transparent 62%,
+        transparent 100%
+    );
+    background-position: 200% 0;
+    background-size: 250% 100%;
+    background-repeat: no-repeat;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: session-title-shimmer-sweep 1.8s linear infinite;
+    pointer-events: none;
+    user-select: none;
+}
+
+@keyframes session-title-shimmer-sweep {
+    from {
+        background-position: 200% 0;
+    }
+
+    to {
+        background-position: -200% 0;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .session-title-shimmer {
+        display: none;
+    }
+}
+
 .tabs-list-item-close {
     width: 24px;
     height: 24px;

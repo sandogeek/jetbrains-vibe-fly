@@ -18,13 +18,10 @@ type HiddenTabs = {
     right: ChatSessionSummary[]
 }
 
-const RUNNING_TITLE_SHIMMER_CLASS = "shimmer shimmer-color-accent shimmer-repeat-delay-800"
-
-function sessionTitleClassName(
-    baseClass: string,
+function isSessionRunning(
     state: ChatSessionSummary["state"],
-): string {
-    return state === "running" ? `${baseClass} ${RUNNING_TITLE_SHIMMER_CLASS}` : baseClass
+): boolean {
+    return state === "running" || state === "waiting_permission" || state === "waiting_input"
 }
 
 function measureHiddenTabs(
@@ -196,7 +193,7 @@ function ChatPageView({controller}: { controller: ChatController }) {
                             <ContextMenu key={tab.summary.sessionId}>
                                 <ContextMenuTrigger asChild>
                                     <button
-                                        className={`session-tab${tab.summary.sessionId === controller.activeId ? " active" : ""}${tab.summary.unread ? " unread" : ""}`}
+                                        className={`session-tab${tab.summary.sessionId === controller.activeId ? " active" : ""}${tab.summary.unread ? " unread" : ""}${isSessionRunning(tab.summary.state) ? " running" : ""}`}
                                         role="tab"
                                         data-session-id={tab.summary.sessionId}
                                         aria-selected={tab.summary.sessionId === controller.activeId}
@@ -219,8 +216,9 @@ function ChatPageView({controller}: { controller: ChatController }) {
                                         }}
                                     >
                                         <TruncatedText
-                                            className={sessionTitleClassName("session-title", tab.summary.state)}
+                                            className="session-title"
                                             text={tab.summary.title}
+                                            shimmer={isSessionRunning(tab.summary.state)}
                                         />
                                         {tab.summary.queuePosition ? (
                                             <span className="queue-badge">{tab.summary.queuePosition}</span>
@@ -389,7 +387,7 @@ function TabsListItem({
     closeLabel: string
 }) {
     return (
-        <div className={`tabs-list-item${active ? " active" : ""}${tab.unread ? " unread" : ""}`}>
+        <div className={`tabs-list-item${active ? " active" : ""}${tab.unread ? " unread" : ""}${isSessionRunning(tab.state) ? " running" : ""}`}>
             <button
                 type="button"
                 className="tabs-list-item-main"
@@ -400,8 +398,9 @@ function TabsListItem({
                 }}
             >
                 <TruncatedText
-                    className={sessionTitleClassName("tabs-list-item-title", tab.state)}
+                    className="tabs-list-item-title"
                     text={tab.title}
+                    shimmer={isSessionRunning(tab.state)}
                 />
             </button>
             <button
@@ -471,7 +470,15 @@ function TabsListMenu({
     )
 }
 
-function TruncatedText({className, text}: { className?: string; text: string }) {
+function TruncatedText({
+                           className,
+                           text,
+                           shimmer = false,
+                       }: {
+    className?: string
+    text: string
+    shimmer?: boolean
+}) {
     const ref = useRef<HTMLSpanElement>(null)
     const [open, setOpen] = useState(false)
 
@@ -489,8 +496,23 @@ function TruncatedText({className, text}: { className?: string; text: string }) 
             }}
         >
             <TooltipTrigger asChild>
-                <span ref={ref} className={className}>
+                <span
+                    ref={ref}
+                    className={
+                        shimmer
+                            ? `${className ?? ""} session-title-shimmer-container`.trim()
+                            : className
+                    }
+                >
                     {text}
+                    {shimmer ? (
+                        <span
+                            aria-hidden="true"
+                            className="session-title-shimmer"
+                        >
+                            {text}
+                        </span>
+                    ) : null}
                 </span>
             </TooltipTrigger>
             <TooltipContent
