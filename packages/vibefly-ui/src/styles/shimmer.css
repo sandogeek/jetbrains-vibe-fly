@@ -1,29 +1,66 @@
 /*
- * JCEF-safe shimmer, matching the tw-shimmer 0.4 class API.
+ * JCEF-safe shimmer — tw-shimmer 0.4 compatible subset for Chromium 137.
  *
- * Dropped from tw-shimmer (not available in 2025.3 / Chromium 137):
+ * Dropped (not available in 2025.3 / Chromium 137):
  *   - CSS typed arithmetic (`length / length`, Chrome 140+)
  *   - relative color `oklch(from currentColor …)`
+ *   - exact px/s speed (needs length/length). `--shimmer-speed` is a duration
+ *     ratio: text defaults to `200000/speed` ms, skeleton to `800000/speed` ms.
  *
- * Keep: linear sweep, sine-ish falloff, pause encoded as extra track width
- * so glyphs show `currentColor` (or the host title) between passes.
+ * Keep: 17-stop sine-ish falloff, spread/angle geometry, pause encoded as extra
+ * track width so glyphs show `currentColor` (or the host title) between passes.
  *
  * Classes: shimmer, shimmer-bg, shimmer-container, vf-shimmer-host
  * Utilities: shimmer-color-*, shimmer-repeat-delay-*, shimmer-duration-*,
  *            shimmer-speed-*, shimmer-spread-*, shimmer-angle-*, shimmer-invert
+ * Optional vars: --shimmer-x, --shimmer-y (px offsets for diagonal group alignment)
  */
+
+@property --shimmer-track-height {
+    syntax: "<length>";
+    inherits: true;
+    initial-value: 200px;
+}
+
+@property --shimmer-angle {
+    syntax: "<angle>";
+    inherits: true;
+    initial-value: 15deg;
+}
 
 @keyframes vf-shimmer {
     from {
         background-position: 100% 0;
     }
+
+    to {
+        background-position: 0 0;
+    }
 }
 
+/*
+ * Geometry only. Painting lives on `.shimmer:not(.shimmer-bg)` (text clip) and
+ * `.shimmer-bg::after` (skeleton overlay) so host `bg-*` colors stay intact.
+ *
+ * Highlight is centered at 50% of the background *image*. Percent stops are
+ * relative to the image, not the element; extra image width is the pause so
+ * the band leaves the box between loops.
+ *
+ * background-size must stay a valid % / length calc. Do not use tan()/abs()
+ * here — if that sub-expression is invalid, size falls back to 100% and
+ * animating position from 100% to 0% is a no-op (static mid-text highlight).
+ */
 .shimmer {
     --_shimmer-speed: var(--shimmer-speed, 200);
     --_shimmer-duration: var(--shimmer-duration, calc(200000 / var(--_shimmer-speed)));
     --_shimmer-repeat-delay: var(--shimmer-repeat-delay, calc(20000 / var(--_shimmer-speed)));
+    --_shimmer-spread: var(--shimmer-spread, calc(4ch + 80px));
     --_shimmer-angle: var(--shimmer-angle, 15deg);
+    --_shimmer-track-height: var(--shimmer-track-height);
+    --_shimmer-xy-offset: calc(
+        (var(--shimmer-x, 0) + var(--shimmer-y, 0)) * 1px
+    );
+    --_shimmer-center: calc(50% - var(--_shimmer-xy-offset));
     --_shimmer-bg: currentColor;
     --_shimmer-fg: var(--shimmer-color, color-mix(in srgb, currentColor 28%, white));
     --_shimmer-mix-96: color-mix(in srgb, var(--_shimmer-fg) 4%, var(--_shimmer-bg));
@@ -33,38 +70,38 @@
     --_shimmer-mix-33: color-mix(in srgb, var(--_shimmer-fg) 67%, var(--_shimmer-bg));
     --_shimmer-mix-17: color-mix(in srgb, var(--_shimmer-fg) 83%, var(--_shimmer-bg));
     --_shimmer-mix-4: color-mix(in srgb, var(--_shimmer-fg) 96%, var(--_shimmer-bg));
-    /* delay/duration is number/number (valid on Chromium 137). Extra size = pause. */
-    --_shimmer-bg-size: calc(200% + 100% * var(--_shimmer-repeat-delay) / var(--_shimmer-duration));
-
-    background-color: var(--_shimmer-bg);
-    background-image: linear-gradient(
+    --_shimmer-gradient: linear-gradient(
         calc(90deg + var(--_shimmer-angle)),
-        var(--_shimmer-bg) 20%,
-        var(--_shimmer-mix-96) 26%,
-        var(--_shimmer-mix-83) 32%,
-        var(--_shimmer-mix-67) 38%,
-        var(--_shimmer-mix-50) 44%,
-        var(--_shimmer-mix-33) 47%,
-        var(--_shimmer-mix-17) 49%,
-        var(--_shimmer-fg) 50%,
-        var(--_shimmer-mix-17) 51%,
-        var(--_shimmer-mix-33) 53%,
-        var(--_shimmer-mix-50) 56%,
-        var(--_shimmer-mix-67) 62%,
-        var(--_shimmer-mix-83) 68%,
-        var(--_shimmer-mix-96) 74%,
-        var(--_shimmer-bg) 80%
+        var(--_shimmer-bg) calc(var(--_shimmer-center) - var(--_shimmer-spread) * 0.5),
+        var(--_shimmer-mix-96) calc(var(--_shimmer-center) - var(--_shimmer-spread) * 0.44),
+        var(--_shimmer-mix-83) calc(var(--_shimmer-center) - var(--_shimmer-spread) * 0.37),
+        var(--_shimmer-mix-67) calc(var(--_shimmer-center) - var(--_shimmer-spread) * 0.31),
+        var(--_shimmer-mix-50) calc(var(--_shimmer-center) - var(--_shimmer-spread) * 0.25),
+        var(--_shimmer-mix-33) calc(var(--_shimmer-center) - var(--_shimmer-spread) * 0.19),
+        var(--_shimmer-mix-17) calc(var(--_shimmer-center) - var(--_shimmer-spread) * 0.12),
+        var(--_shimmer-mix-4) calc(var(--_shimmer-center) - var(--_shimmer-spread) * 0.06),
+        var(--_shimmer-fg) var(--_shimmer-center),
+        var(--_shimmer-mix-4) calc(var(--_shimmer-center) + var(--_shimmer-spread) * 0.06),
+        var(--_shimmer-mix-17) calc(var(--_shimmer-center) + var(--_shimmer-spread) * 0.12),
+        var(--_shimmer-mix-33) calc(var(--_shimmer-center) + var(--_shimmer-spread) * 0.19),
+        var(--_shimmer-mix-50) calc(var(--_shimmer-center) + var(--_shimmer-spread) * 0.25),
+        var(--_shimmer-mix-67) calc(var(--_shimmer-center) + var(--_shimmer-spread) * 0.31),
+        var(--_shimmer-mix-83) calc(var(--_shimmer-center) + var(--_shimmer-spread) * 0.37),
+        var(--_shimmer-mix-96) calc(var(--_shimmer-center) + var(--_shimmer-spread) * 0.44),
+        var(--_shimmer-bg) calc(var(--_shimmer-center) + var(--_shimmer-spread) * 0.5)
     );
-    background-size: var(--_shimmer-bg-size) 100%;
-    background-repeat: no-repeat;
-    background-position: 100% 0;
-    animation: vf-shimmer calc((var(--_shimmer-duration) + var(--_shimmer-repeat-delay)) * 1ms) linear 0s infinite backwards;
 }
 
 .shimmer:not(.shimmer-bg) {
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
+    background-color: var(--_shimmer-bg);
+    background-image: var(--_shimmer-gradient);
+    background-size: calc(200% + 100% * var(--_shimmer-repeat-delay) / var(--_shimmer-duration)) 100%;
+    background-repeat: no-repeat;
+    background-position: 0 0;
+    animation: vf-shimmer calc((var(--_shimmer-duration) + var(--_shimmer-repeat-delay)) * 1ms) linear 0s infinite backwards;
 }
 
 html[data-jb-theme="light"] .shimmer:not(.shimmer-bg) {
@@ -76,16 +113,11 @@ html[data-jb-theme="light"] .shimmer:not(.shimmer-bg) {
     --_shimmer-speed: var(--shimmer-speed, 1000);
     --_shimmer-duration: var(--shimmer-duration, calc(800000 / var(--_shimmer-speed)));
     --_shimmer-repeat-delay: var(--shimmer-repeat-delay, calc(20000 / var(--_shimmer-speed)));
-    --_shimmer-bg-size: calc(200% + 100% * var(--_shimmer-repeat-delay) / var(--_shimmer-duration));
+    --_shimmer-spread: var(--shimmer-spread, 480px);
+    --_shimmer-bg: transparent;
     --_shimmer-fg: var(--shimmer-color, color-mix(in srgb, var(--vf-fg) 16%, transparent));
     position: relative;
     overflow: hidden;
-    background-image: none;
-    background-color: transparent;
-    animation: none;
-    -webkit-background-clip: unset;
-    background-clip: unset;
-    -webkit-text-fill-color: unset;
 }
 
 html[data-jb-theme="dark"] .shimmer-bg {
@@ -98,22 +130,33 @@ html[data-jb-theme="dark"] .shimmer-bg {
     inset: 0;
     border-radius: inherit;
     pointer-events: none;
-    background-image: linear-gradient(
-        calc(90deg + var(--_shimmer-angle, 15deg)),
-        transparent 20%,
-        color-mix(in srgb, var(--_shimmer-fg) 25%, transparent) 38%,
-        var(--_shimmer-fg) 50%,
-        color-mix(in srgb, var(--_shimmer-fg) 25%, transparent) 62%,
-        transparent 80%
-    );
-    background-size: var(--_shimmer-bg-size, 220%) 100%;
+    background-image: var(--_shimmer-gradient);
+    background-size: calc(200% + 100% * var(--_shimmer-repeat-delay) / var(--_shimmer-duration)) 100%;
     background-repeat: no-repeat;
-    background-position: 100% 0;
+    background-position: 0 0;
     animation: vf-shimmer calc((var(--_shimmer-duration) + var(--_shimmer-repeat-delay)) * 1ms) linear 0s infinite backwards;
 }
 
+/*
+ * Shared coordinate system: every skeleton ::after is 100cqw wide and centered
+ * on its (typically container-centered) host, so overflow:hidden windows all
+ * look into the same moving band. --shimmer-x / --shimmer-y still shift the
+ * highlight for left-aligned or diagonally staggered layouts.
+ */
 .shimmer-container {
+    position: relative;
     container-type: inline-size;
+}
+
+.shimmer-container .shimmer {
+    --shimmer-track-height: max(50cqw, 200px);
+}
+
+.shimmer-container .shimmer-bg::after {
+    width: 100cqw;
+    left: 50%;
+    right: auto;
+    margin-inline-start: -50cqw;
 }
 
 /*
@@ -148,7 +191,9 @@ html[data-jb-theme="light"] .vf-shimmer-host > .shimmer {
 }
 
 @utility shimmer-color-* {
-    --shimmer-color: --value(--color, [color]);
+    --alpha: 100%;
+    --alpha: calc(--modifier(integer) * 1%);
+    --shimmer-color: --alpha(--value(--color, [color]) / var(--alpha, 100%));
 }
 
 @utility shimmer-repeat-delay-* {
@@ -172,11 +217,13 @@ html[data-jb-theme="light"] .vf-shimmer-host > .shimmer {
 }
 
 @utility shimmer-invert {
-    --shimmer-color: color-mix(in srgb, currentColor 40%, var(--vf-bg));
+    &:not(.shimmer-bg) {
+        --shimmer-color: color-mix(in srgb, currentColor 40%, var(--vf-bg));
+    }
 }
 
-html[data-jb-theme="light"] .shimmer-invert {
-    --shimmer-color: color-mix(in srgb, currentColor 55%, white);
+html[data-jb-theme="light"] .shimmer-invert:not(.shimmer-bg) {
+    --shimmer-color: color-mix(in srgb, currentColor 55%, black);
 }
 
 @media (prefers-reduced-motion: reduce) {
