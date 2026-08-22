@@ -355,11 +355,19 @@ function ChatPageView({controller}: { controller: ChatController }) {
                 <section className="conversation">
                     <div className="empty-state loading-session-state">
                         <div className="shimmer-container loading-session-skeleton">
-                            <div className="shimmer shimmer-bg bg-muted/40 size-12 rounded-[14px]"/>
+                            <div className="size-12 overflow-hidden rounded-[14px] bg-muted/40">
+                                <div className="shimmer shimmer-bg h-full w-full"/>
+                            </div>
                             <div className="loading-session-lines">
-                                <div className="shimmer shimmer-bg bg-muted/40 h-3.5 w-36 rounded"/>
-                                <div className="shimmer shimmer-bg bg-muted/30 h-3 w-52 rounded"/>
-                                <div className="shimmer shimmer-bg bg-muted/25 h-3 w-44 rounded"/>
+                                <div className="h-3.5 w-36 overflow-hidden rounded bg-muted/40">
+                                    <div className="shimmer shimmer-bg h-full w-full"/>
+                                </div>
+                                <div className="h-3 w-52 overflow-hidden rounded bg-muted/30">
+                                    <div className="shimmer shimmer-bg h-full w-full"/>
+                                </div>
+                                <div className="h-3 w-44 overflow-hidden rounded bg-muted/25">
+                                    <div className="shimmer shimmer-bg h-full w-full"/>
+                                </div>
                             </div>
                         </div>
                         <span className="shimmer text-muted/55 shimmer-color-accent shimmer-repeat-delay-800">
@@ -500,7 +508,7 @@ function TruncatedText({
                     ref={ref}
                     className={
                         shimmer
-                            ? `${className ?? ""} session-title-shimmer-container`.trim()
+                            ? `${className ?? ""} vf-shimmer-host`.trim()
                             : className
                     }
                 >
@@ -508,7 +516,7 @@ function TruncatedText({
                     {shimmer ? (
                         <span
                             aria-hidden="true"
-                            className="session-title-shimmer"
+                            className="shimmer shimmer-color-accent shimmer-repeat-delay-800"
                         >
                             {text}
                         </span>

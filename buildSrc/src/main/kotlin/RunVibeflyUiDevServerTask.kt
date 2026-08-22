@@ -66,6 +66,7 @@ abstract class RunVibeflyUiDevServerTask @Inject constructor(
             workingDir(workDir)
             commandLine(pnpm, "run", "dev")
             environment("PATH", BuildVibeflyUiTask.pathWithNodeFirst(node))
+            environment("CI", "true")
         }
     }
 }

@@ -1,0 +1,199 @@
+/*
+ * JCEF-safe shimmer, matching the tw-shimmer 0.4 class API.
+ *
+ * Dropped from tw-shimmer (not available in 2025.3 / Chromium 137):
+ *   - CSS typed arithmetic (`length / length`, Chrome 140+)
+ *   - relative color `oklch(from currentColor …)`
+ *
+ * Keep: linear sweep, sine-ish falloff, pause encoded as extra track width
+ * so glyphs show `currentColor` (or the host title) between passes.
+ *
+ * Classes: shimmer, shimmer-bg, shimmer-container, vf-shimmer-host
+ * Utilities: shimmer-color-*, shimmer-repeat-delay-*, shimmer-duration-*,
+ *            shimmer-speed-*, shimmer-spread-*, shimmer-angle-*, shimmer-invert
+ */
+
+@keyframes vf-shimmer {
+    from {
+        background-position: 100% 0;
+    }
+}
+
+.shimmer {
+    --_shimmer-speed: var(--shimmer-speed, 200);
+    --_shimmer-duration: var(--shimmer-duration, calc(200000 / var(--_shimmer-speed)));
+    --_shimmer-repeat-delay: var(--shimmer-repeat-delay, calc(20000 / var(--_shimmer-speed)));
+    --_shimmer-angle: var(--shimmer-angle, 15deg);
+    --_shimmer-bg: currentColor;
+    --_shimmer-fg: var(--shimmer-color, color-mix(in srgb, currentColor 28%, white));
+    --_shimmer-mix-96: color-mix(in srgb, var(--_shimmer-fg) 4%, var(--_shimmer-bg));
+    --_shimmer-mix-83: color-mix(in srgb, var(--_shimmer-fg) 17%, var(--_shimmer-bg));
+    --_shimmer-mix-67: color-mix(in srgb, var(--_shimmer-fg) 33%, var(--_shimmer-bg));
+    --_shimmer-mix-50: color-mix(in srgb, var(--_shimmer-fg) 50%, var(--_shimmer-bg));
+    --_shimmer-mix-33: color-mix(in srgb, var(--_shimmer-fg) 67%, var(--_shimmer-bg));
+    --_shimmer-mix-17: color-mix(in srgb, var(--_shimmer-fg) 83%, var(--_shimmer-bg));
+    --_shimmer-mix-4: color-mix(in srgb, var(--_shimmer-fg) 96%, var(--_shimmer-bg));
+    /* delay/duration is number/number (valid on Chromium 137). Extra size = pause. */
+    --_shimmer-bg-size: calc(200% + 100% * var(--_shimmer-repeat-delay) / var(--_shimmer-duration));
+
+    background-color: var(--_shimmer-bg);
+    background-image: linear-gradient(
+        calc(90deg + var(--_shimmer-angle)),
+        var(--_shimmer-bg) 20%,
+        var(--_shimmer-mix-96) 26%,
+        var(--_shimmer-mix-83) 32%,
+        var(--_shimmer-mix-67) 38%,
+        var(--_shimmer-mix-50) 44%,
+        var(--_shimmer-mix-33) 47%,
+        var(--_shimmer-mix-17) 49%,
+        var(--_shimmer-fg) 50%,
+        var(--_shimmer-mix-17) 51%,
+        var(--_shimmer-mix-33) 53%,
+        var(--_shimmer-mix-50) 56%,
+        var(--_shimmer-mix-67) 62%,
+        var(--_shimmer-mix-83) 68%,
+        var(--_shimmer-mix-96) 74%,
+        var(--_shimmer-bg) 80%
+    );
+    background-size: var(--_shimmer-bg-size) 100%;
+    background-repeat: no-repeat;
+    background-position: 100% 0;
+    animation: vf-shimmer calc((var(--_shimmer-duration) + var(--_shimmer-repeat-delay)) * 1ms) linear 0s infinite backwards;
+}
+
+.shimmer:not(.shimmer-bg) {
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+html[data-jb-theme="light"] .shimmer:not(.shimmer-bg) {
+    --_shimmer-fg: var(--shimmer-color, color-mix(in srgb, currentColor 55%, black));
+}
+
+/* Skeleton: sweep on ::after so Tailwind fill colors on the host stay intact. */
+.shimmer-bg {
+    --_shimmer-speed: var(--shimmer-speed, 1000);
+    --_shimmer-duration: var(--shimmer-duration, calc(800000 / var(--_shimmer-speed)));
+    --_shimmer-repeat-delay: var(--shimmer-repeat-delay, calc(20000 / var(--_shimmer-speed)));
+    --_shimmer-bg-size: calc(200% + 100% * var(--_shimmer-repeat-delay) / var(--_shimmer-duration));
+    --_shimmer-fg: var(--shimmer-color, color-mix(in srgb, var(--vf-fg) 16%, transparent));
+    position: relative;
+    overflow: hidden;
+    background-image: none;
+    background-color: transparent;
+    animation: none;
+    -webkit-background-clip: unset;
+    background-clip: unset;
+    -webkit-text-fill-color: unset;
+}
+
+html[data-jb-theme="dark"] .shimmer-bg {
+    --_shimmer-fg: var(--shimmer-color, color-mix(in srgb, var(--vf-fg) 28%, transparent));
+}
+
+.shimmer-bg::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background-image: linear-gradient(
+        calc(90deg + var(--_shimmer-angle, 15deg)),
+        transparent 20%,
+        color-mix(in srgb, var(--_shimmer-fg) 25%, transparent) 38%,
+        var(--_shimmer-fg) 50%,
+        color-mix(in srgb, var(--_shimmer-fg) 25%, transparent) 62%,
+        transparent 80%
+    );
+    background-size: var(--_shimmer-bg-size, 220%) 100%;
+    background-repeat: no-repeat;
+    background-position: 100% 0;
+    animation: vf-shimmer calc((var(--_shimmer-duration) + var(--_shimmer-repeat-delay)) * 1ms) linear 0s infinite backwards;
+}
+
+.shimmer-container {
+    container-type: inline-size;
+}
+
+/*
+ * Truncated labels (session tabs): keep the real title painted in its
+ * original color. The overlay only draws the highlight band; transparent
+ * ends of the gradient are the pause, so the host color returns between
+ * passes. Same ellipsis as the host so overflow glyphs never leak.
+ */
+.vf-shimmer-host {
+    position: relative;
+    display: block;
+}
+
+.vf-shimmer-host > .shimmer {
+    position: absolute;
+    inset: 0;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: inherit;
+    white-space: nowrap;
+    pointer-events: none;
+    user-select: none;
+    --_shimmer-bg: transparent;
+    --_shimmer-fg: var(--shimmer-color, color-mix(in srgb, var(--vf-accent) 42%, white));
+    background-color: transparent;
+}
+
+html[data-jb-theme="light"] .vf-shimmer-host > .shimmer {
+    --_shimmer-fg: var(--shimmer-color, var(--vf-accent));
+}
+
+@utility shimmer-color-* {
+    --shimmer-color: --value(--color, [color]);
+}
+
+@utility shimmer-repeat-delay-* {
+    --shimmer-repeat-delay: --value(integer);
+}
+
+@utility shimmer-duration-* {
+    --shimmer-duration: --value(integer);
+}
+
+@utility shimmer-speed-* {
+    --shimmer-speed: --value(number);
+}
+
+@utility shimmer-spread-* {
+    --shimmer-spread: calc(--value(integer) * 1px);
+}
+
+@utility shimmer-angle-* {
+    --shimmer-angle: calc(--value(integer) * 1deg);
+}
+
+@utility shimmer-invert {
+    --shimmer-color: color-mix(in srgb, currentColor 40%, var(--vf-bg));
+}
+
+html[data-jb-theme="light"] .shimmer-invert {
+    --shimmer-color: color-mix(in srgb, currentColor 55%, white);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .shimmer,
+    .shimmer-bg {
+        animation: none !important;
+        background-image: none !important;
+        -webkit-background-clip: unset !important;
+        background-clip: unset !important;
+        -webkit-text-fill-color: unset !important;
+    }
+
+    .shimmer-bg::after {
+        content: none !important;
+    }
+
+    .vf-shimmer-host > .shimmer {
+        display: none !important;
+    }
+}

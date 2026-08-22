@@ -240,6 +240,7 @@ abstract class BuildVibeflyAgentTask @Inject constructor(
             workingDir(workDir)
             commandLine(listOf(pnpm) + args)
             environment("PATH", BuildVibeflyUiTask.pathWithNodeFirst(node))
+            environment("CI", "true")
         }
     }
 

@@ -108,6 +108,7 @@ abstract class ExportBundledCatalogTask @Inject constructor(
             workingDir(workDir)
             commandLine(pnpm, "run", "export:catalog")
             environment("PATH", BuildVibeflyUiTask.pathWithNodeFirst(node))
+            environment("CI", "true")
         }
         val missingFiles = fileOutputs.filterNot { it.isFile && it.length() > 0L }
         val modelsMissing =

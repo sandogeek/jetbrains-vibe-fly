@@ -80,14 +80,4 @@
         animation-iteration-count: 1 !important;
         transition-duration: 0.01ms !important;
     }
-
-    .shimmer,
-    .shimmer-bg {
-        animation: none !important;
-        background-image: none !important;
-        -webkit-background-clip: unset !important;
-        background-clip: unset !important;
-        -webkit-text-fill-color: unset !important;
-        color: var(--vf-muted) !important;
-    }
 }
