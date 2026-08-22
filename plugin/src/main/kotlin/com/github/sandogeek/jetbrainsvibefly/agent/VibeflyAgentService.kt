@@ -286,7 +286,7 @@ class VibeflyAgentService(private val project: Project) : Disposable {
         val control = host2AgentRef.getAndSet(null)
         if (control != null) {
             try {
-                runBlocking {
+                runBlocking(NonCancellable) {
                     withTimeout(3_000.milliseconds) {
                         control.shutdown()
                     }

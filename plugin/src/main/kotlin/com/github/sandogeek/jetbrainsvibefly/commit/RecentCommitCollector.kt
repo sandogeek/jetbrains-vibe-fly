@@ -88,7 +88,7 @@ object RecentCommitCollector {
             if (byPath.isNotEmpty()) return byPath.values.toList()
         }
 
-        val all = vcsManager.allVcsRoots
+        val all = vcsManager.getAllVcsRoots()
         if (all.isEmpty()) return emptyList()
         val byPath = LinkedHashMap<String, VcsRoot>()
         for (root in all) {
