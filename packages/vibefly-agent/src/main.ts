@@ -23,7 +23,7 @@ import {
 } from "./generated/controlRpc.js"
 import {log} from "./log.js"
 import {ChatSessionRegistry} from "./chatSessionRegistry.js"
-import {applyAgentDirFromEnv, clearPiRuntimeCache, getPiRuntime} from "./piRuntime.js"
+import {applyAgentDirFromEnv, clearPiRuntimeCache, getPiRuntime, type PiRuntime} from "./piRuntime.js"
 import {applyProviderConfigDocumentsPatch, getProvidersSnapshot, mutateCustomProviderDocumentsPatch} from "./providerConfig.js"
 import {cancelActiveLogin, getLoginProviders, loginProvider, logoutProvider,} from "./providerLogin.js"
 import {setProviderApiKey} from "./providerCredentials.js"
@@ -60,16 +60,22 @@ async function main(): Promise<void> {
   })
   await hostSettings.initialize()
 
+  // Warm pi in parallel with WS + Host2Agent registration. Host currently
+  // treats process spawn as READY and may call openWebSocketSession before
+  // this function finishes — "Unknown method Host2Agent#1" if we wait.
   const piWarmStarted = performance.now()
-  const piRuntime = await getPiRuntime({
-    agentDir,
-    credentials: hostSettings.credentials,
-    forceNew: true,
-  })
-  await hostSettings.attachModelRuntime(piRuntime.modelRuntime)
-  log.info("host-backed pi runtime ready", {
-    elapsedMs: Math.round(performance.now() - piWarmStarted),
-  })
+  const piRuntimeReady: Promise<PiRuntime> = (async () => {
+    const runtime = await getPiRuntime({
+      agentDir,
+      credentials: hostSettings.credentials,
+      forceNew: true,
+    })
+    await hostSettings.attachModelRuntime(runtime.modelRuntime)
+    log.info("host-backed pi runtime ready", {
+      elapsedMs: Math.round(performance.now() - piWarmStarted),
+    })
+    return runtime
+  })()
 
   const wsStarted = performance.now()
   const ticketStore = createTicketStore()
@@ -125,19 +131,19 @@ async function main(): Promise<void> {
       return applyProviderConfigDocumentsPatch(request, modelsJson)
     },
     async getLoginProviders() {
-      return getLoginProviders(piRuntime)
+      return getLoginProviders(await piRuntimeReady)
     },
     async loginProvider(request) {
-      return loginProvider(request, agent2Host, piRuntime)
+      return loginProvider(request, agent2Host, await piRuntimeReady)
     },
     async logoutProvider(request) {
-      return logoutProvider(request, piRuntime)
+      return logoutProvider(request, await piRuntimeReady)
     },
     cancelProviderLogin() {
       cancelActiveLogin()
     },
     async setProviderApiKey(request) {
-      return setProviderApiKey(request, piRuntime)
+      return setProviderApiKey(request, await piRuntimeReady)
     },
     mutateCustomProvider(request, modelsJson: string, authJson: string) {
       return mutateCustomProviderDocumentsPatch(request, modelsJson, authJson)
@@ -224,6 +230,7 @@ async function main(): Promise<void> {
   // miss invalidations; subsequent notifications are serialized normally.
   await hostSettings.refreshFromHost()
 
+  await piRuntimeReady
   log.info("agent ready", {
     totalMs: Math.round(performance.now() - bootStarted),
   })
