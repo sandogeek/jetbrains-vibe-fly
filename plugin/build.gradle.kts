@@ -23,7 +23,7 @@ dependencies {
 
     // IntelliJ Platform Gradle Plugin Dependencies Extension - read more: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-dependencies-extension.html
     intellijPlatform {
-        intellijIdea("2025.2.6.2")
+        intellijIdea("2025.3.6.1")
         testFramework(TestFrameworkType.Platform)
         // vibefly-jcef is a platform.module subproject. Plain implementation() packages it under
         // lib/modules/ only; without a plugin.xml content-module entry that is not on the main
@@ -42,11 +42,11 @@ intellijPlatform {
     // Settings search still works without the prebuilt index.
     buildSearchableOptions = false
     pluginConfiguration {
-        // Compile/target: 2025.2 (252). com.intellij.modules.jcef is a real module/plugin
-        // alias only from 2025.3; on 2026.2+ it is a separate plugin that must be a
-        // PluginClassLoader parent (see optional depends in plugin.xml).
+        // Compile/target: 2025.3 (253). com.intellij.modules.jcef is a module/plugin
+        // alias on 2025.3+; on 2026.2+ it is a separate plugin that must be a
+        // PluginClassLoader parent (see depends in plugin.xml).
         ideaVersion {
-            sinceBuild = "252"
+            sinceBuild = "253"
         }
     }
 }

@@ -19,7 +19,7 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
 
     intellijPlatform {
-        intellijIdea("2025.2.6.2")
+        intellijIdea("2025.3.6.1")
     }
 }
 
