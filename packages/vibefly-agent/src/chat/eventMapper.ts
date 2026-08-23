@@ -7,11 +7,11 @@ import type {
   ChatPart,
 } from "@vibefly/uiagent-shared"
 import {locationsFromArgs} from "./toolPathGuard.js"
-import {makeId, now, safeJson, textFromContent} from "./util.js"
+import {makeId, now, textFromContent, toolResultText} from "./util.js"
 
-export {safeJson, textFromContent} from "./util.js"
+export {safeJson, textFromContent, toolResultText} from "./util.js"
 
-export function messageParts(message: AgentMessage): ChatPart[] {
+export function messageParts(message: AgentMessage, projectRoot?: string): ChatPart[] {
   const raw = message as unknown as Record<string, unknown>
   const content = raw.content
   if (typeof content === "string") return content ? [{kind: "text", text: content}] : []
@@ -26,12 +26,15 @@ export function messageParts(message: AgentMessage): ChatPart[] {
     } else if (part.type === "thinking" && typeof part.thinking === "string") {
       parts.push({kind: "thinking", text: part.thinking})
     } else if (part.type === "toolCall") {
+      const toolName = String(part.name ?? "tool")
+      const input = part.arguments
       parts.push({
         kind: "tool",
         toolCallId: String(part.id ?? makeId("tool")),
-        name: String(part.name ?? "tool"),
+        name: toolName,
         status: "completed",
-        input: part.arguments,
+        input,
+        locations: projectRoot ? locationsFromArgs(input, projectRoot, toolName) : undefined,
       })
     }
   }
@@ -45,7 +48,7 @@ export function messageStatus(message: AgentMessage): ChatMessage["status"] {
   return "complete"
 }
 
-export function toChatMessages(messages: AgentMessage[]): ChatMessage[] {
+export function toChatMessages(messages: AgentMessage[], projectRoot?: string): ChatMessage[] {
   const result: ChatMessage[] = []
   const toolParts = new Map<string, Extract<ChatPart, {kind: "tool"}>>()
 
@@ -62,7 +65,7 @@ export function toChatMessages(messages: AgentMessage[]): ChatMessage[] {
       continue
     }
     if (message.role !== "user" && message.role !== "assistant" && message.role !== "developer") continue
-    const parts = messageParts(messages[index]!)
+    const parts = messageParts(messages[index]!, projectRoot)
     const chatMessage: ChatMessage = {
       id: String(message.id ?? `history-${index}`),
       role: message.role === "assistant" ? "assistant" : message.role === "user" ? "user" : "system",
@@ -134,7 +137,7 @@ export function mapSessionEvent(
   }
   if (event.type === "tool_execution_start") {
     const activeMessageId = state.activeMessageId ?? makeId("assistant")
-    const locations = locationsFromArgs(event.args, state.projectRoot)
+    const locations = locationsFromArgs(event.args, state.projectRoot, event.toolName)
     if (locations) state.toolLocations.set(event.toolCallId, locations)
     // Same carrier convention as message_update: only assign when no active message yet.
     return {
@@ -169,7 +172,7 @@ export function mapSessionEvent(
           toolCallId: event.toolCallId,
           name: event.toolName,
           status: event.isError ? "failed" : "completed",
-          output: safeJson(event.result),
+          output: toolResultText(event.result),
           isError: event.isError,
           locations,
         },

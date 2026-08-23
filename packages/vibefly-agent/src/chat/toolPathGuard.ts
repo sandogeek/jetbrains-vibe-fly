@@ -43,20 +43,34 @@ export function pathInsideProject(projectRoot: string, candidate: string): strin
   return absolute
 }
 
-export function locationsFromArgs(args: unknown, projectRoot: string): ChatFileLocation[] | undefined {
+export function locationsFromArgs(
+  args: unknown,
+  projectRoot: string,
+  toolName?: string,
+): ChatFileLocation[] | undefined {
   if (!args || typeof args !== "object" || Array.isArray(args)) return undefined
   const values = args as Record<string, unknown>
-  const candidates = [values.path, values.file, values.filePath]
+  const candidates = [values.path, values.file, values.filePath, values.file_path]
   const locations: ChatFileLocation[] = []
+  const line = readLineFromArgs(values, toolName)
   for (const candidate of candidates) {
     if (typeof candidate !== "string" || !candidate.trim()) continue
     const absolute = path.isAbsolute(candidate) ? candidate : path.resolve(projectRoot, candidate)
     const relative = path.relative(projectRoot, absolute)
     if (!relative.startsWith("..") && !path.isAbsolute(relative)) {
-      locations.push({path: relative || path.basename(absolute)})
+      const location: ChatFileLocation = {path: relative || path.basename(absolute)}
+      if (line !== undefined) location.line = line
+      locations.push(location)
     }
   }
   return locations.length > 0 ? locations : undefined
+}
+
+function readLineFromArgs(values: Record<string, unknown>, toolName: string | undefined): number | undefined {
+  const offset = values.offset
+  if (typeof offset === "number" && Number.isInteger(offset) && offset >= 1) return offset
+  if (toolName === "read") return 1
+  return undefined
 }
 
 /** Extract filesystem path-like args from pi tool inputs (common keys + edit formats). */
@@ -144,7 +158,7 @@ export function createPathGuardExtension(
       const command = event.toolName === "bash"
         ? String((event.input as Record<string, unknown>).command ?? "")
         : undefined
-      const locations = locationsFromArgs(event.input, projectRoot)
+      const locations = locationsFromArgs(event.input, projectRoot, event.toolName)
       const title = event.toolName === "bash"
         ? `Run ${command}`
         : event.toolName === "edit"

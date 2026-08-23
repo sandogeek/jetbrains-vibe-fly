@@ -42,24 +42,64 @@ export function createDemoTab(): ChatSessionSnapshot {
                     },
                     {
                         kind: "tool",
-                        toolCallId: "demo-tool-1",
-                        name: "edit",
+                        toolCallId: "demo-tool-read",
+                        name: "read",
                         status: "completed",
-                        input: {path: "plugin/src/main/kotlin/.../GenerateCommitMessageAction.kt"},
-                        output: "+8  -2",
+                        input: {
+                            path: "plugin/src/main/kotlin/com/github/sandogeek/jetbrainsvibefly/commit/GenerateCommitMessageAction.kt",
+                            offset: 40,
+                            limit: 8,
+                        },
+                        output: [
+                            "override fun actionPerformed(event: AnActionEvent) {",
+                            "    val project = event.project ?: return",
+                            "    val request = host.beginGenerate(project)",
+                            "    try {",
+                            "        request.stream()",
+                            "    } catch (error: CancellationException) {",
+                            "        log.warn(\"host cancelled generate-commit\")",
+                            "        throw error",
+                            "    }",
+                            "}",
+                        ].join("\n"),
                         locations: [
                             {
                                 path: "plugin/src/main/kotlin/com/github/sandogeek/jetbrainsvibefly/commit/GenerateCommitMessageAction.kt",
+                                line: 40,
                             },
                         ],
                     },
                     {
                         kind: "tool",
-                        toolCallId: "demo-tool-2",
+                        toolCallId: "demo-tool-write",
+                        name: "write",
+                        status: "completed",
+                        input: {
+                            path: "packages/vibefly-agent/src/cancelLog.ts",
+                            content: "export function logCancel(reason: string): void {\n    log.warn(\"agent aborted\", {reason})\n}\n",
+                        },
+                        output: "Successfully wrote 78 bytes to packages/vibefly-agent/src/cancelLog.ts",
+                        locations: [{path: "packages/vibefly-agent/src/cancelLog.ts"}],
+                    },
+                    {
+                        kind: "tool",
+                        toolCallId: "demo-tool-edit",
                         name: "edit",
                         status: "completed",
-                        input: {path: "packages/vibefly-agent/src/commitMessage.ts"},
-                        output: "+5  -1",
+                        input: {
+                            path: "packages/vibefly-agent/src/commitMessage.ts",
+                            edits: [
+                                {
+                                    oldText: "const logger = createLogger(\"commit\")",
+                                    newText: "const logger = createLogger(\"commit\")\nconst cancelLog = createLogger(\"commit-cancel\")",
+                                },
+                                {
+                                    oldText: "stream.on(\"abort\", () => undefined)",
+                                    newText: "stream.on(\"abort\", (reason) => cancelLog.warn(reason))",
+                                },
+                            ],
+                        },
+                        output: "Successfully edited packages/vibefly-agent/src/commitMessage.ts",
                         locations: [{path: "packages/vibefly-agent/src/commitMessage.ts"}],
                     },
                     {

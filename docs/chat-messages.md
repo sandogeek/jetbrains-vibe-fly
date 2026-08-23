@@ -24,7 +24,7 @@ session.subscribe(AgentSessionEvent)
                                                    ▼  C. convertChatMessage
                                                    │     ChatMessage → ThreadMessageLike
                                                    ▼  useExternalStoreRuntime + MessagePrimitive
-                                                      MarkdownText / ReasoningPart / ToolPart / NoticePart
+                                                      MarkdownText / ReasoningPart / ToolRow / NoticePart
 ```
 
 | 阶段                     | 位置                           | 核心符号                                                      | 产出                                  |
@@ -106,7 +106,7 @@ type ChatEventBatch = { sessionId: string; sequence: number; events: ChatEvent[]
 | `message_update` 其它（`*_start`/`*_end`/`toolcall_*`/`done`/`error`） | *丢弃*                                           | 工具参数不流式推 UI                                            |
 | `tool_execution_start`                                                 | `tool`，`status: "running"`                      | `input = args`；`locations` 从 path 类参数推导                 |
 | `tool_execution_update`                                                | *丢弃*                                           | 无 partial tool output                                         |
-| `tool_execution_end`                                                   | `tool`，`completed` / `failed`                   | `output = safeJson(result)`                                    |
+| `tool_execution_end`                                                   | `tool`，`completed` / `failed`                   | `output = toolResultText(result)`（结构化 `{content,details}` 收成文本） |
 | `message_end`（assistant）                                             | `messageStatus`                                  | 一次 run 内可能多次                                            |
 | `agent_end`                                                            | *仅清* `activeMessageId`                         |                                                                |
 | `thinking_level_changed`                                               | `summary`                                        |                                                                |
@@ -132,8 +132,7 @@ type ChatEventBatch = { sessionId: string; sequence: number; events: ChatEvent[]
 - 遍历 `session.messages`。
 - `toolResult` **折叠**进前一条消息里对应 `toolCallId` 的 tool part（`output`、`status`）。
 - `user` / `assistant` 原样；`developer` → wire `role: "system"`。
-- content 块：`text` → `text`，`thinking` → `thinking`，`toolCall` → `tool`（历史一律 `status: "completed"`， **无
-  locations**）。
+- content 块：`text` → `text`，`thinking` → `thinking`，`toolCall` → `tool`（历史一律 `status: "completed"`；`locations` 从 arguments 重算，read 填 `line`）。
 - id：`String(message.id ?? "history-<idx>")`；status 由 pi `stopReason` / `errorMessage` 映射。
 
 ### 3.4 流式语义（屏幕上实际发生什么）
@@ -173,7 +172,7 @@ Runtime：`AssistantChat` 使用 `useExternalStoreRuntime<ChatMessage>({ convert
 |---------------------------|-------------------------------------------------------------------------------------|---------------------------------------------------------------|
 | `text`                    | `{ type: "text", text }`                                                            | `MarkdownText`（Streamdown）                                  |
 | `thinking`                | `{ type: "reasoning", text }`                                                       | `ReasoningPart`                                               |
-| `tool`                    | `{ type: "tool-call", toolCallId, toolName, argsText, artifact, result?, isError }` | `ToolPart`（`tools.Fallback`）                                |
+| `tool`                    | `{ type: "tool-call", toolCallId, toolName, argsText, artifact, result?, isError }` | `ToolRow`（`tools.Fallback` → ReadBlock / DiffBlock / generic） |
 | `notice`                  | `{ type: "data", name: "vibefly-notice", data: { level, text } }`                   | `NoticePart`                                                  |
 | `role: "user"`            | `role: "user"`，**无** status                                                       | 纯文本，不走 markdown                                         |
 | `role: "assistant"`       | `role: "assistant"` + status                                                        | assistant parts                                               |
@@ -182,8 +181,8 @@ Runtime：`AssistantChat` 使用 `useExternalStoreRuntime<ChatMessage>({ convert
 | `status: complete`        | `{ type: "complete", reason: "stop" }`                                              |                                                               |
 | `status: aborted`         | `{ type: "incomplete", reason: "cancelled" }`                                       | 暂无专门 UI                                                   |
 | `status: error`           | `{ type: "incomplete", reason: "error" }`                                           | Retry 按钮（当前无 onClick）                                  |
-| tool `pending`/`running`  | 不设 `result`                                                                       | 转圈                                                          |
-| tool `completed`/`failed` | `result: output ?? null`；failed 时 `isError`                                       | 勾 / 叹号                                                     |
+| tool `pending`/`running`  | 不设 `result`                                                                       | 行上扫光（running）                                           |
+| tool `completed`/`failed` | `result: output ?? null`；failed 时 `isError`                                       | 工具图标 / 红色状态点                                         |
 
 **侧信道 `artifact`**（assistant-ui 原生 tool-call 无这些字段）：
 
@@ -195,7 +194,7 @@ type ToolArtifact = {
 }
 ```
 
-`ToolPart` 读 `artifact.status`；`locations[0]` 可点开文件，`edit`/`write` 可开 Diff。
+`ToolRow` 从 `artifact` + `argsText` 纯函数推导卡片：`read` → ReadBlock（行号 gutter），`write`/`edit` → DiffBlock（unified `-/+`），其余 generic JSON/output。路径可点开文件。
 
 ### 5.2 适配约束（来自 assistant-ui）
 
@@ -246,7 +245,8 @@ type ToolArtifact = {
 | `vibefly-ui/src/chatMessageAdapter.ts`       | `convertChatMessage`、`ToolArtifact`                                                               |
 | `vibefly-ui/src/chat/useChatController.ts`   | `applyBatch`、`sendMessage`、`stopOrCancel`、权限 / 输入 resolve                                   |
 | `vibefly-ui/src/chat/AssistantChat.tsx`      | `useExternalStoreRuntime`、`PermissionCard`、`InputCard`                                           |
-| `vibefly-ui/src/chat/MessageParts.tsx`       | `ChatMessageView`、`MarkdownText`、`ReasoningPart`、`ToolPart`、`NoticePart`                       |
+| `vibefly-ui/src/chat/MessageParts.tsx`       | `ChatMessageView`、`MarkdownText`、`ReasoningPart`、`NoticePart`                                    |
+| `vibefly-ui/src/chat/tools/`                 | `ToolPart`、`ToolRow`、`ReadBlock`、`DiffBlock`、`presentRead` / `presentDiff`                     |
 | `vibefly-ui/src/chatMessageAdapter.test.ts`  | 映射单测（权威）                                                                                   |
 | `vibefly-ui/src/chat/chatEventState.test.ts` | reducer 单测                                                                                       |
 
@@ -269,7 +269,7 @@ i18n：`public/locales/{en,zh}/chat.json`。
 |--------------------------------|---------------------------------------------------------------------------------------------------|
 | 工具后文本顺序                 | delta 仍 append 到**先前**的 text part，视觉上可能出现在 tool **上方**                            |
 | 中途 `messageStatus: complete` | 中间 `message_end`（如 `stopReason: "toolUse"`）会关光标，但 thread `isRunning` 仍由 summary 维持 |
-| 历史丢 metadata                | 重开会话后 tool 无 `locations`、无 Diff；中断的工具也可能显示 completed                           |
+| 中断工具状态                   | 历史回放里中断的工具也可能显示 completed（无独立 aborted 态）                                     |
 | `queue` 事件                   | reducer no-op                                                                                     |
 | `disconnected`                 | 无生产者；断线靠 `rpc/agent.ts` 的 peer 轮询与重连                                                |
 | `batch.sequence`               | 未做缺口检测 / 重同步                                                                             |
@@ -282,5 +282,5 @@ i18n：`public/locales/{en,zh}/chat.json`。
 1. 改 wire 形状 → `uiagent-shared` types + contracts → `pnpm --filter @vibefly/uiagent-shared run generate`。
 2. 改 pi 映射 → `chatSessionRegistry.ts`（阶段 A）；改 UI 合并 → `chatEventState.ts`（阶段 B）；改 assistant-ui 形态 →
    `chatMessageAdapter.ts` + `MessageParts.tsx`（阶段 C）。
-3. 同步更新本页与对应单测：`chatMessageAdapter.test.ts`、`chatEventState.test.ts`。
+3. 同步更新本页与对应单测：`chatMessageAdapter.test.ts`、`chatEventState.test.ts`、`chat/tools/present*.test.ts`。
 4. 不要把 UI↔Agent 契约镜像到 Kotlin；不要改上游 pi 源码。

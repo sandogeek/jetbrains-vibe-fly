@@ -545,7 +545,7 @@ export class ChatSessionRegistry {
   }
 
   #snapshot(record: SessionRecord): ChatSessionSnapshot {
-    const messages = record.runtime ? toChatMessages(record.runtime.session.messages) : []
+    const messages = record.runtime ? toChatMessages(record.runtime.session.messages, record.projectRoot) : []
     record.summary.messageCount = messages.length
     return {summary: {...record.summary}, messages}
   }
@@ -558,7 +558,7 @@ export class ChatSessionRegistry {
     record.summary.title = firstLine(session.sessionName ?? record.summary.title)
     record.summary.modelId = session.model ? modelKey(session.model) : undefined
     record.summary.thinkingLevel = session.thinkingLevel ?? "off"
-    record.summary.messageCount = toChatMessages(session.messages).length
+    record.summary.messageCount = toChatMessages(session.messages, record.projectRoot).length
     record.summary.updatedAt = now()
   }
 

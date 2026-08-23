@@ -38,3 +38,20 @@ export function textFromContent(content: unknown): string {
     .filter(Boolean)
     .join("\n")
 }
+
+/**
+ * Flatten a pi tool result into the string the UI cards render.
+ * Structured `{ content, details }` payloads must not be JSON-dumped.
+ */
+export function toolResultText(result: unknown): string {
+  if (typeof result === "string") return result
+  if (result && typeof result === "object") {
+    if ("content" in result) {
+      const content = (result as {content: unknown}).content
+      if (typeof content === "string") return content
+      if (Array.isArray(content)) return textFromContent(content)
+    }
+    if (Array.isArray(result)) return textFromContent(result)
+  }
+  return safeJson(result)
+}

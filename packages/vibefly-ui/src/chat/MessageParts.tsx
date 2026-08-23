@@ -1,7 +1,6 @@
 import {
     type DataMessagePartProps,
     MessagePrimitive,
-    type ToolCallMessagePartProps,
     useAuiState,
     useThreadViewportStore,
 } from "@assistant-ui/react"
@@ -11,21 +10,18 @@ import {code} from "@streamdown/code"
 import {
     AlertTriangle,
     Brain,
-    Check,
     ChevronDown,
-    GitCompareArrows,
-    LoaderCircle,
     RotateCcw,
-    Wrench,
 } from "lucide-react"
-import {createContext, useCallback, useContext, useState} from "react"
+import {useCallback, useState} from "react"
 
 import remarkBreaks from "remark-breaks"
 import {defaultRemarkPlugins, type StreamdownProps} from "streamdown"
 
 import {useAppTranslation} from "../i18n"
-import type {ToolArtifact} from "../chatMessageAdapter"
 import {runningShimmerClassName} from "../lib/shimmer"
+import {ChatMessageActionsContext, type ChatMessageActions} from "./chatMessageActions"
+import {ToolPart} from "./tools/ToolPart"
 
 /** Preserve Streamdown GFM (tables, strikethrough, task lists) while adding soft breaks. */
 const remarkPlugins: NonNullable<StreamdownProps["remarkPlugins"]> = [
@@ -33,20 +29,8 @@ const remarkPlugins: NonNullable<StreamdownProps["remarkPlugins"]> = [
     remarkBreaks,
 ]
 
-export type ChatMessageActions = {
-    onOpenLocation: (path: string, line?: number) => void
-    onShowDiff: (path: string) => void
-}
-
-const noopActions: ChatMessageActions = {
-    onOpenLocation: () => undefined,
-    onShowDiff: () => undefined,
-}
-
-export const ChatMessageActionsContext = createContext<ChatMessageActions>(noopActions)
-
-/** Survives part remounts while a tool call is still streaming updates. */
-const toolExpandedById = new Map<string, boolean>()
+export type {ChatMessageActions}
+export {ChatMessageActionsContext}
 
 /** Stop stick-to-bottom so expand/collapse + streaming do not yank the viewport. */
 function useReleaseStickToBottom() {
@@ -159,94 +143,6 @@ function NoticePart({data}: DataMessagePartProps<NoticeData>) {
             {data.text}
         </div>
     )
-}
-
-function ToolPart(part: ToolCallMessagePartProps) {
-    const {t} = useAppTranslation("chat")
-    const {onOpenLocation, onShowDiff} = useContext(ChatMessageActionsContext)
-    const releaseStickToBottom = useReleaseStickToBottom()
-    const [expanded, setExpanded] = useState(
-        () => toolExpandedById.get(part.toolCallId) ?? false,
-    )
-    const artifact = (part.artifact ?? {}) as ToolArtifact
-    const status = artifact.status ?? (part.result === undefined ? "running" : "completed")
-    const location = artifact.locations?.[0]
-    return (
-        <div className={`tool-part ${status === "failed" ? "failed" : ""}`}>
-            <button
-                className="tool-summary"
-                onClick={() => {
-                    releaseStickToBottom()
-                    setExpanded((value) => {
-                        const next = !value
-                        toolExpandedById.set(part.toolCallId, next)
-                        return next
-                    })
-                }}
-            >
-                <span className="tool-icon">
-                    {status === "running" || status === "pending" ? (
-                        <LoaderCircle size={13} className="spin"/>
-                    ) : status === "failed" ? (
-                        <AlertTriangle size={13}/>
-                    ) : (
-                        <Check size={13}/>
-                    )}
-                </span>
-                <Wrench size={14}/>
-                <strong
-                    className={
-                        status === "running" || status === "pending" ? runningShimmerClassName : undefined
-                    }
-                >
-                    {part.toolName}
-                </strong>
-                {location ? (
-                    <span
-                        className="tool-path"
-                        title={location.path}
-                        onClick={(event) => {
-                            event.stopPropagation()
-                            onOpenLocation(location.path, location.line)
-                        }}
-                    >
-                        {location.path}
-                    </span>
-                ) : null}
-                {artifact.output && !expanded ? (
-                    <span className="tool-result-short">{artifact.output.split("\n", 1)[0]}</span>
-                ) : null}
-                {(part.toolName === "edit" || part.toolName === "write") && location ? (
-                    <span
-                        className="tool-diff"
-                        role="button"
-                        title={t("chat:showDiff")}
-                        onClick={(event) => {
-                            event.stopPropagation()
-                            onShowDiff(location.path)
-                        }}
-                    >
-                        <GitCompareArrows size={13}/>
-                    </span>
-                ) : null}
-                <ChevronDown size={14} className={expanded ? "rotated" : ""}/>
-            </button>
-            {expanded ? (
-                <div className="tool-detail">
-                    {part.argsText ? <pre>{formatJson(part.argsText)}</pre> : null}
-                    {artifact.output ? <pre>{artifact.output}</pre> : null}
-                </div>
-            ) : null}
-        </div>
-    )
-}
-
-function formatJson(value: string): string {
-    try {
-        return JSON.stringify(JSON.parse(value), null, 2)
-    } catch {
-        return value
-    }
 }
 
 const userMessagePartsComponents = {
