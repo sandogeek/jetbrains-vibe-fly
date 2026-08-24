@@ -24,7 +24,7 @@ session.subscribe(AgentSessionEvent)
                                                    ▼  C. convertChatMessage
                                                    │     ChatMessage → ThreadMessageLike
                                                    ▼  useExternalStoreRuntime + MessagePrimitive
-                                                      MarkdownText / ReasoningPart / ToolRow / NoticePart
+                                                      MarkdownText / GroupedParts reasoning 面板 / ToolRow / NoticePart
 ```
 
 | 阶段                     | 位置                           | 核心符号                                                      | 产出                                  |
@@ -171,7 +171,7 @@ Runtime：`AssistantChat` 使用 `useExternalStoreRuntime<ChatMessage>({ convert
 | `ChatPart` / 字段         | assistant-ui                                                                        | 渲染组件                                                      |
 |---------------------------|-------------------------------------------------------------------------------------|---------------------------------------------------------------|
 | `text`                    | `{ type: "text", text }`                                                            | `MarkdownText`（Streamdown）                                  |
-| `thinking`                | `{ type: "reasoning", text }`                                                       | `ReasoningPart`                                               |
+| `thinking`                | `{ type: "reasoning", text }`                                                       | 官方 reasoning 面板（`GroupedParts` + Streamdown）            |
 | `tool`                    | `{ type: "tool-call", toolCallId, toolName, argsText, artifact, result?, isError }` | `ToolRow`（ReadBlock / DiffBlock / TerminalBlock / SearchBlock / generic） |
 | `notice`                  | `{ type: "data", name: "vibefly-notice", data: { level, text } }`                   | `NoticePart`                                                  |
 | `role: "user"`            | `role: "user"`，**无** status                                                       | 纯文本，不走 markdown                                         |
@@ -245,12 +245,13 @@ type ToolArtifact = {
 | `vibefly-ui/src/chatMessageAdapter.ts`       | `convertChatMessage`、`ToolArtifact`                                                               |
 | `vibefly-ui/src/chat/useChatController.ts`   | `applyBatch`、`sendMessage`、`stopOrCancel`、权限 / 输入 resolve                                   |
 | `vibefly-ui/src/chat/AssistantChat.tsx`      | `useExternalStoreRuntime`、`PermissionCard`、`InputCard`                                           |
-| `vibefly-ui/src/chat/MessageParts.tsx`       | `ChatMessageView`、`MarkdownText`、`ReasoningPart`、`NoticePart`                                    |
+| `vibefly-ui/src/chat/MessageParts.tsx`       | `ChatMessageView`、`AssistantMessageParts`、`MarkdownText`、`NoticePart`                            |
+| `vibefly-ui/src/components/assistant-ui/reasoning.tsx` | 官方 reasoning 面板（`ReasoningRoot` / `Trigger` / `Content` / `Text`）                    |
 | `vibefly-ui/src/chat/tools/`                 | `ToolPart`、`ToolRow`、`ReadBlock`、`DiffBlock`、`TerminalBlock`、`SearchBlock`、presenters         |
 | `vibefly-ui/src/chatMessageAdapter.test.ts`  | 映射单测（权威）                                                                                   |
 | `vibefly-ui/src/chat/chatEventState.test.ts` | reducer 单测                                                                                       |
 
-样式：`packages/vibefly-ui/src/styles/messages.css`（`.streaming-caret`、`.tool-part`、`.thinking-block`、`.notice-part`
+样式：`packages/vibefly-ui/src/styles/messages.css`（`.streaming-caret`、`.tool-part`、`.reasoning-markdown`、`.notice-part`
 等）。  
 i18n：`public/locales/{en,zh}/chat.json`。
 

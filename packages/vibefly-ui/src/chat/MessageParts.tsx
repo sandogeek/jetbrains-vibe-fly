@@ -1,23 +1,24 @@
 import {
     type DataMessagePartProps,
+    groupPartByType,
     MessagePrimitive,
+    type ToolCallMessagePartProps,
     useAuiState,
-    useThreadViewportStore,
 } from "@assistant-ui/react"
 import {StreamdownTextPrimitive} from "@assistant-ui/react-streamdown"
 import {cjk} from "@streamdown/cjk"
 import {code} from "@streamdown/code"
-import {
-    AlertTriangle,
-    Brain,
-    ChevronDown,
-    RotateCcw,
-} from "lucide-react"
-import {useCallback, useState} from "react"
+import {AlertTriangle, RotateCcw} from "lucide-react"
 
 import remarkBreaks from "remark-breaks"
 import {defaultRemarkPlugins, type StreamdownProps} from "streamdown"
 
+import {
+    ReasoningContent,
+    ReasoningRoot,
+    ReasoningText,
+    ReasoningTrigger,
+} from "../components/assistant-ui/reasoning"
 import {useAppTranslation} from "../i18n"
 import {runningShimmerClassName} from "../lib/shimmer"
 import {ChatMessageActionsContext, type ChatMessageActions} from "./chatMessageActions"
@@ -32,19 +33,9 @@ const remarkPlugins: NonNullable<StreamdownProps["remarkPlugins"]> = [
 export type {ChatMessageActions}
 export {ChatMessageActionsContext}
 
-/** Stop stick-to-bottom so expand/collapse + streaming do not yank the viewport. */
-function useReleaseStickToBottom() {
-    const store = useThreadViewportStore()
-    return useCallback(() => {
-        const writable = store as unknown as {
-            getState: () => { isAtBottom: boolean }
-            setState: (partial: { isAtBottom: boolean }) => void
-        }
-        if (writable.getState().isAtBottom) {
-            writable.setState({isAtBottom: false})
-        }
-    }, [store])
-}
+const assistantPartGroupBy = groupPartByType({
+    reasoning: ["group-reasoning"],
+})
 
 export function ChatMessageView() {
     const {t} = useAppTranslation("chat")
@@ -70,7 +61,7 @@ export function ChatMessageView() {
     return (
         <MessagePrimitive.Root className={`chat-message ${role}`}>
             <div className="assistant-content">
-                <MessagePrimitive.Parts components={assistantMessagePartsComponents}/>
+                <AssistantMessageParts/>
                 {isRunning && !hasVisibleContent ? (
                     <span className={runningShimmerClassName}>
                         {t("chat:generating")}
@@ -91,10 +82,14 @@ function UserText({text}: { text: string }) {
     return <div className="user-message-text">{text}</div>
 }
 
-function MarkdownText() {
+function MarkdownText({
+    containerClassName = "markdown-body",
+}: {
+    containerClassName?: string
+}) {
     return (
         <StreamdownTextPrimitive
-            containerClassName="markdown-body"
+            containerClassName={containerClassName}
             plugins={{code, cjk}}
             remarkPlugins={remarkPlugins}
             controls={{code: true, table: false}}
@@ -109,31 +104,6 @@ function MarkdownText() {
     )
 }
 
-function ReasoningPart({text}: { text: string }) {
-    const {t} = useAppTranslation("chat")
-    const [open, setOpen] = useState(true)
-    const releaseStickToBottom = useReleaseStickToBottom()
-    const isRunning = useAuiState((state) => state.message.status?.type === "running")
-    return (
-        <div className={`thinking-block ${open ? "open" : ""}`}>
-            <button
-                className="thinking-toggle"
-                onClick={() => {
-                    releaseStickToBottom()
-                    setOpen((value) => !value)
-                }}
-            >
-                <Brain size={15}/>
-                <span className={isRunning ? runningShimmerClassName : undefined}>
-                    {t("chat:reasoning")}
-                </span>
-                <ChevronDown size={14}/>
-            </button>
-            {open ? <div className="thinking-content">{text}</div> : null}
-        </div>
-    )
-}
-
 type NoticeData = { level: "info" | "warning" | "error"; text: string }
 
 function NoticePart({data}: DataMessagePartProps<NoticeData>) {
@@ -145,13 +115,41 @@ function NoticePart({data}: DataMessagePartProps<NoticeData>) {
     )
 }
 
-const userMessagePartsComponents = {
-    Text: UserText,
+function AssistantMessageParts() {
+    const {t} = useAppTranslation("chat")
+    return (
+        <MessagePrimitive.GroupedParts groupBy={assistantPartGroupBy}>
+            {({part, children}) => {
+                switch (part.type) {
+                    case "group-reasoning": {
+                        const running = part.status.type === "running"
+                        return (
+                            <ReasoningRoot variant="ghost" streaming={running}>
+                                <ReasoningTrigger active={running} label={t("chat:reasoning")}/>
+                                <ReasoningContent aria-busy={running}>
+                                    <ReasoningText>{children}</ReasoningText>
+                                </ReasoningContent>
+                            </ReasoningRoot>
+                        )
+                    }
+                    case "reasoning":
+                        return <MarkdownText containerClassName="markdown-body reasoning-markdown"/>
+                    case "text":
+                        return <MarkdownText/>
+                    case "tool-call":
+                        return <ToolPart {...(part as ToolCallMessagePartProps)} />
+                    case "data":
+                        return part.name === "vibefly-notice"
+                            ? <NoticePart {...(part as DataMessagePartProps<NoticeData>)} />
+                            : null
+                    default:
+                        return null
+                }
+            }}
+        </MessagePrimitive.GroupedParts>
+    )
 }
 
-const assistantMessagePartsComponents = {
-    Text: MarkdownText,
-    Reasoning: ReasoningPart,
-    tools: {Fallback: ToolPart},
-    data: {by_name: {"vibefly-notice": NoticePart}},
+const userMessagePartsComponents = {
+    Text: UserText,
 }

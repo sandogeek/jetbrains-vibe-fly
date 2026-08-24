@@ -51,62 +51,18 @@
     min-width: 0;
 }
 
-.thinking-block {
-    margin: 0 0 14px;
-    border-left: 2px solid color-mix(in srgb, var(--vf-border) 80%, transparent);
-    border-radius: 0 8px 8px 0;
-}
-
-.thinking-toggle {
-    padding: 4px 10px;
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    border: 0;
-    border-radius: 6px;
-    background: transparent;
-    color: var(--vf-muted);
-    font-size: 12px;
-    cursor: pointer;
-    transition: background 120ms ease, color 120ms ease;
-}
-
-.thinking-toggle .shimmer {
-    color: color-mix(in srgb, var(--vf-muted) 55%, transparent);
-}
-
-.thinking-toggle:hover {
-    background: color-mix(in srgb, var(--vf-surface-raised) 60%, transparent);
-    color: var(--vf-fg);
-}
-
-.thinking-toggle svg:last-child {
-    transition: transform 150ms ease;
-}
-
-.thinking-block.open .thinking-toggle svg:last-child {
-    transform: rotate(180deg);
-}
-
-.thinking-content {
-    margin: 6px 0 0 8px;
-    padding: 12px 14px;
-    border: 1px solid var(--vf-border-soft);
-    border-radius: var(--vf-radius);
-    background: var(--vf-surface-deep);
-    color: var(--vf-muted);
-    font-size: 12px;
-    font-style: italic;
-    line-height: 1.65;
-    white-space: pre-wrap;
-}
-
 .markdown-body {
     color: var(--vf-fg);
     font-size: 13.5px;
     line-height: 1.72;
     overflow-wrap: anywhere;
     letter-spacing: 0.01em;
+}
+
+.markdown-body.reasoning-markdown {
+    color: inherit;
+    font-size: inherit;
+    line-height: inherit;
 }
 
 .markdown-body > :first-child {
