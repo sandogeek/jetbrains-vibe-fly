@@ -79,6 +79,89 @@ describe("toChatMessages history locations", () => {
   })
 })
 
+describe("mapSessionEvent tool updates", () => {
+  test("replaces bash output snapshots while running, then settles", () => {
+    const projectRoot = makeProject()
+    const state = {
+      sessionId: "s1",
+      projectRoot,
+      activeMessageId: "assistant-1",
+      toolLocations: new Map(),
+    }
+    mapSessionEvent(state, {
+      type: "tool_execution_start",
+      toolCallId: "t-bash",
+      toolName: "bash",
+      args: {command: "pnpm test"},
+    } as never)
+
+    const update = mapSessionEvent(state, {
+      type: "tool_execution_update",
+      toolCallId: "t-bash",
+      toolName: "bash",
+      args: {command: "pnpm test"},
+      partialResult: {content: [{type: "text", text: "ok 1"}]},
+    } as never)
+    expect(update.events[0]).toMatchObject({
+      kind: "tool",
+      part: {
+        toolCallId: "t-bash",
+        name: "bash",
+        status: "running",
+        output: "ok 1",
+      },
+    })
+    expect(
+      (update.events[0] as {part: {input?: unknown}}).part.input,
+    ).toBeUndefined()
+
+    const later = mapSessionEvent(state, {
+      type: "tool_execution_update",
+      toolCallId: "t-bash",
+      toolName: "bash",
+      args: {command: "pnpm test"},
+      partialResult: {content: [{type: "text", text: "ok 1\nok 2"}]},
+    } as never)
+    expect(later.events[0]).toMatchObject({
+      part: {output: "ok 1\nok 2", status: "running"},
+    })
+
+    const end = mapSessionEvent(state, {
+      type: "tool_execution_end",
+      toolCallId: "t-bash",
+      toolName: "bash",
+      isError: false,
+      result: {content: [{type: "text", text: "ok 1\nok 2\n\nCommand exited with code 0"}]},
+    } as never)
+    expect(end.events[0]).toMatchObject({
+      part: {
+        status: "completed",
+        output: "ok 1\nok 2\n\nCommand exited with code 0",
+      },
+    })
+  })
+
+  test("emits an update without a prior start when the assistant message is live", () => {
+    const state = {
+      sessionId: "s1",
+      projectRoot: makeProject(),
+      activeMessageId: "assistant-1",
+      toolLocations: new Map(),
+    }
+    const update = mapSessionEvent(state, {
+      type: "tool_execution_update",
+      toolCallId: "orphan",
+      toolName: "bash",
+      args: {command: "echo"},
+      partialResult: "hi",
+    } as never)
+    expect(update.events[0]).toMatchObject({
+      kind: "tool",
+      part: {toolCallId: "orphan", status: "running", output: "hi"},
+    })
+  })
+})
+
 describe("mapSessionEvent tool results", () => {
   test("flattens structured read results and keeps the start-time locations", () => {
     const projectRoot = makeProject()

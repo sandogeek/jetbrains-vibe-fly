@@ -157,6 +157,23 @@ export function mapSessionEvent(
       }],
     }
   }
+  if (event.type === "tool_execution_update") {
+    if (!state.activeMessageId) return {events: []}
+    return {
+      events: [{
+        kind: "tool",
+        sessionId: state.sessionId,
+        messageId: state.activeMessageId,
+        part: {
+          kind: "tool",
+          toolCallId: event.toolCallId,
+          name: event.toolName,
+          status: "running",
+          output: toolResultText(event.partialResult),
+        },
+      }],
+    }
+  }
   if (event.type === "tool_execution_end") {
     // Tool results only attach to an in-flight assistant message; drop if already cleared.
     if (!state.activeMessageId) return {events: []}

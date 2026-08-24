@@ -108,6 +108,9 @@ importers:
       '@vibefly/uiagent-shared':
         specifier: workspace:*
         version: link:../vibefly-uiagent-shared
+      anser:
+        specifier: ^2.3.5
+        version: 2.3.5
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -147,6 +150,9 @@ importers:
       remark-breaks:
         specifier: ^4.0.0
         version: 4.0.0
+      shiki:
+        specifier: ^3.19.0
+        version: 3.23.0
       streamdown:
         specifier: ^2.5.0
         version: 2.5.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(supports-color@7.2.0)
@@ -2193,6 +2199,9 @@ packages:
   agent-base@7.1.4:
     resolution: {integrity: sha512-MnA+YT8fwfJPgBx3m60MNqakm30XOkyIoH1y6huTQvC0PwZG7ki8NacLBcrPbNoo8vEZy7Jpuk7+jMO+CUovTQ==}
     engines: {node: '>= 14'}
+
+  anser@2.3.5:
+    resolution: {integrity: sha512-vcZjxvvVoxTeR5XBNJB38oTu/7eDCZlwdz32N1eNgpyPF7j/Z7Idf+CUwQOkKKpJ7RJyjxgLHCM7vdIK0iCNMQ==}
 
   ansi-styles@4.3.0:
     resolution: {integrity: sha512-zbB9rCJAT1rbjiVDb2hqKFHNYLxgtk8NURxZ3IZwD3F6NtxbXZQCnnSi1Lkx+IDohdPlFp222wVALIheZJQSEg==}
@@ -5875,6 +5884,8 @@ snapshots:
       - supports-color
 
   agent-base@7.1.4: {}
+
+  anser@2.3.5: {}
 
   ansi-styles@4.3.0:
     dependencies:

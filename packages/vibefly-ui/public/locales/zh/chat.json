@@ -57,5 +57,13 @@
   "toolCopy": "复制",
   "toolCopied": "复制成功",
   "toolDiffFooter": "+{{added}} -{{removed}} · {{files}} file(s)",
+  "toolNoOutput": "无输出",
+  "toolNoResults": "无结果",
+  "toolExitCode": "退出码 {{code}}",
+  "toolSignal": "信号 {{signal}}",
+  "toolSearchMatches": "{{shown}} 处匹配 · {{files}} 个文件",
+  "toolSearchMatchesCapped": "显示 {{shown}} / 共 {{total}} 处匹配 · {{files}} 个文件",
+  "toolSearchPaths": "{{shown}} 个路径",
+  "toolSearchPathsCapped": "显示 {{shown}} / 共 {{total}} 个路径",
   "openSettings": "设置"
 }

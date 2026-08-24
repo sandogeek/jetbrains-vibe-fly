@@ -57,5 +57,13 @@
   "toolCopy": "Copy",
   "toolCopied": "Copied",
   "toolDiffFooter": "+{{added}} -{{removed}} · {{files}} file(s)",
+  "toolNoOutput": "No output",
+  "toolNoResults": "No results",
+  "toolExitCode": "Exit {{code}}",
+  "toolSignal": "Signal {{signal}}",
+  "toolSearchMatches": "{{shown}} matches · {{files}} files",
+  "toolSearchMatchesCapped": "Showing {{shown}} / {{total}} matches · {{files}} files",
+  "toolSearchPaths": "{{shown}} paths",
+  "toolSearchPathsCapped": "Showing {{shown}} / {{total}} paths",
   "openSettings": "Settings"
 }

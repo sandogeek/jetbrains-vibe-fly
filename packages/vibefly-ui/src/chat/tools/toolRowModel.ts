@@ -27,6 +27,7 @@ export type ToolRowModel = {
     summary: string
     errorSummary?: string
     state: ToolRowState
+    summaryIsPath: boolean
 }
 export function classifyTool(toolName: string): ToolRowVariant {
     switch (toolName) {
@@ -53,10 +54,11 @@ export function toolRowModel(options: {
     locations?: {path: string; line?: number}[]
     status: "pending" | "running" | "completed" | "failed"
     isError?: boolean
+    commandFailed?: boolean
 }): ToolRowModel {
     const variant = classifyTool(options.toolName)
     const state: ToolRowState =
-        options.isError || options.status === "failed"
+        options.isError || options.status === "failed" || options.commandFailed
             ? "error"
             : options.status === "running" || options.status === "pending"
               ? "running"
@@ -64,8 +66,16 @@ export function toolRowModel(options: {
     const filePath = filePathFromInput(options.input) ?? options.locations?.[0]?.path
     const line = options.locations?.[0]?.line
     const command = variant === "bash" ? stringField(options.input, "command") : undefined
+    const pattern = options.toolName === "grep" || options.toolName === "find"
+        ? stringField(options.input, "pattern")
+        : undefined
     const errorSummary = state === "error" ? firstOutputLine(options.output) : undefined
-    const summary = errorSummary ?? command ?? filePath ?? ""
+    const summary = errorSummary ?? command ?? pattern ?? filePath ?? (options.toolName === "ls" ? "." : "")
+    const summaryIsPath =
+        !errorSummary
+        && !command
+        && !pattern
+        && Boolean(filePath || options.toolName === "ls")
     return {
         variant,
         titleKey: TITLE_KEY_BY_TOOL[options.toolName] ?? "toolCall",
@@ -74,5 +84,6 @@ export function toolRowModel(options: {
         summary,
         errorSummary,
         state,
+        summaryIsPath,
     }
 }

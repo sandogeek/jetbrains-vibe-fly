@@ -5,6 +5,8 @@ import {useAppTranslation} from "../../i18n"
 import {DiffBlock} from "./DiffBlock"
 import type {ToolCard} from "./presentTool"
 import {ReadBlock} from "./ReadBlock"
+import {SearchBlock} from "./SearchBlock"
+import {TerminalBlock} from "./TerminalBlock"
 import type {ToolRowModel, ToolRowVariant} from "./toolRowModel"
 
 /** Survives part remounts while a tool call is still streaming updates. */
@@ -31,12 +33,12 @@ export function ToolRow({
 }: ToolRowProps) {
     const {t} = useAppTranslation("chat")
     const [expanded, setExpanded] = useState(() => toolExpandedById.get(toolCallId) ?? false)
-    const hasCard = card.kind === "read" || card.kind === "diff"
+    const hasCard = card.kind === "read" || card.kind === "diff" || card.kind === "terminal" || card.kind === "search"
     const expandable = hasCard || Boolean(output) || (model.state !== "running" && Boolean(argsText))
     const open = expanded && expandable
     const failureLine = model.state === "error" ? model.errorSummary : undefined
     const summaryText = failureLine ?? model.summary
-    const showFileLink = Boolean(model.filePath) && !failureLine && Boolean(summaryText)
+    const showFileLink = model.summaryIsPath && Boolean(model.filePath) && !failureLine && Boolean(summaryText)
 
     const toggleExpand = () => {
         if (!expandable) return
@@ -116,6 +118,10 @@ export function ToolRow({
                 <div className="tool-body">
                     {card.kind === "read" ? <ReadBlock read={card.read} /> : null}
                     {card.kind === "diff" ? <DiffBlock diffs={card.diffs} /> : null}
+                    {card.kind === "terminal" ? <TerminalBlock terminal={card.terminal} /> : null}
+                    {card.kind === "search" ? (
+                        <SearchBlock search={card.search} onOpenLocation={onOpenLocation} />
+                    ) : null}
                     {card.kind === "generic" ? (
                         <div className="tool-detail">
                             {argsText ? <pre>{formatJson(argsText)}</pre> : null}

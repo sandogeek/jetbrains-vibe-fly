@@ -6,6 +6,7 @@ import {ChatMessageActionsContext} from "../chatMessageActions"
 import {presentTool} from "./presentTool"
 import {ToolRow} from "./ToolRow"
 import {toolRowModel} from "./toolRowModel"
+import {bashCommandFailed} from "./presentBash"
 
 export function ToolPart(part: ToolCallMessagePartProps) {
     const {onOpenLocation} = useContext(ChatMessageActionsContext)
@@ -15,6 +16,8 @@ export function ToolPart(part: ToolCallMessagePartProps) {
     const input = toolInputFromPart(part)
     const output = artifact.output
     const isError = Boolean(part.isError) || status === "failed"
+    const running = status === "running" || status === "pending"
+    const card = presentTool(part.toolName, input, output, isError, running)
     const model = toolRowModel({
         toolName: part.toolName,
         input,
@@ -22,8 +25,8 @@ export function ToolPart(part: ToolCallMessagePartProps) {
         locations: artifact.locations,
         status,
         isError,
+        commandFailed: card.kind === "terminal" && !running && bashCommandFailed(card.terminal),
     })
-    const card = presentTool(part.toolName, input, output, isError)
     return (
         <ToolRow
             toolCallId={part.toolCallId}

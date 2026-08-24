@@ -105,7 +105,7 @@ type ChatEventBatch = { sessionId: string; sequence: number; events: ChatEvent[]
 | `message_update` + `thinking_delta`                                    | `partDelta{partKind:"thinking"}`                 |                                                                |
 | `message_update` 其它（`*_start`/`*_end`/`toolcall_*`/`done`/`error`） | *丢弃*                                           | 工具参数不流式推 UI                                            |
 | `tool_execution_start`                                                 | `tool`，`status: "running"`                      | `input = args`；`locations` 从 path 类参数推导                 |
-| `tool_execution_update`                                                | *丢弃*                                           | 无 partial tool output                                         |
+| `tool_execution_update`                                                | `tool`，`status: "running"`                      | `output` **全量覆盖**（pi bash 100ms 截断尾快照，不拼接）；不带 input/locations |
 | `tool_execution_end`                                                   | `tool`，`completed` / `failed`                   | `output = toolResultText(result)`（结构化 `{content,details}` 收成文本） |
 | `message_end`（assistant）                                             | `messageStatus`                                  | 一次 run 内可能多次                                            |
 | `agent_end`                                                            | *仅清* `activeMessageId`                         |                                                                |
@@ -172,7 +172,7 @@ Runtime：`AssistantChat` 使用 `useExternalStoreRuntime<ChatMessage>({ convert
 |---------------------------|-------------------------------------------------------------------------------------|---------------------------------------------------------------|
 | `text`                    | `{ type: "text", text }`                                                            | `MarkdownText`（Streamdown）                                  |
 | `thinking`                | `{ type: "reasoning", text }`                                                       | `ReasoningPart`                                               |
-| `tool`                    | `{ type: "tool-call", toolCallId, toolName, argsText, artifact, result?, isError }` | `ToolRow`（`tools.Fallback` → ReadBlock / DiffBlock / generic） |
+| `tool`                    | `{ type: "tool-call", toolCallId, toolName, argsText, artifact, result?, isError }` | `ToolRow`（ReadBlock / DiffBlock / TerminalBlock / SearchBlock / generic） |
 | `notice`                  | `{ type: "data", name: "vibefly-notice", data: { level, text } }`                   | `NoticePart`                                                  |
 | `role: "user"`            | `role: "user"`，**无** status                                                       | 纯文本，不走 markdown                                         |
 | `role: "assistant"`       | `role: "assistant"` + status                                                        | assistant parts                                               |
@@ -194,7 +194,7 @@ type ToolArtifact = {
 }
 ```
 
-`ToolRow` 从 `artifact` + `argsText` 纯函数推导卡片：`read` → ReadBlock（行号 gutter），`write`/`edit` → DiffBlock（unified `-/+`），其余 generic JSON/output。路径可点开文件。
+`ToolRow` 从 `artifact` + `argsText` 纯函数推导卡片：`read` → ReadBlock（行号 gutter + shiki），`write`/`edit` → DiffBlock，`bash` → TerminalBlock（ANSI + StateDot，running 可流式），`grep`/`find`/`ls` → SearchBlock，其余 generic。路径可点开文件。
 
 ### 5.2 适配约束（来自 assistant-ui）
 
@@ -246,7 +246,7 @@ type ToolArtifact = {
 | `vibefly-ui/src/chat/useChatController.ts`   | `applyBatch`、`sendMessage`、`stopOrCancel`、权限 / 输入 resolve                                   |
 | `vibefly-ui/src/chat/AssistantChat.tsx`      | `useExternalStoreRuntime`、`PermissionCard`、`InputCard`                                           |
 | `vibefly-ui/src/chat/MessageParts.tsx`       | `ChatMessageView`、`MarkdownText`、`ReasoningPart`、`NoticePart`                                    |
-| `vibefly-ui/src/chat/tools/`                 | `ToolPart`、`ToolRow`、`ReadBlock`、`DiffBlock`、`presentRead` / `presentDiff`                     |
+| `vibefly-ui/src/chat/tools/`                 | `ToolPart`、`ToolRow`、`ReadBlock`、`DiffBlock`、`TerminalBlock`、`SearchBlock`、presenters         |
 | `vibefly-ui/src/chatMessageAdapter.test.ts`  | 映射单测（权威）                                                                                   |
 | `vibefly-ui/src/chat/chatEventState.test.ts` | reducer 单测                                                                                       |
 

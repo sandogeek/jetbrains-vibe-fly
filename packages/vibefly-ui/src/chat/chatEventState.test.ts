@@ -170,6 +170,47 @@ describe("applyChatEvent", () => {
         expect(result.effects.refreshPaths).toEqual(["src/App.tsx"])
     })
 
+    test("bash updates replace output without dropping start-time input", () => {
+        let result = applyChatEvent(
+            [tab("one")],
+            {
+                kind: "tool",
+                sessionId: "one",
+                messageId: "assistant-1",
+                part: {
+                    kind: "tool",
+                    toolCallId: "bash-1",
+                    name: "bash",
+                    status: "running",
+                    input: {command: "pnpm test"},
+                },
+            },
+            "one",
+        )
+        result = applyChatEvent(
+            result.tabs,
+            {
+                kind: "tool",
+                sessionId: "one",
+                messageId: "assistant-1",
+                part: {
+                    kind: "tool",
+                    toolCallId: "bash-1",
+                    name: "bash",
+                    status: "running",
+                    output: "ok 1",
+                },
+            },
+            "one",
+        )
+        const tool = result.tabs[0]!.messages[0]!.parts.find((part) => part.kind === "tool")
+        expect(tool).toMatchObject({
+            status: "running",
+            output: "ok 1",
+            input: {command: "pnpm test"},
+        })
+    })
+
     test("applies turn completion, release, and disconnected effects", () => {
         const completed = applyChatEvent(
             [tab("one"), tab("two")],

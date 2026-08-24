@@ -27,6 +27,17 @@
     --vf-shimmer-text: color-mix(in srgb, currentColor 28%, white);
     --vf-shimmer-skeleton: color-mix(in srgb, var(--vf-fg) 16%, transparent);
     --vf-shimmer-title: color-mix(in srgb, var(--vf-accent) 42%, white);
+    --shiki-foreground: var(--vf-fg);
+    --shiki-background: var(--vf-surface-deep);
+    --shiki-token-constant: var(--vf-blue);
+    --shiki-token-string: var(--vf-accent);
+    --shiki-token-comment: var(--vf-muted);
+    --shiki-token-keyword: var(--vf-warning);
+    --shiki-token-parameter: var(--vf-fg);
+    --shiki-token-function: var(--vf-blue);
+    --shiki-token-string-expression: var(--vf-accent);
+    --shiki-token-punctuation: var(--vf-muted);
+    --shiki-token-link: var(--vf-blue);
 }
 
 html[data-jb-theme="light"] {

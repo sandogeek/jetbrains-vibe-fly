@@ -1,9 +1,10 @@
-import {useCallback, useMemo, useState} from "react"
+import {useCallback, useMemo, useState, useSyncExternalStore} from "react"
 
 import {useAppTranslation} from "../../i18n"
 import {writeClipboard} from "./clipboard"
 import {CHAT_CARD_MAX_LINES, splitCapped} from "./contentLines"
 import type {ReadCardModel} from "./presentRead"
+import {highlightLines, highlighterGeneration, subscribeHighlighter} from "./highlight"
 
 export type ReadBlockProps = {
     read: ReadCardModel
@@ -15,6 +16,11 @@ export function ReadBlock({read, maxLines = CHAT_CARD_MAX_LINES}: ReadBlockProps
     const [expanded, setExpanded] = useState(false)
     const [copied, setCopied] = useState(false)
     const raw = useMemo(() => read.lines.map((line) => line.text).join("\n"), [read.lines])
+    const loaded = useSyncExternalStore(subscribeHighlighter, highlighterGeneration, highlighterGeneration)
+    const highlighted = useMemo(
+        () => highlightLines(raw, read.lang),
+        [raw, read.lang, loaded],
+    )
     const windowed = read.lines.length < read.totalLines
     const {head, tail, hidden} = splitCapped(read.lines, maxLines, expanded)
 
@@ -46,12 +52,7 @@ export function ReadBlock({read, maxLines = CHAT_CARD_MAX_LINES}: ReadBlockProps
                 </div>
             </div>
             <div className="read-body">
-                {head.map((line) => (
-                    <div key={line.number} className="read-line">
-                        <span className="read-gutter" aria-hidden>{line.number}</span>
-                        <span className="read-content">{line.text}</span>
-                    </div>
-                ))}
+                {head.map((line, index) => renderReadLine(line, highlighted?.[index]))}
                 {hidden > 0 ? (
                     <button
                         type="button"
@@ -62,13 +63,29 @@ export function ReadBlock({read, maxLines = CHAT_CARD_MAX_LINES}: ReadBlockProps
                         {expanded ? t("chat:toolCollapse") : `… ${t("chat:toolMoreLines", {count: hidden})}`}
                     </button>
                 ) : null}
-                {tail.map((line) => (
-                    <div key={line.number} className="read-line">
-                        <span className="read-gutter" aria-hidden>{line.number}</span>
-                        <span className="read-content">{line.text}</span>
-                    </div>
-                ))}
+                {tail.map((line, index) => {
+                    const lineIndex = read.lines.length - tail.length + index
+                    return renderReadLine(line, highlighted?.[lineIndex])
+                })}
             </div>
+        </div>
+    )
+}
+
+function renderReadLine(
+    line: {number: number; text: string},
+    spans: {text: string; style?: {color?: string}}[] | undefined,
+) {
+    return (
+        <div key={line.number} className="read-line">
+            <span className="read-gutter" aria-hidden>{line.number}</span>
+            <span className="read-content">
+                {spans
+                    ? spans.map((span, index) => (
+                        <span key={index} style={span.style}>{span.text}</span>
+                    ))
+                    : line.text}
+            </span>
         </div>
     )
 }
