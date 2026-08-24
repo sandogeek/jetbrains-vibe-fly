@@ -194,7 +194,7 @@ type ToolArtifact = {
 }
 ```
 
-`ToolRow` 从 `artifact` + `argsText` 纯函数推导卡片：`read` → ReadBlock（行号 gutter + shiki），`write`/`edit` → DiffBlock，`bash` → TerminalBlock（ANSI + StateDot，running 可流式），`grep`/`find`/`ls` → SearchBlock，其余 generic。路径可点开文件。
+`ToolRow` 从 `artifact` + `argsText` 纯函数推导卡片：`read` → ReadBlock（行号 gutter + shiki），`write`/`edit` → DiffBlock，`bash` → 官方 TerminalBlock + ANSI 适配（running 可流式），`grep`/`find`/`ls` → SearchBlock，其余 generic。路径可点开文件。
 
 ### 5.2 适配约束（来自 assistant-ui）
 
@@ -248,7 +248,7 @@ type ToolArtifact = {
 | `vibefly-ui/src/chat/MessageParts.tsx`       | `ChatMessageView`、`AssistantMessageParts`、`MarkdownText`、`NoticePart`                            |
 | `vibefly-ui/src/chat/tools/ToolTimelineGroup.tsx` | 连续 tool-call 的 `ToolTimeline` 摘要壳（单工具不套）                                        |
 | `vibefly-ui/src/chat/tools/toolTimelineModel.ts` | verb / chip / 文件 +/- 统计                                                                     |
-| `vibefly-ui/src/components/elements/`        | 官方 elements：`tool-timeline`、`surfaces`、`range`（Radix + JCEF shimmer）                      |
+| `vibefly-ui/src/components/elements/`        | 官方 elements：`tool-timeline`、`terminal-block`、`surfaces`、`range`（Radix + JCEF shimmer）  |
 | `vibefly-ui/src/components/assistant-ui/reasoning.tsx` | 官方 reasoning 面板（`ReasoningRoot` / `Trigger` / `Content` / `Text`）                    |
 | `vibefly-ui/src/chat/tools/`                 | `ToolPart`、`ToolRow`、`ReadBlock`、`DiffBlock`、`TerminalBlock`、`SearchBlock`、presenters         |
 | `vibefly-ui/src/chatMessageAdapter.test.ts`  | 映射单测（权威）                                                                                   |

@@ -676,7 +676,6 @@
     font-family: var(--font-mono);
 }
 
-.terminal-block,
 .search-block {
     position: relative;
     margin: 4px 0 4px 4px;
@@ -686,59 +685,23 @@
     color: var(--vf-fg);
 }
 
-.terminal-banner,
 .search-banner {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 8px;
     padding: 9px 14px;
     min-width: 0;
 }
 
-.terminal-prompt {
-    flex: none;
-    color: var(--vf-muted);
-    font-family: var(--font-mono);
-}
-
-.terminal-command {
-    min-width: 0;
-    flex: 1 1 auto;
-    overflow: hidden;
-    color: var(--vf-fg);
-    font-family: var(--font-mono);
-    font-size: 13px;
-    line-height: 18px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.terminal-pill {
-    flex: none;
-    color: var(--vf-danger);
-    font-size: 12px;
-    line-height: 18px;
-}
-
-.terminal-body,
 .search-body {
     overflow-x: auto;
     font-family: var(--font-mono);
     font-size: 13px;
     line-height: 22px;
-}
-
-.terminal-body {
-    max-height: 224px;
-    overflow-y: auto;
     padding: 0 14px 12px;
 }
 
-.search-body {
-    padding: 0 14px 12px;
-}
-
-.terminal-line,
 .search-match,
 .search-path {
     min-height: 22px;
@@ -746,13 +709,8 @@
     white-space: pre;
 }
 
-.terminal-empty,
 .search-empty {
     color: var(--vf-muted);
-}
-
-.search-banner {
-    justify-content: space-between;
 }
 
 .search-summary {
@@ -822,55 +780,6 @@
     color: var(--vf-muted);
     font-size: 12px;
     line-height: 18px;
-}
-
-.state-dot {
-    position: relative;
-    display: inline-block;
-    flex: none;
-}
-
-.state-dot::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    border-radius: 50%;
-    background: currentColor;
-    opacity: 0.1;
-}
-
-.state-dot::after {
-    content: "";
-    position: absolute;
-    inset: 20%;
-    border-radius: 50%;
-    background: currentColor;
-}
-
-.state-dot[data-state="done"] {
-    color: var(--vf-accent);
-}
-
-.state-dot[data-state="error"] {
-    color: var(--vf-danger);
-}
-
-.state-dot-matrix {
-    flex: none;
-    color: var(--vf-blue);
-}
-
-.state-dot-cell {
-    fill: currentColor;
-    opacity: 0.15;
-    animation: vf-state-dot-chase 1s infinite;
-}
-
-@keyframes vf-state-dot-chase {
-    0%, 12.4% { opacity: 1; }
-    12.5%, 24.9% { opacity: 0.6; }
-    25%, 37.4% { opacity: 0.35; }
-    37.5%, 100% { opacity: 0.15; }
 }
 
 .streaming-caret {

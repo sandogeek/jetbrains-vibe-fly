@@ -1,24 +1,32 @@
-import {useCallback, useLayoutEffect, useMemo, useRef, useState} from "react"
+import {useCallback, useMemo, useState, type ReactNode} from "react"
 
+import {TerminalBlock as ElementsTerminalBlock} from "../../components/elements/terminal-block"
 import {useAppTranslation} from "../../i18n"
 import {ansiLineIsEmpty, parseAnsiLines, type AnsiLine} from "./ansi"
 import {writeClipboard} from "./clipboard"
 import type {BashCardModel} from "./presentBash"
-import {StateDot, type StateDotState} from "./StateDot"
 
 export function TerminalBlock({terminal}: {terminal: BashCardModel}) {
     const {t} = useAppTranslation("chat")
     const [copied, setCopied] = useState(false)
-    const bodyRef = useRef<HTMLDivElement>(null)
-    const stickToBottomRef = useRef(true)
     const rawOutput = terminal.output ?? ""
-    const lines = useMemo(() => parseAnsiLines(rawOutput), [rawOutput])
-    const visuallyEmpty = lines.every((line) => ansiLineIsEmpty(line))
-    const settled = !terminal.running
+    const ansiLines = useMemo(() => parseAnsiLines(rawOutput), [rawOutput])
+    const visuallyEmpty = ansiLines.every((line) => ansiLineIsEmpty(line))
+    const done = !terminal.running
     const failed = terminal.signal !== undefined || (terminal.exitCode !== undefined && terminal.exitCode !== 0)
-    const dotState: StateDotState = terminal.running ? "ongoing" : failed ? "error" : "done"
-    const showCopy = settled && !visuallyEmpty
-    const showPill = settled && failed
+    const lines = useMemo((): readonly ReactNode[] => {
+        if (visuallyEmpty) {
+            return done
+                ? [<span key="empty" className="text-foreground/40">{t("chat:toolNoOutput")}</span>]
+                : []
+        }
+        return ansiLines.map((line) => renderAnsiLine(line))
+    }, [ansiLines, done, t, visuallyEmpty])
+    const statusLabel = failed
+        ? (terminal.signal
+            ? t("chat:toolSignal", {signal: terminal.signal})
+            : t("chat:toolExitCode", {code: terminal.exitCode}))
+        : `exit ${terminal.exitCode ?? 0}`
 
     const onCopy = useCallback(() => {
         if (copied || !rawOutput) return
@@ -29,53 +37,25 @@ export function TerminalBlock({terminal}: {terminal: BashCardModel}) {
         })
     }, [copied, rawOutput])
 
-    const onScroll = () => {
-        const element = bodyRef.current
-        if (!element) return
-        stickToBottomRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < 24
-    }
-
-    useLayoutEffect(() => {
-        const element = bodyRef.current
-        if (!element || !stickToBottomRef.current) return
-        element.scrollTop = element.scrollHeight
-    }, [rawOutput, terminal.running])
-
     return (
-        <div className={`terminal-block${terminal.running ? " running" : ""}`}>
-            <div className="terminal-banner">
-                <StateDot state={dotState} />
-                <span className="terminal-prompt">$</span>
-                <span className="terminal-command" title={terminal.command}>{terminal.command}</span>
-                {showPill ? (
-                    <span className="terminal-pill">
-                        {terminal.signal
-                            ? t("chat:toolSignal", {signal: terminal.signal})
-                            : t("chat:toolExitCode", {code: terminal.exitCode})}
-                    </span>
-                ) : null}
-                {showCopy ? (
-                    <button type="button" className="tool-copy" onClick={onCopy}>
-                        {copied ? t("chat:toolCopied") : t("chat:toolCopy")}
-                    </button>
-                ) : null}
-            </div>
-            {settled || !visuallyEmpty ? (
-                <div className="terminal-body" ref={bodyRef} onScroll={onScroll}>
-                    {visuallyEmpty ? (
-                        <div className="terminal-empty">{t("chat:toolNoOutput")}</div>
-                    ) : (
-                        lines.map((line, index) => (
-                            <div key={index} className="terminal-line">{renderAnsiLine(line)}</div>
-                        ))
-                    )}
-                </div>
-            ) : null}
-        </div>
+        <ElementsTerminalBlock
+            command={terminal.command}
+            lines={lines}
+            visibleCount={lines.length}
+            done={done}
+            failed={done && failed}
+            statusLabel={statusLabel}
+            variant="paper"
+            headerActions={done && !visuallyEmpty ? (
+                <button type="button" className="tool-copy" onClick={onCopy}>
+                    {copied ? t("chat:toolCopied") : t("chat:toolCopy")}
+                </button>
+            ) : undefined}
+        />
     )
 }
 
-function renderAnsiLine(line: AnsiLine) {
+function renderAnsiLine(line: AnsiLine): ReactNode {
     if (line.length === 0) return "\n"
     return line.map((span, index) => (
         span.style
