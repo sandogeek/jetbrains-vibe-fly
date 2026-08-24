@@ -26,6 +26,26 @@ export function firstOutputLine(output: string | undefined): string | undefined 
     const line = output.split(/\r?\n/, 1)[0]?.trim()
     return line || undefined
 }
+
+/** Last path segment, for timeline chips and file stats. */
+export function fileNameFromPath(filePath: string): string {
+    const trimmed = filePath.replace(/[\\/]+$/, "")
+    const baseName = trimmed.split(/[\\/]/).pop()
+    return baseName || filePath
+}
+
+/** Prefer parsed `args`; fall back to JSON `argsText`. */
+export function toolInputFromPart(part: {args?: unknown; argsText?: string}): unknown {
+    if (part.args && typeof part.args === "object" && Object.keys(part.args).length > 0) {
+        return part.args
+    }
+    if (!part.argsText) return undefined
+    try {
+        return JSON.parse(part.argsText)
+    } catch {
+        return undefined
+    }
+}
 const LANGUAGE_BY_EXTENSION: Record<string, string> = {
     ts: "ts",
     tsx: "tsx",

@@ -24,7 +24,7 @@ session.subscribe(AgentSessionEvent)
                                                    ▼  C. convertChatMessage
                                                    │     ChatMessage → ThreadMessageLike
                                                    ▼  useExternalStoreRuntime + MessagePrimitive
-                                                      MarkdownText / GroupedParts reasoning 面板 / ToolRow / NoticePart
+                                                      MarkdownText / GroupedParts reasoning 面板 / ToolTimeline + ToolRow / NoticePart
 ```
 
 | 阶段                     | 位置                           | 核心符号                                                      | 产出                                  |
@@ -172,7 +172,7 @@ Runtime：`AssistantChat` 使用 `useExternalStoreRuntime<ChatMessage>({ convert
 |---------------------------|-------------------------------------------------------------------------------------|---------------------------------------------------------------|
 | `text`                    | `{ type: "text", text }`                                                            | `MarkdownText`（Streamdown）                                  |
 | `thinking`                | `{ type: "reasoning", text }`                                                       | 官方 reasoning 面板（`GroupedParts` + Streamdown）            |
-| `tool`                    | `{ type: "tool-call", toolCallId, toolName, argsText, artifact, result?, isError }` | `ToolRow`（ReadBlock / DiffBlock / TerminalBlock / SearchBlock / generic） |
+| `tool`                    | `{ type: "tool-call", toolCallId, toolName, argsText, artifact, result?, isError }` | 连续 2+ 个走 `GroupedParts` `group-tool` → `ToolTimeline` 摘要，展开后仍是 `ToolRow`（ReadBlock / DiffBlock / TerminalBlock / SearchBlock / generic）；单个 tool-call 直接 `ToolRow` |
 | `notice`                  | `{ type: "data", name: "vibefly-notice", data: { level, text } }`                   | `NoticePart`                                                  |
 | `role: "user"`            | `role: "user"`，**无** status                                                       | 纯文本，不走 markdown                                         |
 | `role: "assistant"`       | `role: "assistant"` + status                                                        | assistant parts                                               |
@@ -246,6 +246,9 @@ type ToolArtifact = {
 | `vibefly-ui/src/chat/useChatController.ts`   | `applyBatch`、`sendMessage`、`stopOrCancel`、权限 / 输入 resolve                                   |
 | `vibefly-ui/src/chat/AssistantChat.tsx`      | `useExternalStoreRuntime`、`PermissionCard`、`InputCard`                                           |
 | `vibefly-ui/src/chat/MessageParts.tsx`       | `ChatMessageView`、`AssistantMessageParts`、`MarkdownText`、`NoticePart`                            |
+| `vibefly-ui/src/chat/tools/ToolTimelineGroup.tsx` | 连续 tool-call 的 `ToolTimeline` 摘要壳（单工具不套）                                        |
+| `vibefly-ui/src/chat/tools/toolTimelineModel.ts` | verb / chip / 文件 +/- 统计                                                                     |
+| `vibefly-ui/src/components/elements/`        | 官方 elements：`tool-timeline`、`surfaces`、`range`（Radix + JCEF shimmer）                      |
 | `vibefly-ui/src/components/assistant-ui/reasoning.tsx` | 官方 reasoning 面板（`ReasoningRoot` / `Trigger` / `Content` / `Text`）                    |
 | `vibefly-ui/src/chat/tools/`                 | `ToolPart`、`ToolRow`、`ReadBlock`、`DiffBlock`、`TerminalBlock`、`SearchBlock`、presenters         |
 | `vibefly-ui/src/chatMessageAdapter.test.ts`  | 映射单测（权威）                                                                                   |
@@ -283,5 +286,5 @@ i18n：`public/locales/{en,zh}/chat.json`。
 1. 改 wire 形状 → `uiagent-shared` types + contracts → `pnpm --filter @vibefly/uiagent-shared run generate`。
 2. 改 pi 映射 → `chatSessionRegistry.ts`（阶段 A）；改 UI 合并 → `chatEventState.ts`（阶段 B）；改 assistant-ui 形态 →
    `chatMessageAdapter.ts` + `MessageParts.tsx`（阶段 C）。
-3. 同步更新本页与对应单测：`chatMessageAdapter.test.ts`、`chatEventState.test.ts`、`chat/tools/present*.test.ts`。
+3. 同步更新本页与对应单测：`chatMessageAdapter.test.ts`、`chatEventState.test.ts`、`chat/tools/present*.test.ts`、`chat/tools/toolTimelineModel.test.ts`。
 4. 不要把 UI↔Agent 契约镜像到 Kotlin；不要改上游 pi 源码。

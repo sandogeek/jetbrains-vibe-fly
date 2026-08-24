@@ -23,6 +23,7 @@ import {useAppTranslation} from "../i18n"
 import {runningShimmerClassName} from "../lib/shimmer"
 import {ChatMessageActionsContext, type ChatMessageActions} from "./chatMessageActions"
 import {ToolPart} from "./tools/ToolPart"
+import {ToolTimelineGroup} from "./tools/ToolTimelineGroup"
 
 /** Preserve Streamdown GFM (tables, strikethrough, task lists) while adding soft breaks. */
 const remarkPlugins: NonNullable<StreamdownProps["remarkPlugins"]> = [
@@ -35,6 +36,7 @@ export {ChatMessageActionsContext}
 
 const assistantPartGroupBy = groupPartByType({
     reasoning: ["group-reasoning"],
+    "tool-call": ["group-tool"],
 })
 
 export function ChatMessageView() {
@@ -136,6 +138,8 @@ function AssistantMessageParts() {
                         return <MarkdownText containerClassName="markdown-body reasoning-markdown"/>
                     case "text":
                         return <MarkdownText/>
+                    case "group-tool":
+                        return <ToolTimelineGroup part={part}>{children}</ToolTimelineGroup>
                     case "tool-call":
                         return <ToolPart {...(part as ToolCallMessagePartProps)} />
                     case "data":
