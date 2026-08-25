@@ -9,6 +9,19 @@ export type ToolArtifact = {
 
 type ConvertedPart = Exclude<ThreadMessageLike["content"], string>[number]
 
+/**
+ * Reasoning part enriched with the measured thinking duration (ms). The extra
+ * field passes through assistant-ui's message converter untouched and is read
+ * back by the reasoning group renderer.
+ */
+export type ReasoningContentPart = {
+    type: "reasoning"
+    text: string
+    /** Epoch ms stamp of an still-open thinking block, for a live counter. */
+    startedAt?: number
+    durationMs?: number
+}
+
 function messageStatus(message: ChatMessage): ThreadMessageLike["status"] {
     switch (message.status) {
         case "streaming":
@@ -34,8 +47,18 @@ function convertPart(part: ChatPart): ConvertedPart | null {
     switch (part.kind) {
         case "text":
             return {type: "text", text: part.text}
-        case "thinking":
-            return {type: "reasoning", text: part.text}
+        case "thinking": {
+            const durationMs =
+                part.startedAt !== undefined && part.endedAt !== undefined
+                    ? Math.max(0, part.endedAt - part.startedAt)
+                    : undefined
+            return {
+                type: "reasoning",
+                text: part.text,
+                ...(part.startedAt !== undefined ? {startedAt: part.startedAt} : {}),
+                ...(durationMs !== undefined ? {durationMs} : {}),
+            } as ConvertedPart
+        }
         case "notice":
             return {
                 type: "data",

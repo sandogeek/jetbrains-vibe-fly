@@ -18,6 +18,7 @@ import {
     CollapsibleContent,
     CollapsibleTrigger,
 } from "@/components/ui/collapsible"
+import {formatThinkingSeconds} from "@/lib/thinkingDuration"
 import {cn} from "@/lib/utils"
 
 const ANIMATION_DURATION = 200
@@ -165,17 +166,20 @@ export function ReasoningFade({
 
 export function ReasoningTrigger({
     active,
-    duration,
+    durationMs,
     label = "Reasoning",
     className,
     ...props
 }: ComponentProps<typeof CollapsibleTrigger> & {
     active?: boolean
-    duration?: number
+    /** Measured thinking time in milliseconds; hidden when under 0.1s. */
+    durationMs?: number
     label?: string
 }) {
-    const durationText = duration ? ` (${duration}s)` : ""
-    const triggerText = `${label}${durationText}`
+    const formattedSeconds = durationMs === undefined ? undefined : formatThinkingSeconds(durationMs)
+    const triggerText = formattedSeconds === undefined
+        ? label
+        : `${label} (${formattedSeconds}s)`
 
     return (
         <CollapsibleTrigger

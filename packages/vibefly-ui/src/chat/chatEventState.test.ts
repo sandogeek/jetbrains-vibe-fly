@@ -211,6 +211,56 @@ describe("applyChatEvent", () => {
         })
     })
 
+    test("stamps thinking blocks with start/end times for the duration display", () => {
+        let result = applyChatEvent(
+            [tab("one")],
+            {
+                kind: "partDelta",
+                sessionId: "one",
+                messageId: "assistant-1",
+                partKind: "thinking",
+                delta: "Pondering",
+            },
+            "one",
+        )
+        const startedPart = result.tabs[0]!.messages[0]!.parts[0]
+        expect(startedPart).toMatchObject({kind: "thinking", text: "Pondering"})
+        const startedAt = (startedPart as {startedAt?: number}).startedAt
+        expect(typeof startedAt).toBe("number")
+
+        // Continued thinking deltas extend the same open block.
+        result = applyChatEvent(
+            result.tabs,
+            {
+                kind: "partDelta",
+                sessionId: "one",
+                messageId: "assistant-1",
+                partKind: "thinking",
+                delta: " more",
+            },
+            "one",
+        )
+        // A text delta closes the thinking block.
+        result = applyChatEvent(
+            result.tabs,
+            {
+                kind: "partDelta",
+                sessionId: "one",
+                messageId: "assistant-1",
+                partKind: "text",
+                delta: "Answer",
+            },
+            "one",
+        )
+
+        const parts = result.tabs[0]!.messages[0]!.parts
+        expect(parts).toHaveLength(2)
+        const closedThinking = parts[0] as {kind: string; text: string; endedAt?: number}
+        expect(closedThinking).toMatchObject({kind: "thinking", text: "Pondering more"})
+        expect(typeof closedThinking.endedAt).toBe("number")
+        expect(closedThinking.endedAt!).toBeGreaterThanOrEqual(startedAt!)
+    })
+
     test("applies turn completion, release, and disconnected effects", () => {
         const completed = applyChatEvent(
             [tab("one"), tab("two")],

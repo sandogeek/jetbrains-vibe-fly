@@ -51,6 +51,21 @@ function replaceOrAppendSnapshot(tabs: ChatTab[], snapshot: ChatSessionSnapshot)
     return tabs.map((tab, tabIndex) => (tabIndex === index ? snapshot : tab))
 }
 
+/**
+ * Close the trailing thinking block (if it is still open) by stamping its
+ * end time. Used whenever the model moves on from thinking: a text delta,
+ * a tool call, or the end of the message.
+ */
+function closeTrailingThinking(parts: ChatPart[], endedAt: number): void {
+    for (let index = parts.length - 1; index >= 0; index -= 1) {
+        const part = parts[index]!
+        if (part.kind !== "thinking") break
+        if (part.endedAt !== undefined) return
+        parts[index] = {...part, endedAt}
+        return
+    }
+}
+
 export function applyChatEvent(
     tabs: ChatTab[],
     event: ChatEvent,
@@ -99,16 +114,31 @@ export function applyChatEvent(
     if (event.kind === "partDelta") {
         return {
             tabs: updateMessage(tabs, event.sessionId, event.messageId, (message) => {
-                const index = message.parts.findIndex((part) => part.kind === event.partKind)
-                if (index < 0) {
-                    return {
-                        ...message,
-                        parts: [...message.parts, {kind: event.partKind, text: event.delta}],
+                const nowMs = Date.now()
+                const parts = [...message.parts]
+                if (event.partKind === "thinking") {
+                    const lastIndex = parts.length - 1
+                    const lastPart = parts[lastIndex]
+                    if (lastPart?.kind === "thinking") {
+                        // Extend the trailing block, reopening it if it was already closed.
+                        parts[lastIndex] = {
+                            ...lastPart,
+                            text: lastPart.text + event.delta,
+                            endedAt: undefined,
+                        }
+                    } else {
+                        parts.push({kind: "thinking", text: event.delta, startedAt: nowMs})
+                    }
+                } else {
+                    closeTrailingThinking(parts, nowMs)
+                    const index = parts.findIndex((part) => part.kind === "text")
+                    if (index < 0) {
+                        parts.push({kind: "text", text: event.delta})
+                    } else {
+                        const part = parts[index] as Extract<ChatPart, { kind: "text" }>
+                        parts[index] = {...part, text: part.text + event.delta}
                     }
                 }
-                const parts = [...message.parts]
-                const part = parts[index] as Extract<ChatPart, { kind: "text" | "thinking" }>
-                parts[index] = {...part, text: part.text + event.delta}
                 return {...message, parts}
             }),
             effects: {refreshPaths: []},
@@ -117,10 +147,13 @@ export function applyChatEvent(
 
     if (event.kind === "messageStatus") {
         return {
-            tabs: updateMessage(tabs, event.sessionId, event.messageId, (message) => ({
-                ...message,
-                status: event.status,
-            })),
+            tabs: updateMessage(tabs, event.sessionId, event.messageId, (message) => {
+                if (event.status === "streaming") return {...message, status: event.status}
+                // A terminal status ends any still-open thinking block.
+                const parts = [...message.parts]
+                closeTrailingThinking(parts, Date.now())
+                return {...message, status: event.status, parts}
+            }),
             effects: {refreshPaths: []},
         }
     }
@@ -133,11 +166,13 @@ export function applyChatEvent(
                 : []
         return {
             tabs: updateMessage(tabs, event.sessionId, event.messageId, (message) => {
+                // A tool call interrupts thinking; close the open block first.
+                const parts = [...message.parts]
+                closeTrailingThinking(parts, Date.now())
                 const index = message.parts.findIndex(
                     (part) => part.kind === "tool" && part.toolCallId === event.part.toolCallId,
                 )
-                if (index < 0) return {...message, parts: [...message.parts, event.part]}
-                const parts = [...message.parts]
+                if (index < 0) return {...message, parts: [...parts, event.part]}
                 parts[index] = {
                     ...(parts[index] as Extract<ChatPart, { kind: "tool" }>),
                     ...event.part,

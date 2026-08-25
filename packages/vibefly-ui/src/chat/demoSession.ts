@@ -35,6 +35,8 @@ export function createDemoTab(): ChatSessionSnapshot {
                     {
                         kind: "thinking",
                         text: "The companion object reference is a bit awkward. I will keep one logger for the action and add a package logger for the cancellation helper. Then I will cover the stream abort path.",
+                        startedAt: timestamp - 60_000,
+                        endedAt: timestamp - 55_400,
                     },
                     {
                         kind: "text",
@@ -105,6 +107,8 @@ export function createDemoTab(): ChatSessionSnapshot {
                     {
                         kind: "thinking",
                         text: "The main remote-cancel path also needs an abort listener before the stream begins, otherwise cancellation can arrive before the loop observes the signal.",
+                        startedAt: timestamp - 30_000,
+                        endedAt: timestamp - 28_750,
                     },
                     {
                         kind: "tool",

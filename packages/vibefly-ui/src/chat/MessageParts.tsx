@@ -9,10 +9,12 @@ import {StreamdownTextPrimitive} from "@assistant-ui/react-streamdown"
 import {cjk} from "@streamdown/cjk"
 import {code} from "@streamdown/code"
 import {AlertTriangle, RotateCcw} from "lucide-react"
+import {type ReactNode, useEffect, useState} from "react"
 
 import remarkBreaks from "remark-breaks"
 import {defaultRemarkPlugins, type StreamdownProps} from "streamdown"
 
+import {type ReasoningContentPart} from "../chatMessageAdapter"
 import {
     ReasoningContent,
     ReasoningRoot,
@@ -126,12 +128,9 @@ function AssistantMessageParts() {
                     case "group-reasoning": {
                         const running = part.status.type === "running"
                         return (
-                            <ReasoningRoot variant="ghost" streaming={running}>
-                                <ReasoningTrigger active={running} label={t("chat:reasoning")}/>
-                                <ReasoningContent aria-busy={running}>
-                                    <ReasoningText>{children}</ReasoningText>
-                                </ReasoningContent>
-                            </ReasoningRoot>
+                            <ReasoningGroupSection running={running} indices={part.indices}>
+                                {children}
+                            </ReasoningGroupSection>
                         )
                     }
                     case "reasoning":
@@ -151,6 +150,62 @@ function AssistantMessageParts() {
                 }
             }}
         </MessagePrimitive.GroupedParts>
+    )
+}
+
+/**
+ * Elapsed ms of a still-open thinking block. Re-renders every 100ms while
+ * active so the trigger label counts up like Cursor's "Thinking" timer.
+ */
+function useLiveElapsedMs(startedAt: number | undefined, active: boolean): number {
+    const [elapsedMs, setElapsedMs] = useState(0)
+    useEffect(() => {
+        if (!active || startedAt === undefined) return
+        const update = () => setElapsedMs(Math.max(0, Date.now() - startedAt))
+        update()
+        const timer = window.setInterval(update, 100)
+        return () => window.clearInterval(timer)
+    }, [active, startedAt])
+    return active && startedAt !== undefined ? elapsedMs : 0
+}
+
+function ReasoningGroupSection({
+    running,
+    indices,
+    children,
+}: {
+    running: boolean
+    indices: readonly number[]
+    children: ReactNode
+}) {
+    const {t} = useAppTranslation("chat")
+    const messageParts = useAuiState((state) => state.message.parts)
+    // The runtime keeps the custom duration fields even though assistant-ui's
+    // static part types don't declare them.
+    const reasoningBlocks = indices
+        .map((index) => messageParts[index])
+        .filter((part) => part?.type === "reasoning") as unknown as ReasoningContentPart[]
+    // Finished blocks carry their measured duration; the open one is timed live.
+    const closedTotalMs = reasoningBlocks.reduce(
+        (total, block) => total + (block.durationMs ?? 0),
+        0,
+    )
+    const openBlockStartedAt = running
+        ? reasoningBlocks.find((block) => block.durationMs === undefined)?.startedAt
+        : undefined
+    const liveElapsedMs = useLiveElapsedMs(openBlockStartedAt, running)
+
+    return (
+        <ReasoningRoot variant="ghost" streaming={running}>
+            <ReasoningTrigger
+                active={running}
+                durationMs={closedTotalMs + liveElapsedMs}
+                label={t("chat:reasoning")}
+            />
+            <ReasoningContent aria-busy={running}>
+                <ReasoningText>{children}</ReasoningText>
+            </ReasoningContent>
+        </ReasoningRoot>
     )
 }
 

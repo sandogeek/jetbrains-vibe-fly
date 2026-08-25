@@ -30,7 +30,17 @@ export type ChatFileLocation = {
 
 export type ChatPart =
   | { kind: "text"; text: string }
-  | { kind: "thinking"; text: string }
+  | {
+      kind: "thinking"
+      text: string
+      /**
+       * Epoch ms when this thinking block started streaming. Stamped by the
+       * UI while a turn is live; absent for restored history.
+       */
+      startedAt?: number
+      /** Epoch ms when the model moved on from this thinking block. */
+      endedAt?: number
+    }
   | {
       kind: "tool"
       toolCallId: string
