@@ -1,4 +1,4 @@
-import {filePathFromInput, firstOutputLine, stringField} from "./toolArgs"
+import {filePathFromInput, fileNameFromPath, firstOutputLine, stringField} from "./toolArgs"
 export type ToolRowState = "running" | "ok" | "error"
 export type ToolRowVariant = "read" | "write" | "edit" | "bash" | "search" | "other"
 export type ToolTitleKey =
@@ -70,7 +70,10 @@ export function toolRowModel(options: {
         ? stringField(options.input, "pattern")
         : undefined
     const errorSummary = state === "error" ? firstOutputLine(options.output) : undefined
-    const summary = errorSummary ?? command ?? pattern ?? filePath ?? (options.toolName === "ls" ? "." : "")
+    // Read rows show only the file name; the full path stays on the link
+    // target and tooltip.
+    const pathSummary = variant === "read" && filePath ? fileNameFromPath(filePath) : filePath
+    const summary = errorSummary ?? command ?? pattern ?? pathSummary ?? (options.toolName === "ls" ? "." : "")
     const summaryIsPath =
         !errorSummary
         && !command
