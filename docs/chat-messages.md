@@ -103,11 +103,12 @@ type ChatEventBatch = { sessionId: string; sequence: number; events: ChatEvent[]
 | `agent_start`                                                          | `message`（空 assistant，`status: "streaming"`） | 分配 `activeMessageId`；**整次 agent run 一条** assistant 消息 |
 | `message_update` + `text_delta`                                        | `partDelta{partKind:"text"}`                     |                                                                |
 | `message_update` + `thinking_delta`                                    | `partDelta{partKind:"thinking"}`                 |                                                                |
-| `message_update` 其它（`*_start`/`*_end`/`toolcall_*`/`done`/`error`） | *丢弃*                                           | 工具参数不流式推 UI                                            |
+| `message_update` 其它（`*_start`/`*_end`/`toolcall_*`/`done`/`error`） | *不进 ChatEvent*                                 | `thinking_start`/`thinking_end` 给 Agent 思考时长 clock 打点；其余丢弃 |
 | `tool_execution_start`                                                 | `tool`，`status: "running"`                      | `input = args`；`locations` 从 path 类参数推导                 |
 | `tool_execution_update`                                                | `tool`，`status: "running"`                      | `output` **全量覆盖**（pi bash 100ms 截断尾快照，不拼接）；不带 input/locations |
 | `tool_execution_end`                                                   | `tool`，`completed` / `failed`                   | `output = toolResultText(result)`（结构化 `{content,details}` 收成文本） |
 | `message_end`（assistant）                                             | `messageStatus`                                  | 一次 run 内可能多次                                            |
+| `message_end`（assistant，含 thinking）                                | *无额外 ChatEvent*                               | microtask 后 `appendCustomEntry("vibefly.thinkingDuration")`   |
 | `agent_end`                                                            | *仅清* `activeMessageId`                         |                                                                |
 | `thinking_level_changed`                                               | `summary`                                        |                                                                |
 | `turn_*` / `message_start` / compaction / retry / queue 等             | *丢弃*                                           |                                                                |
@@ -134,6 +135,8 @@ type ChatEventBatch = { sessionId: string; sequence: number; events: ChatEvent[]
 - `user` / `assistant` 原样；`developer` → wire `role: "system"`。
 - content 块：`text` → `text`，`thinking` → `thinking`，`toolCall` → `tool`（历史一律 `status: "completed"`；`locations` 从 arguments 重算，read 填 `line`）。
 - id：`String(message.id ?? "history-<idx>")`；status 由 pi `stopReason` / `errorMessage` 映射。
+
+思考时长：当前分支上 `customType === "vibefly.thinkingDuration"` 的 custom entry 按 `messageTimestamp`（= pi `AssistantMessage.timestamp` = `ChatMessage.createdAt`）对齐到含 thinking 的 assistant 消息，再按 `contentIndex` 顺序填回 `startedAt` / `endedAt`。对不上的 record（compaction、旧会话）跳过。无 custom entry 的历史打开后仍不显示秒数。
 
 ### 3.4 流式语义（屏幕上实际发生什么）
 
@@ -240,6 +243,7 @@ type ToolArtifact = {
 | `vibefly-uiagent-shared/src/types.ts`        | `ChatPart`、`ChatMessage`、`ChatEvent`、`ChatEventBatch`                                           |
 | `vibefly-uiagent-shared/src/contracts.ts`    | `Ui2Agent`、`Agent2Ui`                                                                             |
 | `vibefly-agent/src/chatSessionRegistry.ts`   | `#onSessionEvent`、`toChatMessages`、`messageParts`、`#emit` / `#flushEvents`、权限 / extension UI |
+| `vibefly-agent/src/chat/thinkingDuration.ts` | `ThinkingDurationClock`、`noteThinkingDurationEvent`、`recordsFromBranch`、`applyThinkingDurations` |
 | `vibefly-agent/src/chatScheduler.ts`         | `SerialTurnScheduler`                                                                              |
 | `vibefly-ui/src/chat/chatEventState.ts`      | `applyChatEvent`                                                                                   |
 | `vibefly-ui/src/chatMessageAdapter.ts`       | `convertChatMessage`、`ToolArtifact`                                                               |

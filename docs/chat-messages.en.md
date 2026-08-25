@@ -102,11 +102,12 @@ Entry: `#onSessionEvent` in `packages/vibefly-agent/src/chatSessionRegistry.ts`.
 | `agent_start` | `message` (empty assistant, `status: "streaming"`) | Assigns `activeMessageId`; **one** assistant message per full agent run |
 | `message_update` + `text_delta` | `partDelta{partKind:"text"}` | |
 | `message_update` + `thinking_delta` | `partDelta{partKind:"thinking"}` | |
-| `message_update` other (`*_start`/`*_end`/`toolcall_*`/`done`/`error`) | *dropped* | Tool args are not streamed to UI |
+| `message_update` other (`*_start`/`*_end`/`toolcall_*`/`done`/`error`) | *not a ChatEvent* | `thinking_start`/`thinking_end` stamp the Agent thinking-duration clock; the rest are dropped |
 | `tool_execution_start` | `tool`, `status: "running"` | `input = args`; `locations` derived from path-like args |
 | `tool_execution_update` | *dropped* | No partial tool output |
 | `tool_execution_end` | `tool`, `completed` / `failed` | `output = safeJson(result)` |
 | `message_end` (assistant) | `messageStatus` | May fire multiple times within one run |
+| `message_end` (assistant with thinking) | *no extra ChatEvent* | After a microtask, `appendCustomEntry("vibefly.thinkingDuration")` |
 | `agent_end` | *only clears* `activeMessageId` | |
 | `thinking_level_changed` | `summary` | |
 | `turn_*` / `message_start` / compaction / retry / queue etc. | *dropped* | |
@@ -132,6 +133,8 @@ Batching: `EVENT_BATCH_WINDOW_MS = 24`, then `Agent2Ui.onChatEvents` per session
 - Keep `user` / `assistant`; map `developer` → wire `role: "system"`.
 - Content blocks: `text` → `text`, `thinking` → `thinking`, `toolCall` → `tool` (history always `status: "completed"`, **no locations**).
 - id: `String(message.id ?? "history-<idx>")`; status mapped from pi `stopReason` / `errorMessage`.
+
+Thinking duration: custom entries on the current branch with `customType === "vibefly.thinkingDuration"` are matched onto assistant messages that have thinking parts, by `messageTimestamp` (= pi `AssistantMessage.timestamp` = `ChatMessage.createdAt`), then applied in `contentIndex` order as `startedAt` / `endedAt`. Unmatched records (compaction, older sessions) are skipped. History without this custom entry still opens without a seconds label.
 
 ### 3.4 Streaming semantics (what the screen does)
 
@@ -236,6 +239,7 @@ type ToolArtifact = {
 | `vibefly-uiagent-shared/src/types.ts` | `ChatPart`, `ChatMessage`, `ChatEvent`, `ChatEventBatch` |
 | `vibefly-uiagent-shared/src/contracts.ts` | `Ui2Agent`, `Agent2Ui` |
 | `vibefly-agent/src/chatSessionRegistry.ts` | `#onSessionEvent`, `toChatMessages`, `messageParts`, `#emit` / `#flushEvents`, permission / extension UI |
+| `vibefly-agent/src/chat/thinkingDuration.ts` | `ThinkingDurationClock`, `noteThinkingDurationEvent`, `recordsFromBranch`, `applyThinkingDurations` |
 | `vibefly-agent/src/chatScheduler.ts` | `SerialTurnScheduler` |
 | `vibefly-ui/src/chat/chatEventState.ts` | `applyChatEvent` |
 | `vibefly-ui/src/chatMessageAdapter.ts` | `convertChatMessage`, `ToolArtifact` |

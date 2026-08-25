@@ -31,6 +31,13 @@ import {getPiRuntime} from "./piRuntime.js"
 import {SerialTurnScheduler} from "./chatScheduler.js"
 import {clientPermissionKey, mapSessionEvent, toChatMessages} from "./chat/eventMapper.js"
 import {
+  THINKING_DURATION_CUSTOM_TYPE,
+  ThinkingDurationClock,
+  noteThinkingDurationEvent,
+  recordsFromBranch,
+  type ThinkingDurationData,
+} from "./chat/thinkingDuration.js"
+import {
   modelKey,
   refreshSessionModelFromRuntime,
   resolveModel,
@@ -72,6 +79,7 @@ type SessionRecord = {
   approvedEditPaths: Map<string, number>
   permissionDecisions: Map<string, "allow_always" | "reject_always">
   writeDecision?: "allow_always" | "reject_always"
+  thinkingClock: ThinkingDurationClock
 }
 
 type PendingTurn = {
@@ -411,6 +419,7 @@ export class ChatSessionRegistry {
         updatedAt: now(),
         messageCount: 0,
       },
+      thinkingClock: new ThinkingDurationClock(),
     })
   }
 
@@ -449,6 +458,7 @@ export class ChatSessionRegistry {
         updatedAt: modified,
         messageCount: manager.getBranch().filter((entry) => entry.type === "message").length,
       },
+      thinkingClock: new ThinkingDurationClock(),
     }
   }
 
@@ -545,7 +555,15 @@ export class ChatSessionRegistry {
   }
 
   #snapshot(record: SessionRecord): ChatSessionSnapshot {
-    const messages = record.runtime ? toChatMessages(record.runtime.session.messages, record.projectRoot) : []
+    if (!record.runtime) {
+      return {summary: {...record.summary}, messages: []}
+    }
+    const session = record.runtime.session
+    const messages = toChatMessages(
+      session.messages,
+      record.projectRoot,
+      recordsFromBranch(session.sessionManager.getBranch()),
+    )
     record.summary.messageCount = messages.length
     return {summary: {...record.summary}, messages}
   }
@@ -705,6 +723,12 @@ export class ChatSessionRegistry {
   }
 
   #onSessionEvent(record: SessionRecord, event: AgentSessionEvent): void {
+    const durationRecord = noteThinkingDurationEvent(record.thinkingClock, event, now())
+    if (durationRecord) {
+      // pi notifies listeners of message_end *before* appendMessage. Defer so
+      // the custom entry becomes a child of that assistant message.
+      queueMicrotask(() => this.#persistThinkingDuration(record, durationRecord))
+    }
     const mapped = mapSessionEvent(
       {
         sessionId: record.summary.sessionId,
@@ -720,6 +744,19 @@ export class ChatSessionRegistry {
     if (mapped.syncSummary) {
       this.#syncSummaryFromRuntime(record)
       this.#emitSummary(record)
+    }
+  }
+
+  #persistThinkingDuration(record: SessionRecord, data: ThinkingDurationData): void {
+    const sessionManager = record.runtime?.session.sessionManager
+    if (!sessionManager) return
+    try {
+      sessionManager.appendCustomEntry(THINKING_DURATION_CUSTOM_TYPE, data)
+    } catch (error) {
+      log.warn("thinking duration persist failed", {
+        sessionId: record.summary.sessionId,
+        err: error,
+      })
     }
   }
 

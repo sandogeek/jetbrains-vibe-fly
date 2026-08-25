@@ -34,8 +34,9 @@ export type ChatPart =
       kind: "thinking"
       text: string
       /**
-       * Epoch ms when this thinking block started streaming. Stamped by the
-       * UI while a turn is live; absent for restored history.
+       * Epoch ms when this thinking block started streaming. The UI stamps
+       * this while a turn is live. Restored history fills it from the session
+       * `vibefly.thinkingDuration` custom entry when present.
        */
       startedAt?: number
       /** Epoch ms when the model moved on from this thinking block. */

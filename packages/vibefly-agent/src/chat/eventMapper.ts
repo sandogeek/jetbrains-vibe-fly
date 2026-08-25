@@ -8,6 +8,7 @@ import type {
 } from "@vibefly/uiagent-shared"
 import {locationsFromArgs} from "./toolPathGuard.js"
 import {makeId, now, textFromContent, toolResultText} from "./util.js"
+import {applyThinkingDurations, type ThinkingDurationData} from "./thinkingDuration.js"
 
 export {safeJson, textFromContent, toolResultText} from "./util.js"
 
@@ -48,7 +49,11 @@ export function messageStatus(message: AgentMessage): ChatMessage["status"] {
   return "complete"
 }
 
-export function toChatMessages(messages: AgentMessage[], projectRoot?: string): ChatMessage[] {
+export function toChatMessages(
+  messages: AgentMessage[],
+  projectRoot?: string,
+  thinkingDurations: readonly ThinkingDurationData[] = [],
+): ChatMessage[] {
   const result: ChatMessage[] = []
   const toolParts = new Map<string, Extract<ChatPart, {kind: "tool"}>>()
 
@@ -78,6 +83,7 @@ export function toChatMessages(messages: AgentMessage[], projectRoot?: string): 
     }
     result.push(chatMessage)
   }
+  applyThinkingDurations(result, thinkingDurations)
   return result
 }
 
