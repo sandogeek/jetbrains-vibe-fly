@@ -107,6 +107,57 @@ describe("ChatSessionRegistry main paths", () => {
     await registry.dispose()
   })
 
+  test("retryChatTurn rejects unknown sessions and running turns", async () => {
+    const projectRoot = makeProject()
+    const registry = new ChatSessionRegistry()
+    registry.__testInsertSession({sessionId: "s1", projectRoot})
+    expect(() => registry.retryChatTurn("missing")).toThrow(/not open/)
+
+    registry.sendChatMessage({
+      sessionId: "s1",
+      text: "hello",
+      clientMessageId: "c1",
+    })
+    expect(() => registry.retryChatTurn("s1")).toThrow(/Wait for the current turn/)
+    await registry.dispose()
+  })
+
+  test("retryChatTurn does not emit another user message", async () => {
+    const projectRoot = makeProject()
+    const registry = new ChatSessionRegistry()
+    const {sink, batches} = collectSink()
+    registry.attach(sink)
+    registry.__testInsertSession({sessionId: "s1", projectRoot, title: "New session"})
+
+    registry.sendChatMessage({
+      sessionId: "s1",
+      text: "hello world",
+      clientMessageId: "client-1",
+    })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(registry.__testGetSummary("s1")?.state).toBe("error")
+
+    const userMessagesBefore = batches
+      .flatMap((batch) => batch.events)
+      .filter((event) => event.kind === "message" && event.message.role === "user")
+    expect(userMessagesBefore).toHaveLength(1)
+
+    const retried = registry.retryChatTurn("s1")
+    expect(retried.state).toBe("running")
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    await flushEvents()
+
+    const userMessagesAfter = batches
+      .flatMap((batch) => batch.events)
+      .filter((event) => event.kind === "message" && event.message.role === "user")
+    expect(userMessagesAfter).toHaveLength(1)
+    expect(
+      batches.filter((batch) => batch.events.some((event) => event.kind === "turnComplete")).length,
+    ).toBeGreaterThanOrEqual(2)
+
+    await registry.dispose()
+  })
+
   test("cancelQueuedTurn clears queued state for non-active session", async () => {
     const projectRoot = makeProject()
     const registry = new ChatSessionRegistry()

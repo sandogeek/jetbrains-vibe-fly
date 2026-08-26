@@ -9,7 +9,7 @@ import {StreamdownTextPrimitive} from "@assistant-ui/react-streamdown"
 import {cjk} from "@streamdown/cjk"
 import {code} from "@streamdown/code"
 import {AlertTriangle, RotateCcw} from "lucide-react"
-import {type ReactNode, useEffect, useState} from "react"
+import {type ReactNode, useContext, useEffect, useState} from "react"
 
 import remarkBreaks from "remark-breaks"
 import {defaultRemarkPlugins, type StreamdownProps} from "streamdown"
@@ -46,6 +46,9 @@ export function ChatMessageView() {
     const role = useAuiState((state) => state.message.role)
     const status = useAuiState((state) => state.message.status)
     const content = useAuiState((state) => state.message.content)
+    const isLast = useAuiState((state) => state.message.isLast)
+    const threadRunning = useAuiState((state) => state.thread.isRunning)
+    const {onRetry} = useContext(ChatMessageActionsContext)
     const isRunning = status?.type === "running"
     const hasVisibleContent = content.some((part) => {
         if (part.type === "text" || part.type === "reasoning") {
@@ -72,8 +75,13 @@ export function ChatMessageView() {
                     </span>
                 ) : null}
                 {isRunning && hasVisibleContent ? <span className="streaming-caret"/> : null}
-                {status?.type === "incomplete" && status.reason === "error" ? (
-                    <button className="retry-button">
+                {status?.type === "incomplete" && status.reason === "error" && isLast && !threadRunning ? (
+                    <button
+                        type="button"
+                        className="retry-button"
+                        disabled={!onRetry}
+                        onClick={() => onRetry?.()}
+                    >
                         <RotateCcw size={13}/> {t("chat:retry")}
                     </button>
                 ) : null}

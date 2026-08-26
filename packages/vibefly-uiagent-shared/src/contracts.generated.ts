@@ -74,6 +74,10 @@ export const ui2Agent = defineRpcService("Ui2Agent", {
     RpcMethodArgs<Ui2AgentContract["mutateSettings"]>,
     Awaited<ReturnType<Ui2AgentContract["mutateSettings"]>>
   >(15),
+  "retryChatTurn": rpcMethod<
+    RpcMethodArgs<Ui2AgentContract["retryChatTurn"]>,
+    Awaited<ReturnType<Ui2AgentContract["retryChatTurn"]>>
+  >(16),
 })
 
 export type Ui2AgentService = RpcService<typeof ui2Agent>

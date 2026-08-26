@@ -49,6 +49,7 @@ export type ChatController = {
     setDraft: (sessionId: string, value: string) => void
     sendMessage: (sessionId: string, text: string) => Promise<void>
     stopOrCancel: (sessionId?: string) => Promise<void>
+    retryLastTurn: (sessionId: string) => Promise<void>
     chooseContextFiles: () => Promise<void>
     removeContext: (sessionId: string, contextId: string) => void
     onChatModelChange: (spec: string, pinned: string[], recentModels: string[]) => void
@@ -229,6 +230,21 @@ export function useChatController(): ChatController {
     }
   }
 
+  const retryLastTurn = async (sessionId: string) => {
+    const tab = tabsRef.current.find((item) => item.summary.sessionId === sessionId)
+    if (!sessionId || !tab) return
+    if (["running", "waiting_permission", "waiting_input", "queued"].includes(tab.summary.state)) {
+      return
+    }
+    if (offlineRef.current || !agentRef.current) return
+    connection.setError(null)
+    try {
+      await agentRef.current.retryChatTurn(sessionId)
+    } catch (retryError) {
+      connection.setError(retryError instanceof Error ? retryError.message : String(retryError))
+    }
+  }
+
   return {
     tabs: tabs.tabs,
     activeId: tabs.activeId,
@@ -258,6 +274,7 @@ export function useChatController(): ChatController {
       setDraft: workspace.setDraft,
       sendMessage,
       stopOrCancel: workspace.stopOrCancel,
+      retryLastTurn,
       chooseContextFiles: workspace.chooseContextFiles,
       removeContext: workspace.removeContext,
       onChatModelChange,

@@ -80,6 +80,8 @@ type SessionRecord = {
   permissionDecisions: Map<string, "allow_always" | "reject_always">
   writeDecision?: "allow_always" | "reject_always"
   thinkingClock: ThinkingDurationClock
+  /** Last user prompt, used to retry a turn that failed before landing in pi. */
+  lastPrompt?: {text: string; contexts: ChatContextItem[]}
 }
 
 type PendingTurn = {
@@ -89,6 +91,7 @@ type PendingTurn = {
   contexts: ChatContextItem[]
   clientMessageId: string
   submittedAt: number
+  kind: "prompt" | "retry"
 }
 
 const MAX_RUNTIME_SESSIONS = 2
@@ -96,6 +99,9 @@ const MAX_RECENT_SESSIONS = 50
 const MAX_DEDUPE_REQUESTS = 256
 const EVENT_BATCH_WINDOW_MS = 24
 const PERMISSION_RPC_OPTIONS = rpcOptions({timeoutMs: 24 * 60 * 60 * 1000})
+/** Hidden custom message that convertToLlm turns into a user continue instruction. */
+const RETRY_TURN_PROMPT =
+  "The previous turn failed. Continue the user's last request from where you left off."
 const TOOL_NAMES = [
   "read",
   "grep",
@@ -301,6 +307,7 @@ export class ChatSessionRegistry {
       throw new Error("Wait for the current turn to finish or stop it first")
     }
 
+    record.lastPrompt = {text, contexts: request.contexts ?? []}
     const turn: PendingTurn = {
       turnId: makeId("turn"),
       sessionId: request.sessionId,
@@ -308,6 +315,7 @@ export class ChatSessionRegistry {
       contexts: request.contexts ?? [],
       clientMessageId: request.clientMessageId,
       submittedAt: now(),
+      kind: "prompt",
     }
     const queuedState = this.#scheduler.enqueue(turn)
     const queued = !queuedState.immediate
@@ -331,6 +339,40 @@ export class ChatSessionRegistry {
       ? {turnId: turn.turnId, state: "queued", queuePosition: queuedState.position}
       : {turnId: turn.turnId, state: "running"}
     this.#rememberDedupe(request.clientMessageId, result)
+    void this.#drainQueue()
+    return result
+  }
+
+  retryChatTurn(sessionId: string): SendChatMessageResult {
+    const record = this.#requiredRecord(sessionId)
+    if (this.#scheduler.queued.some((turn) => turn.sessionId === sessionId)) {
+      throw new Error("This session already has a queued message")
+    }
+    if (this.#scheduler.active?.sessionId === sessionId) {
+      throw new Error("Wait for the current turn to finish or stop it first")
+    }
+
+    const turn: PendingTurn = {
+      turnId: makeId("turn"),
+      sessionId,
+      text: record.lastPrompt?.text ?? "",
+      contexts: record.lastPrompt?.contexts ?? [],
+      clientMessageId: makeId("retry"),
+      submittedAt: now(),
+      kind: "retry",
+    }
+    const queuedState = this.#scheduler.enqueue(turn)
+    const queued = !queuedState.immediate
+    record.summary.state = queued ? "queued" : "running"
+    record.summary.updatedAt = now()
+    record.summary.queuePosition = queued ? queuedState.position : undefined
+    record.lastAccess = now()
+    this.#emitSummary(record)
+    this.#emitQueue()
+
+    const result: SendChatMessageResult = queued
+      ? {turnId: turn.turnId, state: "queued", queuePosition: queuedState.position}
+      : {turnId: turn.turnId, state: "running"}
     void this.#drainQueue()
     return result
   }
@@ -607,6 +649,36 @@ export class ChatSessionRegistry {
     }
   }
 
+  async #runSessionTurn(
+    record: SessionRecord,
+    session: AgentSession,
+    turn: PendingTurn,
+  ): Promise<void> {
+    if (turn.kind === "retry") {
+      const hasUser = session.messages.some((message) => message.role === "user")
+      if (hasUser) {
+        await session.sendCustomMessage(
+          {
+            customType: "vibefly.retry",
+            content: RETRY_TURN_PROMPT,
+            display: false,
+          },
+          {triggerTurn: true},
+        )
+        return
+      }
+      if (!turn.text.trim()) throw new Error("Nothing to retry")
+    }
+
+    const prompt = formatPrompt(turn.text, turn.contexts, record.projectRoot)
+    if (record.summary.title === "New session" && turn.text.trim()) {
+      const title = firstLine(turn.text)
+      session.setSessionName(title)
+      record.summary.title = title
+    }
+    await session.prompt(prompt, {source: "rpc"})
+  }
+
   async #drainQueue(): Promise<void> {
     if (this.#scheduler.active || this.#disposed) return
     const turn = this.#scheduler.startNext()
@@ -629,13 +701,7 @@ export class ChatSessionRegistry {
     try {
       await this.#ensureRuntime(record)
       const runtime = record.runtime!
-      const prompt = formatPrompt(turn.text, turn.contexts, record.projectRoot)
-      if (record.summary.title === "New session") {
-        const title = firstLine(turn.text)
-        runtime.session.setSessionName(title)
-        record.summary.title = title
-      }
-      await runtime.session.prompt(prompt, {source: "rpc"})
+      await this.#runSessionTurn(record, runtime.session, turn)
       await runtime.session.waitForIdle()
       ok = true
       record.summary.state = "completed"

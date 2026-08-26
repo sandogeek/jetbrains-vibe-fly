@@ -339,6 +339,7 @@ function ChatPageView({controller}: { controller: ChatController }) {
                     onDraftChange={(value) => actions.setDraft(activeTab.summary.sessionId, value)}
                     onSend={(text) => actions.sendMessage(activeTab.summary.sessionId, text)}
                     onCancel={() => actions.stopOrCancel(activeTab.summary.sessionId)}
+                    onRetry={() => actions.retryLastTurn(activeTab.summary.sessionId)}
                     onChooseContextFiles={actions.chooseContextFiles}
                     onRemoveContext={(contextId) =>
                         actions.removeContext(activeTab.summary.sessionId, contextId)

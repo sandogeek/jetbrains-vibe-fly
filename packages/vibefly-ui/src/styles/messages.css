@@ -26,7 +26,7 @@
 
 .chat-message {
     position: relative;
-    margin-bottom: 28px;
+    margin-bottom: 2px;
 }
 
 .chat-message.user {
@@ -818,6 +818,16 @@
     background: var(--vf-surface-raised);
     border-color: var(--vf-border);
     color: var(--vf-fg);
+}
+
+.retry-button:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.retry-button:disabled:hover {
+    background: transparent;
+    color: var(--vf-muted);
 }
 
 .notice-part {

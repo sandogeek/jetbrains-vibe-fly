@@ -141,6 +141,14 @@ export abstract class Ui2Agent {
   ): CancelablePromise<import("./settings/protocol.js").SettingMutationResult> {
     return contractOnly("Ui2Agent.mutateSettings")
   }
+
+  @rpcId(16)
+  retryChatTurn(
+    sessionId: string,
+    options?: BrandedRpcOptions,
+  ): CancelablePromise<SendChatMessageResult> {
+    return contractOnly("Ui2Agent.retryChatTurn")
+  }
 }
 
 /**

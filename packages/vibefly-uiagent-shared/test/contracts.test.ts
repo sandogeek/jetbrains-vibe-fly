@@ -52,6 +52,7 @@ describe("generated UI-Agent contracts", () => {
         markChatSessionRead: 13,
         readSettingValues: 14,
         mutateSettings: 15,
+        retryChatTurn: 16,
       },
     })
     assert.deepEqual(agent2Ui.descriptor, {
@@ -106,6 +107,9 @@ describe("generated UI-Agent contracts", () => {
       },
       mutateSettings() {
         return {ok: true, clientMutationId: "unused"}
+      },
+      retryChatTurn() {
+        return { turnId: "turn-retry", state: "running" }
       },
     })
 

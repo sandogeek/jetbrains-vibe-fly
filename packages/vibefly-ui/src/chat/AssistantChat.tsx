@@ -63,6 +63,7 @@ export type AssistantChatProps = {
     onDraftChange: (value: string) => void
     onSend: (text: string) => Promise<void>
     onCancel: () => Promise<void>
+    onRetry: () => Promise<void>
     onChooseContextFiles: () => Promise<void>
     onRemoveContext: (contextId: string) => void
     onModelChange: (spec: string, pinned: string[], recent: string[]) => void
@@ -140,8 +141,11 @@ export function AssistantChat(props: AssistantChatProps) {
         () => ({
             onOpenLocation: props.onOpenLocation,
             onShowDiff: props.onShowDiff,
+            onRetry: !props.offline && props.connected
+                ? () => { void props.onRetry() }
+                : undefined,
         }),
-        [props.onOpenLocation, props.onShowDiff],
+        [props.connected, props.offline, props.onOpenLocation, props.onRetry, props.onShowDiff],
     )
 
     if (historyOpen) {

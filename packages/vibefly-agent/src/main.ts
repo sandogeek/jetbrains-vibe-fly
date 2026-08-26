@@ -186,6 +186,10 @@ async function main(): Promise<void> {
         bindChat()
         return chatSessions.sendChatMessage(request)
       },
+      retryChatTurn(sessionId) {
+        bindChat()
+        return chatSessions.retryChatTurn(sessionId)
+      },
       cancelQueuedTurn(sessionId) {
         bindChat()
         chatSessions.cancelQueuedTurn(sessionId)

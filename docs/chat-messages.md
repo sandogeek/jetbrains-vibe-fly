@@ -121,6 +121,7 @@ type ChatEventBatch = { sessionId: string; sequence: number; events: ChatEvent[]
 | 来源                                    | 事件                                                |
 |-----------------------------------------|-----------------------------------------------------|
 | `sendChatMessage`                       | 合成 user `message` + `summary` + `queue`           |
+| `retryChatTurn`                         | 不合成 user 消息；`summary` + `queue` 后走新的 `agent_start` |
 | `createChatSession` / `openChatSession` | `snapshot`（历史经 `toChatMessages`）               |
 | `releaseChatSession`                    | `sessionReleased`                                   |
 | `#drainQueue` finally                   | `turnComplete` + `summary`                          |
@@ -183,7 +184,7 @@ Runtime：`AssistantChat` 使用 `useExternalStoreRuntime<ChatMessage>({ convert
 | `status: streaming`       | `{ type: "running" }`                                                               | `.streaming-caret`                                            |
 | `status: complete`        | `{ type: "complete", reason: "stop" }`                                              |                                                               |
 | `status: aborted`         | `{ type: "incomplete", reason: "cancelled" }`                                       | 暂无专门 UI                                                   |
-| `status: error`           | `{ type: "incomplete", reason: "error" }`                                           | Retry 按钮（当前无 onClick）                                  |
+| `status: error`           | `{ type: "incomplete", reason: "error" }`                                           | 仅最后一条且 thread 未 running 时显示 Retry → `retryChatTurn` |
 | tool `pending`/`running`  | 不设 `result`                                                                       | 行上扫光（running）                                           |
 | tool `completed`/`failed` | `result: output ?? null`；failed 时 `isError`                                       | 工具图标 / 红色状态点                                         |
 
@@ -210,9 +211,10 @@ type ToolArtifact = {
 
 ### 5.3 Runtime 能力边界
 
-`useExternalStoreRuntime` 只接了 `onNew` / `onCancel`：
+`useExternalStoreRuntime` 只接了 `onNew` / `onCancel`。Retry 不走 assistant-ui `onReload`，由消息上的按钮直接调 `retryChatTurn`：
 
-- **无** 编辑、分支、重新生成、客户端 tool invocation。
+- **无** 编辑、分支、客户端 tool invocation。
+- 失败后的重试：不重复插入 user 气泡。pi 会话已有 user 时发隐藏 `vibefly.retry` custom message 并 `triggerTurn`；若 prompt 还没进 pi，则用上次原文再 `prompt()`。
 - 工具全部在 pi 内执行；assistant-ui 原生 `approval` / `onRespondToToolApproval` **未使用**。
 - `isRunning` 来自会话 summary（`busy` / `queued`），不是单条 message.status。
 - 每 tab `key={sessionId}` 独立 runtime；打开数量不设上限。
@@ -236,6 +238,12 @@ type ToolArtifact = {
 - `abortChatTurn` → `session.abort()`；仅排队则退化为 `cancelQueuedTurn`。
 - abort 判定是错误字符串启发式（`/abort|stopped|interrupt/i`），影响 `turnComplete` 与 session state。
 
+### 重试
+
+- `retryChatTurn` → 入队一轮，**不**发 user `message` 事件。
+- 有历史 user 时：`sendCustomMessage({ customType: "vibefly.retry", display: false }, { triggerTurn: true })`。custom 角色不进 UI parts（`toChatMessages` 会跳过）。
+- 空会话（上次 `prompt` 预检失败）：用 `lastPrompt` 再调 `session.prompt`。
+
 ## 7. 关键文件
 
 | 路径                                         | 符号                                                                                               |
@@ -247,7 +255,7 @@ type ToolArtifact = {
 | `vibefly-agent/src/chatScheduler.ts`         | `SerialTurnScheduler`                                                                              |
 | `vibefly-ui/src/chat/chatEventState.ts`      | `applyChatEvent`                                                                                   |
 | `vibefly-ui/src/chatMessageAdapter.ts`       | `convertChatMessage`、`ToolArtifact`                                                               |
-| `vibefly-ui/src/chat/useChatController.ts`   | `applyBatch`、`sendMessage`、`stopOrCancel`、权限 / 输入 resolve                                   |
+| `vibefly-ui/src/chat/useChatController.ts`   | `applyBatch`、`sendMessage`、`retryLastTurn`、`stopOrCancel`、权限 / 输入 resolve                   |
 | `vibefly-ui/src/chat/AssistantChat.tsx`      | `useExternalStoreRuntime`、`PermissionCard`、`InputCard`                                           |
 | `vibefly-ui/src/chat/MessageParts.tsx`       | `ChatMessageView`、`AssistantMessageParts`、`MarkdownText`、`NoticePart`                            |
 | `vibefly-ui/src/chat/tools/ToolTimelineGroup.tsx` | 连续 tool-call 的 `ToolTimeline` 摘要壳（单工具不套）                                        |
@@ -282,7 +290,7 @@ i18n：`public/locales/{en,zh}/chat.json`。
 | `disconnected`                 | 无生产者；断线靠 `rpc/agent.ts` 的 peer 轮询与重连                                                |
 | `batch.sequence`               | 未做缺口检测 / 重同步                                                                             |
 | `notify` 与 active 消息同 id   | 流式中 notify 可能 **覆盖** 当前 assistant 消息                                                   |
-| abort 视觉                     | `cancelled` 无专门样式；error 的 Retry 未接线                                                     |
+| abort 视觉                     | `cancelled` 无专门样式                                                                            |
 | 单 Agent 单 WS                 | 第二个 WebView 会 replace 前一个连接                                                              |
 
 ## 9. 改这里时
